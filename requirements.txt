@@ -1,0 +1,8 @@
+discord
+discord-components
+pymysql
+aiocron
+pandas
+asyncio
+python-dotenv
+openai==0.27.0

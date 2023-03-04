@@ -1,0 +1,15 @@
+## Reverse Proxy Settings
+#
+# Please configure these options from within your panel under Tools > Reverse Proxy
+# Reverse Proxy Domain
+proxy-domain=
+# Reverse Proxy Port
+proxy-port=
+
+## Git Management
+#
+#Please configure these options from within your panel under Tools > Git Management
+# Git URL
+git-url=
+# Git Branch
+git-branch=
