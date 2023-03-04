@@ -16,5 +16,5 @@ Basic summaries of the data can be found in the server dashboard (https://peterd
 
 # Games
 Here it's being used to log and record who sends the first message of the day. This has become one of the most popular games on our server.
-![image](https://user-images.githubusercontent.com/94143736/222931392-08050b96-7d9a-47e4-8f78-8f9ce4501ca3.png)
 
+<img width="400" alt="Screenshot 2023-03-04 at 5 30 57 PM" src="https://user-images.githubusercontent.com/94143736/222931655-7ab4dcf8-38a4-40ad-968f-e181103eab96.png">
