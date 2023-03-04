@@ -10,6 +10,6 @@ proxy-port=
 #
 #Please configure these options from within your panel under Tools > Git Management
 # Git URL
-git-url=
+git-url=https://github.com/ajkeast/DiscordBot
 # Git Branch
 git-branch=
