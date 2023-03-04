@@ -187,6 +187,6 @@ def get_juice(df):
     df_juice = df_grouped.sort_values('Juice',ascending=False).iloc[0:len(df_grouped)]
 
     return df_juice,highscore_user,highscore_value
-    # testing git commit
+
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
