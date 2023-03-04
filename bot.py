@@ -144,10 +144,11 @@ def connect_db():
     conn = pymysql.connect(host=host, user=user,password=password)
     cursor = conn.cursor()
     cursor.execute('use discordbot')
+    return conn,cursor
 
 def write_to_db(name):
     # write to server and close connection
-    connect_db()
+    conn,cursor = connect_db()
     query = f'INSERT INTO firstlist (username) VALUES (\'{name}\');'
     cursor.execute(query)
     conn.commit()         
@@ -156,12 +157,11 @@ def write_to_db(name):
 
 def get_db(tablename):
     # get table as pandas df and close connection
-    connect_db()
+    conn,cursor = connect_db()
     query = f'SELECT * FROM {tablename}'
     df = pd.read_sql_query(query, conn)
     cursor.close()
     conn.close()
-    
     return df
 
 def get_streak(df):
