@@ -14,7 +14,12 @@ Basic summaries of the data can be found in the server dashboard (https://peterd
 
 ![image](https://user-images.githubusercontent.com/94143736/222931470-059e286e-43df-4cf8-b819-cc7c926436a1.png)
 
+<img width="1255" alt="Screenshot 2023-03-04 at 5 39 41 PM" src="https://user-images.githubusercontent.com/94143736/222931762-c9b11440-763f-46c1-946a-c838852790dc.png">
+
 # Games
-Here it's being used to log and record who sends the first message of the day. This has become one of the most popular games on our server.
+Here it's being used to log and record who sends the first message of the day. Users will send a command as close to the stroke of midnight and the event will be recorded to the database. This has become one of the most popular games on our server!
 
 <img width="427" alt="Screenshot 2023-03-04 at 5 28 37 PM" src="https://user-images.githubusercontent.com/94143736/222931682-32efca9a-26fe-4827-827a-75212db01b87.png">
+
+
+The core functionality of this project is contained in the bot.py file and is avaiable to anyone!
