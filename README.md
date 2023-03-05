@@ -7,8 +7,6 @@ My Discord bot is designed to answer questions directly in chat using the ChatGP
 
 <img width="1019" alt="Screenshot 2023-03-04 at 5 14 24 PM" src="https://user-images.githubusercontent.com/94143736/222931031-924ab917-49d8-4c2e-947d-0c91d6f833f7.png">
 
-<img width="484" alt="Screenshot 2023-03-04 at 5 46 45 PM" src="https://user-images.githubusercontent.com/94143736/222932043-8843e9d3-7622-4136-873d-1224413e0cab.png">
-
 ### Server Dashboard
 In addition to answering questions, the bot also writes events with usernames and timestamps to a MySQL database hosted on Amazon Web Services (AWS). This means that you can keep track of when users are interacting with your bot, and what commands they are sending. This information can be used to improve the performance and effectiveness of the bot over time, by analyzing the data to identify trends and patterns in user behavior. 
 
