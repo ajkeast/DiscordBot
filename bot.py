@@ -99,7 +99,7 @@ async def ask(ctx, *args, pass_context=True):
                 prompt = prompt + " " + arg
             response = openai.ChatCompletion.create(model="gpt-3.5-turbo",
                                                     messages=[{"role": "system", "content": "You are a helpful assistant."},
-                                                              {"role": "user", "content": prompt}])
+                                                              {"role": "user", "content": str(prompt)}])
         await ctx.send(response['choices'][0]['message']['content'])    
     else:
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
