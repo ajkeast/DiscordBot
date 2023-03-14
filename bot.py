@@ -141,9 +141,10 @@ def connect_db():
     host = os.getenv('SQL_HOST')
     user = os.getenv('SQL_USER')
     password = os.getenv('SQL_PASSWORD')
+    database = os.getenv('SQL_DATABASE')
     conn = pymysql.connect(host=host, user=user,password=password)
     cursor = conn.cursor()
-    cursor.execute('use discordbot')
+    cursor.execute(f'use {database}')
     return conn,cursor
 
 def write_to_db(name):
