@@ -80,11 +80,8 @@ async def ping(ctx):
 	await ctx.channel.send('pong')
 
 @bot.command()
-async def simonsays(ctx, *args):
-	response = ""
-	for arg in args:
-		response = response + " " + arg
-	await ctx.channel.send(response)
+async def simonsays(ctx, *, arg):
+	await ctx.channel.send(arg)
 
 IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420'] 
 openai.api_key = os.getenv('CHAT_API_KEY')
