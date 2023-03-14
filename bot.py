@@ -88,15 +88,11 @@ openai.api_key = os.getenv('CHAT_API_KEY')
 model_engine = 'gpt-3.5-turbo'
 max_tokens = 256
 @bot.command()
-async def ask(ctx, *args, pass_context=True):
+async def ask(ctx,*,arg, pass_context=True):
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
-            prompt = ""
-            for arg in args:
-                prompt = prompt + " " + arg
-            response = openai.ChatCompletion.create(model="gpt-3.5-turbo",
-                                                    messages=[{"role": "system", "content": "You are a helpful assistant."},
-                                                              {"role": "user", "content": str(prompt)}])
+            response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You are a helpful assistant."},
+                                                              			    {"role": "user", "content": arg}])
         await ctx.send(response['choices'][0]['message']['content'])    
     else:
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
