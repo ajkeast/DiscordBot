@@ -127,7 +127,7 @@ async def on_ready():
 
 # Cron job to reset first flag each night
 # EST time zone offset is UTC-05. EDT time zone offset is UTC-04.
-@aiocron.crontab('00 05 * * *') # (minute, hour, day, month, dayOfWeek) UTC Time
+@aiocron.crontab('00 04 * * *') # (minute, hour, day, month, dayOfWeek) UTC Time
 async def cronjob1():
     global flag_first
     flag_first = False
