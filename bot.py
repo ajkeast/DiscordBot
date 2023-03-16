@@ -36,7 +36,7 @@ async def score(ctx):
     streak = get_streak(df)
     counts = df.username.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
-    for i in range(5):  # display top 5
+    for i in range(7):  # display top 5
         embed.add_field(name=counts.index[i],value=counts[i],inline=False)
     txt = f'Most recent: {df.username.iloc[-1]} 🔥 {streak} days'
     embed.set_footer(text=txt)
