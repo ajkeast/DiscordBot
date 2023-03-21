@@ -91,7 +91,7 @@ max_tokens = 256
 async def ask(ctx,*,arg, pass_context=True):
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
-            response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you have a stutter"},
+            response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond by subsituting emojis for as many words as possible"},
                                                               			    {"role": "user", "content": arg}])
         await ctx.send(response['choices'][0]['message']['content'])    
     else:
