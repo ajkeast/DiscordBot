@@ -44,7 +44,8 @@ async def score(ctx):
 
 @bot.command()
 async def donation(ctx):
-    embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x395060)   
+    embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x395060)
+    embed.add_field(name='Frozen Tofu#8827',value='$8.01',inline=False)
     embed.add_field(name='Goat 🤠#4059',value='$8.00',inline=False)
     embed.add_field(name='SamtyClaws#7243',value='$6.90',inline=False)
     embed.add_field(name='jack phelps#4293',value='$6.69',inline=False)
