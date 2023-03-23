@@ -20,9 +20,11 @@ bot.remove_command('help')              # remove default help command
 
 @bot.command(name = 'help')
 async def a_help(ctx):
+    # provides an embed of all availble commands
     embed=discord.Embed(title="Commands", color=0x395060)
     embed.add_field(name="_1st", value="Try for first", inline=True)
     embed.add_field(name="_score", value="First leaderboard", inline=True)
+    embed.add_field(name="_ask", value="Ask ChatGPT, inline=True)
     embed.add_field(name="_hello", value="Say hi", inline=True)
     embed.add_field(name="_dash", value="Server stats", inline=True)
     embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
@@ -32,11 +34,12 @@ async def a_help(ctx):
 
 @bot.command()
 async def score(ctx):
+    # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist')
     streak = get_streak(df)
     counts = df.username.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
-    for i in range(7):  # display top 5
+    for i in range(7):  # display top 7
         embed.add_field(name=counts.index[i],value=counts[i],inline=False)
     txt = f'Most recent: {df.username.iloc[-1]} 🔥 {streak} days'
     embed.set_footer(text=txt)
@@ -44,6 +47,7 @@ async def score(ctx):
 
 @bot.command()
 async def donation(ctx):
+    # provides embed of all donations
     embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x395060)
     embed.add_field(name='Frozen Tofu#8827',value='$8.01',inline=False)
     embed.add_field(name='Goat 🤠#4059',value='$8.00',inline=False)
@@ -56,6 +60,7 @@ async def donation(ctx):
 
 @bot.command()
 async def juice(ctx):
+    # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
     df = get_db('firstlist')
     df_juice,user,val = get_juice(df)
     value = int(val)
@@ -68,28 +73,34 @@ async def juice(ctx):
 
 @bot.command()
 async def dash(ctx):
+    # sends button with hyperlink to server dashboard
     await ctx.send('Here you go!', components=[Button(label="Go to your dashboard",style=5,url='https://peterdinklage.streamlit.app/')])
 
 @bot.command(pass_context=True)
 async def hello(ctx):
+    # response with name of the message author
     Author = ctx.author.mention
     msg = f'Hello {Author}!'
     await ctx.channel.send(msg)
 
 @bot.command()
 async def ping(ctx):
-	await ctx.channel.send('pong')
+    await ctx.channel.send('pong')
 
 @bot.command()
 async def simonsays(ctx, *, arg):
-	await ctx.channel.send(arg)
+    # repeats string back
+    await ctx.channel.send(arg)
 
+		    
 IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420'] 
 openai.api_key = os.getenv('CHAT_API_KEY')
 model_engine = 'gpt-3.5-turbo'
 max_tokens = 256
+
 @bot.command()
 async def ask(ctx,*,arg, pass_context=True):
+    # Passes prompt to ChatGPT API and returns response
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
             response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
@@ -101,6 +112,7 @@ async def ask(ctx,*,arg, pass_context=True):
 
 @bot.command(name='1st', pass_context=True)
 async def first(ctx):
+    # Checks if first has been claimed, if not, writes username and timestamp to SQL database
     global flag_first
     if flag_first==True:
         Author = ctx.author.mention
