@@ -140,15 +140,13 @@ async def cronjob1():
 def call_chatGPT(prompt):
     # call ChatGPT API and handle errors
     try:
-        response = openai.ChatCompletion.create(model="upt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
+        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
                                                               			{"role": "user", "content": prompt}])
         return response['choices'][0]['message']['content']
     except Exception as e:
-        error_msg = f'Woah bro, I just made an oopsie: {e}'
-        return error_msg
+        return f'Woah bro, I just made an oopsie: {e}'
     else:
-        error_msg = 'Could not contact API'
-        return error_msg
+        return 'Could not contact API'
 
 def connect_db():
     # connect to database
