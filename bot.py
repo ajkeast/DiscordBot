@@ -148,11 +148,11 @@ def call_chatGPT(prompt):
                                                               			{"role": "user", "content": prompt}])
         return response['choices'][0]['message']['content']
     except Exception as e:
-	error_msg = f'Woah bro, I just made an oopsie: {e}'
-	return error_msg
+        error_msg = f'Woah bro, I just made an oopsie: {e}'
+        return error_msg
     else:
-	error_msg = 'Could not contact API'
-	return error_msg
+        error_msg = 'Could not contact API'
+        return error_msg
 
 def connect_db():
     # connect to database
