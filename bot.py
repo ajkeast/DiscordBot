@@ -10,11 +10,11 @@ import pandas as pd                                         # Manipulate tabular
 import openai                                               # ChatGPT API
 from dotenv import load_dotenv                              # Load .env
 
-flag_first=True                         # initialize first flag
-load_dotenv()                           # load .env
-bot = commands.Bot(command_prefix='_')  # structure for bot commands
-DiscordComponents(bot)                  # structure for buttons
-bot.remove_command('help')              # remove default help command
+flag_first=True                                             # initialize first flag
+load_dotenv()                                               # load .env
+bot = commands.Bot(command_prefix='_')                      # structure for bot commands
+DiscordComponents(bot)                                      # structure for buttons
+bot.remove_command('help')                                  # remove default help command
 
 # Bot Commands
 
