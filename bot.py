@@ -1,4 +1,5 @@
 # Import dependencies (make sure requirements.txt includes these)
+# testing git commands from vscode
 
 import discord                                              # Discord API
 from discord.ext import commands
