@@ -1,5 +1,4 @@
 # Import dependencies (make sure requirements.txt includes these)
-# testing git commands from vscode
 
 import discord                                              # Discord API
 from discord.ext import commands
@@ -139,15 +138,15 @@ async def cronjob1():
 # Function definitions
 
 def call_chatGPT(prompt):
-    # call ChatGPT API and handle errors
+    # call ChatGPT API and with error handeling blocks
     try:
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
-                                                              			{"role": "user", "content": prompt}])
+                                                              			        {"role": "user", "content": prompt}])
         return response['choices'][0]['message']['content']
     except Exception as e:
         return f'Woah bro, I just made an oopsie: {e}'
     else:
-        return 'Could not contact API'
+        return 'Could not contact ChatGPT API'
 
 def connect_db():
     # connect to database
@@ -179,6 +178,7 @@ def get_db(tablename):
     return df
 
 def get_streak(df):
+    # find streak of repeated usernames
     df['start_of_streak'] = df.username.ne(df['username'].shift())
     df['streak_id'] = df['start_of_streak'].cumsum()
     df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
