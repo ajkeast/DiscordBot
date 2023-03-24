@@ -146,7 +146,7 @@ def call_chatGPT(prompt):
     try:
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
                                                               			{"role": "user", "content": prompt}])
-	return response['choices'][0]['message']['content']
+        return response['choices'][0]['message']['content']
     except Exception as e:
 	error_msg = f'Woah bro, I just made an oopsie: {e}'
 	return error_msg
