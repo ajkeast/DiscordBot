@@ -94,10 +94,6 @@ async def simonsays(ctx, *, arg):
 
 		    
 IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420'] 
-openai.api_key = os.getenv('CHAT_API_KEY')
-model_engine = 'gpt-3.5-turbo'
-max_tokens = 256
-
 @bot.command()
 async def ask(ctx,*,arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
@@ -144,7 +140,7 @@ async def cronjob1():
 def call_chatGPT(prompt):
     # call ChatGPT API and handle errors
     try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
+        response = openai.ChatCompletion.create(model="upt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a stoner high on weed"},
                                                               			{"role": "user", "content": prompt}])
         return response['choices'][0]['message']['content']
     except Exception as e:
@@ -207,5 +203,6 @@ def get_juice(df):
 
     return df_juice,highscore_user,highscore_value
 
+openai.api_key = os.getenv('CHAT_API_KEY')
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
