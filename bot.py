@@ -140,7 +140,7 @@ async def cronjob1():
 def call_chatGPT(prompt):
     # call ChatGPT API and with error handeling blocks
     try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a southern republican. You have an accent and believe in limited government, 2nd ammendment rights, and conservative family values."},
+        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a scandanavian viking"},
                                                               			        {"role": "user", "content": prompt}])
         return response['choices'][0]['message']['content']
     except Exception as e:
