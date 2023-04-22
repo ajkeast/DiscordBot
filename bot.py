@@ -93,13 +93,14 @@ async def simonsays(ctx, *, arg):
     await ctx.channel.send(arg)
 
 		    
-IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420'] 
+IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420']
+chat_history = [{"role": "system", "content": "You will always respond as if you are a Scandanavian viking"}]
 @bot.command()
 async def ask(ctx,*,arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
-            response = call_chatGPT(arg)
+            chat_history,response = call_chatGPT(chat_history,prompt)
         await ctx.send(response)
     else:
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
@@ -137,16 +138,31 @@ async def cronjob1():
 
 # Function definitions
 
-def call_chatGPT(prompt):
-    # call ChatGPT API and with error handeling blocks
+def append_and_shift(arr, v, max_len):
+    """
+    Append a value to an array up to a set maximum length.
+    If the maximum length is reached, shift out the second earliest entry.
+    """
+    arr.append(v)
+    if len(arr) > max_len:
+        arr.pop(1)
+
+def call_chatGPT(chat_history, prompt):
+    """
+    Call ChatGPT API with the user prompt and the last 10 messages of  
+    chat history
+    """
+
+    append_and_shift(chat_history,{"role": "user", "content": prompt},max_len=10)
+    chat_history.append({"role": "user", "content": prompt})
     try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",messages=[{"role": "system", "content": "You will always respond as if you are a scandanavian viking"},
-                                                              			        {"role": "user", "content": prompt}])
-        return response['choices'][0]['message']['content']
+        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+                                                temperature=0.7,
+                                                messages=chat_history)
+        append_and_shift(chat_history,{"role": "assistant", "content": prompt},max_len=10)
+        return chat_history,response['choices'][0]['message']['content'][:2000] # limited to 2000 characters for discord
     except Exception as e:
-        return f'Woah bro, I just made an oopsie: {e}'
-    else:
-        return 'Could not contact ChatGPT API'
+        return f'Looks like there was an error: {e}'
 
 def connect_db():
     # connect to database
