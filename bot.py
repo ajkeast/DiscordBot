@@ -96,8 +96,9 @@ async def simonsays(ctx, *, arg):
 IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420']
 chat_history = [{"role": "system", "content": "You will always respond as if you are a Scandanavian viking"}]
 @bot.command()
-async def ask(ctx,*, arg, chat_history, pass_context=True):
+async def ask(ctx,*, arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
+    global chat_history
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
             chat_history,response = call_chatGPT(chat_history,prompt)
