@@ -101,7 +101,7 @@ async def ask(ctx,*, arg, pass_context=True):
     global chat_history
     if str(ctx.message.author) in IDCARD:
         async with ctx.typing():
-            chat_history,response = call_chatGPT(chat_history,prompt)
+            chat_history,response = call_chatGPT(chat_history,arg)
         await ctx.send(response)
     else:
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
