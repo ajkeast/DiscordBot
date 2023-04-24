@@ -159,7 +159,7 @@ def call_chatGPT(chat_history, prompt):
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo",
                                                 temperature=0.7,
                                                 messages=chat_history)
-        append_and_shift(chat_history,{"role": "assistant", "content": prompt},max_len=10)
+        append_and_shift(chat_history,{"role": "assistant", "content": response['choices'][0]['message']['content']},max_len=10)
         return chat_history,response['choices'][0]['message']['content'][:2000] # limited to 2000 characters for discord
     except Exception as e:
         return f'Looks like there was an error: {e}'
