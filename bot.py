@@ -35,7 +35,7 @@ async def a_help(ctx):
 @bot.command()
 async def score(ctx):
     # reads SQL database and generates an embed with list of names and scores
-    df = get_db('firstlist')
+    df = get_db('firstlist_id')
     streak = get_streak(df)
     counts = df.username.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
@@ -49,20 +49,20 @@ async def score(ctx):
 async def donation(ctx):
     # provides embed of all donations
     embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x395060)
-    embed.add_field(name='Frozen Tofu#8827',value='$8.01',inline=False)
-    embed.add_field(name='Goat 🤠#4059',value='$8.00',inline=False)
-    embed.add_field(name='SamtyClaws#7243',value='$6.90',inline=False)
-    embed.add_field(name='jack phelps#4293',value='$6.69',inline=False)
-    embed.add_field(name='Mo#8516',value='$6.00',inline=False)
-    embed.add_field(name='tornadotom50#8420',value='$6.00',inline=False)
+    embed.add_field(name='Mike S',value='$8.01',inline=False)
+    embed.add_field(name='Danny E',value='$8.00',inline=False)
+    embed.add_field(name='Sammy T',value='$6.90',inline=False)
+    embed.add_field(name='Jacky P',value='$6.69',inline=False)
+    embed.add_field(name='Matt',value='$6.00',inline=False)
+    embed.add_field(name='Whike',value='$6.00',inline=False)
     embed.set_footer(text='Peter Dinklage is a non-profit')
     await ctx.channel.send(embed=embed)    
 
 @bot.command()
 async def juice(ctx):
     # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
-    df = get_db('firstlist')
-    df_juice,user,val = get_juice(df)
+    df = get_db('firstlist_id')
+    df_juice,user_id,val = get_juice(df)
     value = int(val)
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
@@ -120,7 +120,7 @@ async def first(ctx):
         Author = ctx.author.mention
         msg = f'{Author} is first today! 🥳'
         await ctx.channel.send(msg)
-        write_to_db(ctx.author)
+        write_to_db(firstlist_id, ctx.author.id)
 
 # Display in console bot is working correctly
 @bot.event
@@ -175,10 +175,10 @@ def connect_db():
     cursor.execute(f'use {database}')
     return conn,cursor
 
-def write_to_db(name):
+def write_to_db(table_name, value):
     # write to server and close connection
     conn,cursor = connect_db()
-    query = f'INSERT INTO firstlist (username) VALUES (\'{name}\');'
+    query = f'INSERT INTO {table_name} (username) VALUES (\'{value}\');'
     cursor.execute(query)
     conn.commit()         
     cursor.close()
