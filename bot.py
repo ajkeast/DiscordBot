@@ -191,6 +191,19 @@ def function_call(ai_response):
     else:
         return
 
+function_descriptions = [
+    {
+        "name": "get_todays_date",
+        "description": "Get todays date, returned as a string in format of yyyy-mm-dd hh:mm:ss",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timezone": {"type":"string", "description":"location where a common standard time is used "}
+            },
+        },
+    }
+]
+
 def connect_db():
     # connect to database
     host = os.getenv('SQL_HOST')
