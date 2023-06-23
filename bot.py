@@ -8,6 +8,8 @@ import aiocron                                              # Schedule events
 import os, string, time, random, asyncio                    # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
 import openai                                               # ChatGPT API
+import datetime
+import json
 from dotenv import load_dotenv                              # Load .env
 
 flag_first=True                                             # initialize first flag
