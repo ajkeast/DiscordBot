@@ -38,7 +38,7 @@ def function_call(ai_response):
     arguments = function_call["arguments"]
     if function_name == "get_todays_date":
         return get_todays_date()
-    elif function_name == "get_current_weather"
+    elif function_name == "get_current_weather":
         return get_current_weather()
     else:
         return
