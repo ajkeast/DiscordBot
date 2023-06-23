@@ -37,11 +37,14 @@ def function_call(ai_response):
     function_name = function_call["name"]
     arguments = function_call["arguments"]
     if function_name == "get_todays_date":
-        return get_todays_date()
+        timezone = eval(arguments).get("timezone")
+        return get_todays_date(timezone)
     elif function_name == "get_current_weather":
-        return get_current_weather()
+        location = eval(arguments).get("location")
+        return get_current_weather(location)
     elif function_name == "get_minecraft_server":
-        return get_minecraft_server()
+        ip_address = eval(arguments).get("ip_address")
+        return get_minecraft_server(ip_address)
     else:
         return
 
@@ -118,7 +121,7 @@ def get_current_weather(location, unit="fahrenheit"):
 
     return json.dumps(weather)
 
-def get_minecraft_server(ip_address):
+def get_minecraft_server(ip_address='51.81.151.253:25583'):
     url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
 
     payload = { "host": ip_address }
