@@ -47,7 +47,8 @@ async def score(ctx):
         embed.add_field(name=name,
                         value=counts[i],
                         inline=False)
-    txt = f'Most recent: {await bot.fetch_user(df.user_id.iloc[-1]).name} 🔥 {streak} days'
+    most_recent_first = await bot.fetch_user(df.user_id.iloc[-1])
+    txt = f'Most recent: {most_recent_first} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
 
