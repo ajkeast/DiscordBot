@@ -65,7 +65,7 @@ async def donation(ctx):
     await ctx.channel.send(embed=embed)    
 
 @bot.command()
-async def juice(ctx):
+async def juice(ctx, pass_context=True):
     # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
     global bot
     df = get_db('firstlist_id')
