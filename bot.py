@@ -38,7 +38,6 @@ async def a_help(ctx):
 @bot.command()
 async def score(ctx,pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
-    global bot
     df = get_db('firstlist_id')
     streak = get_streak(df)
     counts = df.user_id.value_counts()
@@ -67,13 +66,13 @@ async def donation(ctx):
 @bot.command()
 async def juice(ctx, pass_context=True):
     # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
-    global bot
     df = get_db('firstlist_id')
     df_juice,user_id,val = get_juice(df)
     value = int(val)
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
         print(df_juice.iloc[i][0])
+        print(bot.get_user(df_juice.iloc[i][0]))
         embed.add_field(name=bot.get_user(df_juice.iloc[i][0]).name,value=int(df_juice.iloc[i][1]),inline=False)
     txt = f'1-Day Highscore: {bot.get_user(user_id).name}🧃{value} mins'
     embed.set_footer(text=txt)
