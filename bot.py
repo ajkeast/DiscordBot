@@ -43,8 +43,9 @@ async def score(ctx):
     for i in range(7):  # display top 7
         print(f'The value returned was {counts.index[i]} and is type {type(counts.index[i])}' )
         print(await bot.fetch_user(int(counts.index[i])))
-        embed.add_field(name= await bot.fetch_user(counts.index[i]).name,
-                        value=counts[i].name,
+        name = await bot.fetch_user(int(counts.index[i]))
+        embed.add_field(name=name,
+                        value=counts[i],
                         inline=False)
     txt = f'Most recent: {await bot.fetch_user(df.user_id.iloc[-1]).name} 🔥 {streak} days'
     embed.set_footer(text=txt)
