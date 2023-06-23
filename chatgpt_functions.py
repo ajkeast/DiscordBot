@@ -1,7 +1,7 @@
-import datetime
-import json
+import datetime, json, os
 import openai                                               # ChatGPT API
 from dotenv import load_dotenv                              # Load .env
+
 
 openai.api_key = os.getenv('CHAT_API_KEY')
 
