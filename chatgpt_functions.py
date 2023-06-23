@@ -113,6 +113,8 @@ def get_current_weather(location="Boston, MA", unit="fahrenheit"):
                "humidity":response.get("current").get("humidity"),
                "precip_inches":response.get("current").get("precip_in")
     }
+    print(response)
+
     return json.dumps(weather)
 
 def get_minecraft_server(ip_address="51.81.151.253:25583"):
