@@ -41,8 +41,8 @@ async def score(ctx):
     counts = df.user_id.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
-        print(counts.index[i])
-        print(bot.get_user(counts.index[i]))
+        print(f'The value returned was {counts.index[i]} and is type {type(counts.index[i])}' )
+        print(bot.get_user(int(counts.index[i])))
         embed.add_field(name=bot.get_user(counts.index[i]).name,
                         value=counts[i].name,
                         inline=False)
