@@ -2,7 +2,7 @@ import datetime, json, os
 import openai                                               # ChatGPT API
 from dotenv import load_dotenv                              # Load .env
 
-
+load_dotenv()
 openai.api_key = os.getenv('CHAT_API_KEY')
 
 def call_chatGPT(chat_history, prompt):
