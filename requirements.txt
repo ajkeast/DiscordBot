@@ -4,5 +4,6 @@ pymysql
 aiocron
 pandas
 asyncio
+requests
 python-dotenv
 openai==0.27.0
