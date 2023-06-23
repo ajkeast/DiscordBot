@@ -126,7 +126,7 @@ def get_minecraft_server(ip_address="51.81.151.253:25583"):
     }
 
     response = requests.post(url, json=payload, headers=headers)
-    print(response)
+    print(response.json)
 
     return response.json()
 
