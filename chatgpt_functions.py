@@ -83,6 +83,7 @@ function_descriptions = [
                 },
                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
+            "required": ["ip_address"]
         },
     }
 ]
@@ -96,7 +97,7 @@ def get_todays_date(timezone='Eastern'):
     return json.dumps(today)
 
 
-def get_current_weather(location="Boston, MA", unit="fahrenheit"):
+def get_current_weather(location, unit="fahrenheit"):
     """Get the current weather in a given location"""
 
     url = "https://weatherapi-com.p.rapidapi.com/current.json"
@@ -117,7 +118,7 @@ def get_current_weather(location="Boston, MA", unit="fahrenheit"):
 
     return json.dumps(weather)
 
-def get_minecraft_server(ip_address="51.81.151.253:25583"):
+def get_minecraft_server(ip_address):
     url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
 
     payload = { "host": ip_address }
