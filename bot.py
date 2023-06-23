@@ -105,7 +105,7 @@ chat_history = [{"role": "system", "content": "You will always respond as if you
 async def ask(ctx,*, arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
     global chat_history
-    if str(ctx.message.id) in IDCARD:
+    if str(ctx.message.author.id) in IDCARD:
         async with ctx.typing():
             chat_history,response = call_chatGPT(chat_history,arg)
         await ctx.send(response)
