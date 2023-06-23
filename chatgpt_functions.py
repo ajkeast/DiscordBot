@@ -2,30 +2,29 @@
 
 def call_chatGPT(chat_history, prompt):
     """call ChatGPT API and with error handeling blocks"""
-    try:
-        append_and_shift(chat_history,{"role": "user", "content": prompt},max_len=10)
+    # try:
+    append_and_shift(chat_history,{"role": "user", "content": prompt},max_len=10)
+    response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
+                                            temperature=0.7,
+                                            messages=chat_history,
+                                            functions=function_descriptions,
+                                            function_call="auto")
+    
+    if response["choices"][0]["finish_reason"] != "function_call":
+        append_and_shift(chat_history,{"role": "assistant", "content": response['choices'][0]['message']['content']},max_len=10)
+    
+    # If there was a function call, append it to the message history and 
+    while response["choices"][0]["finish_reason"] == "function_call":
+        function_response = function_call(response)
+        append_and_shift(chat_history,{"role": "function","name": response["choices"][0]["message"]["function_call"]["name"],"content": json.dumps(function_response)},max_len=10)
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
                                                 temperature=0.7,
                                                 messages=chat_history,
                                                 functions=function_descriptions,
-                                                function_call="auto")
-        
-        if response["choices"][0]["finish_reason"] != "function_call":
-            append_and_shift(chat_history,{"role": "assistant", "content": response['choices'][0]['message']['content']},max_len=10)
-        
-        # If there was a function call, append it to the message history and 
-        while response["choices"][0]["finish_reason"] == "function_call":
-            function_response = function_call(response)
-            append_and_shift(chat_history,{"role": "function","name": response["choices"][0]["message"]["function_call"]["name"],"content": json.dumps(function_response)},max_len=10)
-            response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
-                                                    temperature=0.7,
-                                                    messages=chat_history,
-                                                    functions=function_descriptions,
-                                                    function_call="auto"
-            )   
-        return chat_history, response['choices'][0]['message']['content'][:2000] # limited to 2000 characters for discord
-    except Exception as e:
-        return f'Looks like there was an error: {e}'
+                                                function_call="auto")   
+    return chat_history, response['choices'][0]['message']['content'][:2000] # limited to 2000 characters for discord
+    #except Exception as e:
+    #    return f'Looks like there was an error: {e}'
     
 def function_call(ai_response):
     function_call = ai_response["choices"][0]["message"]["function_call"]
