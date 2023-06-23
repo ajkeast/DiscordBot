@@ -12,8 +12,7 @@ from dotenv import load_dotenv                              # Load .env
 
 flag_first=True                                             # initialize first flag
 load_dotenv()
-intents = discord.Intents.all()
-MemberCacheFlags = discord.MemberCacheFlags.all()                                              # load .env
+intents = discord.Intents.all()                                             # load .env
 bot = commands.Bot(intents=intents,command_prefix='_')                      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
@@ -45,14 +44,10 @@ async def score(ctx,pass_context=True):
     counts = df.user_id.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
-        print(f'The value returned was {counts.index[i]} and is type {type(counts.index[i])}' )
-        print(bot.get_user(int(counts.index[i])))
-        name = await bot.fetch_user(int(counts.index[i]))
-        embed.add_field(name=name,
+        embed.add_field(name=bot.get_user(int(counts.index[i])),
                         value=counts[i],
                         inline=False)
-    most_recent_first = await bot.fetch_user(df.user_id.iloc[-1])
-    txt = f'Most recent: {most_recent_first} 🔥 {streak} days'
+    txt = f'Most recent: {bot.get_user(df.user_id.iloc[-1])} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
 
@@ -75,12 +70,11 @@ async def juice(ctx):
     global bot
     df = get_db('firstlist_id')
     df_juice,user_id,val = get_juice(df)
-    user_id = bot.fetch_user(user_id).name
     value = int(val)
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
-        embed.add_field(name=bot.fetch_user(df_juice.iloc[i][0]).name,value=int(df_juice.iloc[i][1]),inline=False)
-    txt = f'1-Day Highscore: {user_id}🧃{value} mins'
+        embed.add_field(name=bot.get_user(df_juice.iloc[i][0]).name,value=int(df_juice.iloc[i][1]),inline=False)
+    txt = f'1-Day Highscore: {bot.get_user(user_id).name}🧃{value} mins'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed)
 
