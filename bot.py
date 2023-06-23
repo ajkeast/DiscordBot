@@ -127,7 +127,7 @@ async def first(ctx):
     msg = f'{Author} is first today! 🥳'
     await ctx.channel.send(msg)
     print(ctx.message.author.id)
-    write_to_db('firstlist', ctx.author.id)
+    write_to_db('firstlist_id', ctx.author.id)
 
 # Display in console bot is working correctly
 @bot.event
