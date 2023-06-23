@@ -37,11 +37,11 @@ async def score(ctx):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
     streak = get_streak(df)
-    counts = df.username.value_counts()
+    counts = df.user_id.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
         embed.add_field(name=counts.index[i],value=counts[i],inline=False)
-    txt = f'Most recent: {df.username.iloc[-1]} 🔥 {streak} days'
+    txt = f'Most recent: {df.user_id.iloc[-1]} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
 
@@ -109,7 +109,7 @@ async def ask(ctx,*, arg, pass_context=True):
 
 @bot.command(name='1st', pass_context=True)
 async def first(ctx):
-    # Checks if first has been claimed, if not, writes username and timestamp to SQL database
+    # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
     global flag_first
     if flag_first==True:
         Author = ctx.author.mention
@@ -178,7 +178,7 @@ def connect_db():
 def write_to_db(table_name, value):
     # write to server and close connection
     conn,cursor = connect_db()
-    query = f'INSERT INTO {table_name} (username) VALUES (\'{value}\');'
+    query = f'INSERT INTO {table_name} (user_id) VALUES (\'{value}\');'
     cursor.execute(query)
     conn.commit()         
     cursor.close()
@@ -194,8 +194,8 @@ def get_db(tablename):
     return df
 
 def get_streak(df):
-    # find streak of repeated usernames
-    df['start_of_streak'] = df.username.ne(df['username'].shift())
+    # find streak of repeated user_ids
+    df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
     df['streak_id'] = df['start_of_streak'].cumsum()
     df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
 
@@ -213,7 +213,7 @@ def get_juice(df):
     id = df['Juice'].idxmax()
     highscore_user = df.iloc[id][0]
     highscore_value = df.iloc[id][2]
-    df_grouped = df[['username','Juice']].groupby('username',as_index=False).sum()
+    df_grouped = df[['user_id','Juice']].groupby('user_id',as_index=False).sum()
     df_juice = df_grouped.sort_values('Juice',ascending=False).iloc[0:len(df_grouped)]
 
     return df_juice,highscore_user,highscore_value
