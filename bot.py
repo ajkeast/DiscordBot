@@ -73,6 +73,7 @@ async def juice(ctx):
     value = int(val)
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
+        print(df_juice.iloc[i][0])
         embed.add_field(name=bot.get_user(df_juice.iloc[i][0]).name,value=int(df_juice.iloc[i][1]),inline=False)
     txt = f'1-Day Highscore: {bot.get_user(user_id).name}🧃{value} mins'
     embed.set_footer(text=txt)
