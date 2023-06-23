@@ -40,7 +40,8 @@ async def score(ctx):
     counts = df.user_id.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
-        embed.add_field(name=counts.index[i],value=counts[i],inline=False)
+        embed.add_field(name=bot.get_user_info(counts.index[i]).name,
+                        value=bot.get_user_info(counts[i]).name,inline=False)
     txt = f'Most recent: {df.user_id.iloc[-1]} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
@@ -67,7 +68,7 @@ async def juice(ctx):
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
         embed.add_field(name=df_juice.iloc[i][0],value=int(df_juice.iloc[i][1]),inline=False)
-    txt = f'1-Day Highscore: {user}🧃{value} mins'
+    txt = f'1-Day Highscore: {user_id}🧃{value} mins'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed)
 
