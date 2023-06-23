@@ -79,7 +79,7 @@ function_descriptions = [
             "properties": {
                 "ip_address": {
                     "type": "string",
-                    "description": "the connection to specify which minecraft server",
+                    "description": "ip address string",
                 },
                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
