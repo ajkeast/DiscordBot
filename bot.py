@@ -117,16 +117,17 @@ async def ask(ctx,*, arg, pass_context=True):
 async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
     global flag_first
-    if flag_first==True:
-        Author = ctx.author.mention
-        msg = f'Sorry {Author}, first has already been claimed today. 😭'
-        await ctx.channel.send(msg)
-    else:
-        flag_first=True
-        Author = ctx.author.mention
-        msg = f'{Author} is first today! 🥳'
-        await ctx.channel.send(msg)
-        write_to_db(firstlist_id, ctx.author.id)
+    # if flag_first==True:
+    #     Author = ctx.author.mention
+    #     msg = f'Sorry {Author}, first has already been claimed today. 😭'
+    #     await ctx.channel.send(msg)
+    # else:
+    flag_first=True
+    Author = ctx.author.mention
+    msg = f'{Author} is first today! 🥳'
+    await ctx.channel.send(msg)
+    print(ctx.message.author.id)
+    write_to_db(firstlist, ctx.message.author.id)
 
 # Display in console bot is working correctly
 @bot.event
