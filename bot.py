@@ -7,10 +7,7 @@ import pymysql                                              # Connect to AWS SQL
 import aiocron                                              # Schedule events
 import os, string, time, random, asyncio                    # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
-import openai                                               # ChatGPT API
 from chatgpt_functions import *                             # function calls for ChatGPT API
-import datetime
-import json
 from dotenv import load_dotenv                              # Load .env
 
 flag_first=True                                             # initialize first flag
@@ -200,6 +197,5 @@ def get_juice(df):
 
     return df_juice,highscore_user,highscore_value
 
-openai.api_key = os.getenv('CHAT_API_KEY')
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)

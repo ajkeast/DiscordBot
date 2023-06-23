@@ -1,4 +1,9 @@
+import datetime
+import json
+import openai                                               # ChatGPT API
+from dotenv import load_dotenv                              # Load .env
 
+openai.api_key = os.getenv('CHAT_API_KEY')
 
 def call_chatGPT(chat_history, prompt):
     """call ChatGPT API and with error handeling blocks"""
