@@ -83,10 +83,10 @@ def get_current_weather(location="Boston, MA", unit="fahrenheit"):
     """Get the current weather in a given location"""
 
     url = "https://weatherapi-com.p.rapidapi.com/current.json"
-	querystring = {"q":location}
-	headers = {"X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
+    querystring = {"q":location}
+    headers = {"X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
 		       "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"}
-	response = requests.get(url, headers=headers, params=querystring)
+    response = requests.get(url, headers=headers, params=querystring)
 
 	return response.json()
 
