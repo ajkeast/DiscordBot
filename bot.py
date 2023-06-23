@@ -33,7 +33,7 @@ async def a_help(ctx):
     await ctx.channel.send(embed=embed)        
 
 @bot.command()
-async def score(ctx):
+async def score(ctx,pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
     global bot
     df = get_db('firstlist_id')
@@ -42,7 +42,7 @@ async def score(ctx):
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
         print(f'The value returned was {counts.index[i]} and is type {type(counts.index[i])}' )
-        print(await bot.fetch_user(int(counts.index[i])))
+        print(bot.get_user(int(counts.index[i])))
         name = await bot.fetch_user(int(counts.index[i]))
         embed.add_field(name=name,
                         value=counts[i],
