@@ -46,7 +46,7 @@ async def score(ctx,pass_context=True):
         embed.add_field(name=bot.get_user(int(counts.index[i])),
                         value=counts[i],
                         inline=False)
-    txt = f'Most recent: {bot.get_user(df.user_id.iloc[-1])} 🔥 {streak} days'
+    txt = f'Most recent: {bot.get_user(int(df.user_id.iloc[-1]))} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
 
@@ -74,7 +74,7 @@ async def juice(ctx, pass_context=True):
         print(df_juice.iloc[i][0])
         print(bot.get_user(df_juice.iloc[i][0]))
         embed.add_field(name=bot.get_user(int(df_juice.iloc[i][0])),value=int(df_juice.iloc[i][1]),inline=False)
-    txt = f'1-Day Highscore: {bot.get_user(highscore_user_id)}🧃{value} mins'
+    txt = f'1-Day Highscore: {bot.get_user(int(highscore_user_id))}🧃{value} mins'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed)
 
