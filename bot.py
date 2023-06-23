@@ -107,7 +107,6 @@ async def ask(ctx,*, arg, pass_context=True):
     global chat_history
     if str(ctx.message.author.id) in IDCARD:
         async with ctx.typing():
-            print(call_chatGPT(chat_history, arg))
             chat_history, response = call_chatGPT(chat_history, arg)
         await ctx.send(response)
     else:
