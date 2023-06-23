@@ -99,14 +99,13 @@ async def simonsays(ctx, *, arg):
     # repeats string back
     await ctx.channel.send(arg)
 
-		    
-IDCARD = ['ConKeastador#0784','Mo#8516','SamtyClaws#7243','Frozen Tofu#8827','jack phelps#4293','tornadotom50#8420']
+IDCARD = ['162725160397438978','94235023560941568','95321829031280640','94254577766891520','250729999349317632','186667084007211008'] 
 chat_history = [{"role": "system", "content": "You will always respond as if you are a Scandanavian viking"}]
 @bot.command()
 async def ask(ctx,*, arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
     global chat_history
-    if str(ctx.message.author) in IDCARD:
+    if str(ctx.message.id) in IDCARD:
         async with ctx.typing():
             chat_history,response = call_chatGPT(chat_history,arg)
         await ctx.send(response)
