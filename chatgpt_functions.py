@@ -40,6 +40,8 @@ def function_call(ai_response):
         return get_todays_date()
     elif function_name == "get_current_weather":
         return get_current_weather()
+    elif function_name == "get_minecraft_server":
+        return get_minecraft_server()
     else:
         return
 
@@ -67,6 +69,20 @@ function_descriptions = [
                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
             "required": ["location"],
+        },
+    },
+    {
+        "name": "get_minecraft_server",
+        "description": "Get the number of players online and the online status for the minecraft server",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ip_address": {
+                    "type": "string",
+                    "description": "the connection to specify which minecraft server",
+                },
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
         },
     }
 ]
@@ -98,6 +114,20 @@ def get_current_weather(location="Boston, MA", unit="fahrenheit"):
                "precip_inches":response.get("current").get("precip_in")
     }
     return json.dumps(weather)
+
+def get_minecraft_server(ip_address="51.81.151.253:25583"):
+    url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
+
+    payload = { "host": ip_address }
+    headers = {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
+        "X-RapidAPI-Host": "minecraft-server-status1.p.rapidapi.com"
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    return response.json()
 
 
 def append_and_shift(arr, v, max_len):
