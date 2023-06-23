@@ -203,6 +203,14 @@ function_descriptions = [
     }
 ]
 
+def get_todays_date(timezone='Eastern'):
+    """Get the current date"""
+    today = {
+        "timezone": timezone,
+        "today": str(datetime.datetime.today())
+    }
+    return json.dumps(today)
+
 def connect_db():
     # connect to database
     host = os.getenv('SQL_HOST')
