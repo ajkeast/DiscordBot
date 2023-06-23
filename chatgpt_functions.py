@@ -85,10 +85,10 @@ def get_current_weather(location="Boston, MA", unit="fahrenheit"):
     url = "https://weatherapi-com.p.rapidapi.com/current.json"
     querystring = {"q":location}
     headers = {"X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
-		       "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"}
+               "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"}
     response = requests.get(url, headers=headers, params=querystring)
 
-	return response.json()
+    return response.json()
 
 def append_and_shift(arr, v, max_len):
     """
