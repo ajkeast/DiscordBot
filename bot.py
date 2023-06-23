@@ -40,9 +40,9 @@ async def score(ctx):
     counts = df.user_id.value_counts()
     embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
     for i in range(7):  # display top 7
-        embed.add_field(name=bot.get_user_info(counts.index[i]).name,
-                        value=bot.get_user_info(counts[i]).name,inline=False)
-    txt = f'Most recent: {df.user_id.iloc[-1]} 🔥 {streak} days'
+        embed.add_field(name=bot.get_user(counts.index[i]).name,
+                        value=bot.get_user(counts[i]).name,inline=False)
+    txt = f'Most recent: {ot.get_user(df.user_id.iloc[-1]).name} 🔥 {streak} days'
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed) 
 
