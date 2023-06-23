@@ -11,8 +11,10 @@ import openai                                               # ChatGPT API
 from dotenv import load_dotenv                              # Load .env
 
 flag_first=True                                             # initialize first flag
-load_dotenv()                                               # load .env
-bot = commands.Bot(command_prefix='_')                      # structure for bot commands
+load_dotenv()
+intents = discord.Intents.all()
+MemberCacheFlags = discord.MemberCacheFlags.all()                                              # load .env
+bot = commands.Bot(intents=intents,command_prefix='_')                      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
 DiscordComponents(bot)                                      # structure for buttons
