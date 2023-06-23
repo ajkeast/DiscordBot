@@ -35,6 +35,7 @@ async def a_help(ctx):
 @bot.command()
 async def score(ctx):
     # reads SQL database and generates an embed with list of names and scores
+    global bot
     df = get_db('firstlist_id')
     streak = get_streak(df)
     counts = df.user_id.value_counts()
@@ -63,6 +64,7 @@ async def donation(ctx):
 @bot.command()
 async def juice(ctx):
     # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
+    global bot
     df = get_db('firstlist_id')
     df_juice,user_id,val = get_juice(df)
     user_id = bot.get_user(user_id).name
