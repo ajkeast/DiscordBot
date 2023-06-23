@@ -13,8 +13,8 @@ from dotenv import load_dotenv                              # Load .env
 flag_first=True                                             # initialize first flag
 load_dotenv()                                               # load .env
 bot = commands.Bot(command_prefix='_')                      # structure for bot commands
-intents = discord.Intents()
-intents.members = True
+discord.Intents.all()
+discord.MemberCacheFlags.all()
 DiscordComponents(bot)                                      # structure for buttons
 bot.remove_command('help')                                  # remove default help command
 
