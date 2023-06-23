@@ -162,7 +162,7 @@ def call_chatGPT(chat_history, prompt):
 
     append_and_shift(chat_history,{"role": "user", "content": prompt},max_len=10)
     try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+        response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
                                                 temperature=0.7,
                                                 messages=chat_history)
         append_and_shift(chat_history,{"role": "assistant", "content": response['choices'][0]['message']['content']},max_len=10)
