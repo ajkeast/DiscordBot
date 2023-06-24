@@ -1,7 +1,8 @@
-import datetime, json, os
-import openai                                               # ChatGPT API
-from dotenv import load_dotenv                              # Load .env
-import requests
+import datetime, json, os           # core python libraries
+import openai                       # chatGPT API
+from dotenv import load_dotenv      # load .env
+import pytz                         # timezones
+import requests                     # http queries
 
 load_dotenv()
 openai.api_key = os.getenv('CHAT_API_KEY')
