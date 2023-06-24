@@ -25,37 +25,37 @@ def call_chatGPT(chat_history, prompt):
             response_content (str): The generated response content limited to 2000 characters.
     """
     
-#    try:
-    # Append the user prompt to the chat history
-    append_and_shift(chat_history, {"role": "user", "content": prompt}, max_len=10)
-    
-    # Send request to the ChatGPT API
-    response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
-                                            temperature=0.7,
-                                            messages=chat_history,
-                                            functions=function_descriptions,
-                                            function_call="auto")
-    
-    # If the response is not a function call, append assistant's response to the chat history
-    if response["choices"][0]["finish_reason"] != "function_call":
-        append_and_shift(chat_history, {"role": "assistant", "content": response['choices'][0]['message']['content']}, max_len=10)
-    
-    # If there was a function call, append it to the message history and run the response again
-    while response["choices"][0]["finish_reason"] == "function_call":
-        function_response = function_call(response)
-        append_and_shift(chat_history, {"role": "function", "name": response["choices"][0]["message"]["function_call"]["name"], "content": json.dumps(function_response)}, max_len=10)
+    try:
+        # Append the user prompt to the chat history
+        append_and_shift(chat_history, {"role": "user", "content": prompt}, max_len=10)
+        
+        # Send request to the ChatGPT API
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
                                                 temperature=0.7,
                                                 messages=chat_history,
                                                 functions=function_descriptions,
                                                 function_call="auto")
+        
+        # If the response is not a function call, append assistant's response to the chat history
+        if response["choices"][0]["finish_reason"] != "function_call":
+            append_and_shift(chat_history, {"role": "assistant", "content": response['choices'][0]['message']['content']}, max_len=10)
+        
+        # If there was a function call, append it to the message history and run the response again
+        while response["choices"][0]["finish_reason"] == "function_call":
+            function_response = function_call(response)
+            append_and_shift(chat_history, {"role": "function", "name": response["choices"][0]["message"]["function_call"]["name"], "content": json.dumps(function_response)}, max_len=10)
+            response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
+                                                    temperature=0.7,
+                                                    messages=chat_history,
+                                                    functions=function_descriptions,
+                                                    function_call="auto")
+        
+        # Return the updated chat history and the generated response content (limited to 2000 characters)
+        return chat_history, response['choices'][0]['message']['content'][:2000]
     
-    # Return the updated chat history and the generated response content (limited to 2000 characters)
-    return chat_history, response['choices'][0]['message']['content'][:2000]
-    
-    # except Exception as e:
-    #     # Handle any exceptions by returning an error message
-    #     return f'Looks like there was an error: {e}'
+    except Exception as e:
+        # Handle any exceptions by returning an error message
+        return chat_history, f'Looks like there was an error: {e}'
 
     
 def function_call(ai_response):
