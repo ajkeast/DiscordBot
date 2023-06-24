@@ -71,8 +71,6 @@ async def juice(ctx, pass_context=True):
     value = int(val)
     embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
     for i in range(5):
-        print(df_juice.iloc[i][0])
-        print(bot.get_user(df_juice.iloc[i][0]))
         embed.add_field(name=bot.get_user(int(df_juice.iloc[i][0])),value=int(df_juice.iloc[i][1]),inline=False)
     txt = f'1-Day Highscore: {bot.get_user(int(highscore_user_id))}🧃{value} mins'
     embed.set_footer(text=txt)
@@ -141,7 +139,7 @@ async def cronjob1():
     flag_first = False
     print('flag_first reset')
 
-# Function definitions
+# Function definitions for reading, writing, and manipulating the data in SQL database
 
 def connect_db():
     # connect to database

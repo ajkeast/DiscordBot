@@ -7,47 +7,98 @@ load_dotenv()
 openai.api_key = os.getenv('CHAT_API_KEY')
 
 def call_chatGPT(chat_history, prompt):
-    """call ChatGPT API and with error handeling blocks"""
+    """Call ChatGPT API with error handling blocks.
+    
+    This function interacts with the ChatGPT API to generate responses based on the given chat history
+    and a prompt. It appends the prompt to the chat history, sends the request to the API, and processes
+    the response. If there is a function call in the response, it appends the function response to the chat
+    history and sends the updated history again. The function returns the updated chat history and the
+    generated response.
+    
+    Args:
+        chat_history (list of dict): List of dictionaries representing the chat history.
+        prompt (str): The user prompt to be sent to the ChatGPT API.
+    
+    Returns:
+        tuple: A tuple containing the updated chat history and the generated response.
+            chat_history (list): Updated chat history after appending new messages.
+            response_content (str): The generated response content limited to 2000 characters.
+    """
+    
     try:
-        append_and_shift(chat_history,{"role": "user", "content": prompt},max_len=10)
+        # Append the user prompt to the chat history
+        append_and_shift(chat_history, {"role": "user", "content": prompt}, max_len=10)
+        
+        # Send request to the ChatGPT API
         response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
                                                 temperature=0.7,
                                                 messages=chat_history,
                                                 functions=function_descriptions,
                                                 function_call="auto")
         
+        # If the response is not a function call, append assistant's response to the chat history
         if response["choices"][0]["finish_reason"] != "function_call":
-            append_and_shift(chat_history,{"role": "assistant", "content": response['choices'][0]['message']['content']},max_len=10)
+            append_and_shift(chat_history, {"role": "assistant", "content": response['choices'][0]['message']['content']}, max_len=10)
         
         # If there was a function call, append it to the message history and run the response again
         while response["choices"][0]["finish_reason"] == "function_call":
             function_response = function_call(response)
-            append_and_shift(chat_history,{"role": "function","name": response["choices"][0]["message"]["function_call"]["name"],"content": json.dumps(function_response)},max_len=10)
+            append_and_shift(chat_history, {"role": "function", "name": response["choices"][0]["message"]["function_call"]["name"], "content": json.dumps(function_response)}, max_len=10)
             response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613",
                                                     temperature=0.7,
                                                     messages=chat_history,
                                                     functions=function_descriptions,
-                                                    function_call="auto")   
-        return chat_history, response['choices'][0]['message']['content'][:2000] # limited to 2000 characters for discord
+                                                    function_call="auto")
+        
+        # Return the updated chat history and the generated response content (limited to 2000 characters)
+        return chat_history, response['choices'][0]['message']['content'][:2000]
+    
     except Exception as e:
+        # Handle any exceptions by returning an error message
         return f'Looks like there was an error: {e}'
+
     
 def function_call(ai_response):
+    """Process the function call in the AI response and invoke the corresponding function.
+    
+    This function extracts the function call details from the AI response and invokes the appropriate
+    function based on the function name. The function call typically includes the function name and its
+    corresponding arguments. The supported functions in this implementation are:
+    - get_todays_date: Retrieves today's date based on the provided timezone.
+    - get_current_weather: Retrieves the current weather based on the provided location.
+    - get_minecraft_server: Retrieves information about a Minecraft server based on the provided IP address.
+    
+    Args:
+        ai_response (json): The AI response containing the function call details.
+    
+    Returns:
+        The result of the invoked function (must be json) or None if the function name is not supported.
+    """
+    
+    # Extract function call details from the AI response
     function_call = ai_response["choices"][0]["message"]["function_call"]
     function_name = function_call["name"]
     arguments = function_call["arguments"]
+    
+    # Process the function call based on the function name
     if function_name == "get_todays_date":
+        # Extract the timezone argument and invoke the get_todays_date function
         timezone = eval(arguments).get("timezone")
         return get_todays_date(timezone)
     elif function_name == "get_current_weather":
+        # Extract the location argument and invoke the get_current_weather function
         location = eval(arguments).get("location")
         return get_current_weather(location)
     elif function_name == "get_minecraft_server":
+        # Extract the IP address argument and invoke the get_minecraft_server function
         ip_address = eval(arguments).get("ip_address")
         return get_minecraft_server(ip_address)
     else:
-        return
+        # If the function name is not supported, return None
+        return None
 
+
+# .json of all functions & arguments with descriptions so the model can intelligently decide when and how to invoke
 function_descriptions = [
     {
         "name": "get_todays_date",
@@ -122,6 +173,8 @@ def get_current_weather(location, unit="fahrenheit"):
     return json.dumps(weather)
 
 def get_minecraft_server(ip_address='51.81.151.253:25583'):
+    """Get the server details based on the IP address """
+    
     url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
 
     payload = { "host": ip_address }
