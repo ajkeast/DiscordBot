@@ -143,11 +143,12 @@ function_descriptions = [
     }
 ]
 
-def get_todays_date(timezone='Eastern'):
-    """Get the current date"""
+def get_todays_date(timezone='US/Eastern'):
+    """Get the current date and time based on the timezone"""
+    tz = pytz.timezone(timezone)
     today = {
         "timezone": timezone,
-        "today": str(datetime.datetime.today())
+        "today": str(datetime.datetime.now(tz))
     }
     return json.dumps(today)
 
