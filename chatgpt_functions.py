@@ -107,8 +107,9 @@ function_descriptions = [
         "parameters": {
             "type": "object",
             "properties": {
-                "timezone": {"type":"string", "description":"location where a common standard time is used "}
+                "timezone": {"type":"string", "description":"location where a common standard time is used. Default to US/Eastern if not specified"}
             },
+             "required": ["timezone"]
         },
     },
     {
