@@ -56,7 +56,7 @@ def call_chatGPT(chat_history, prompt):
     
     except Exception as e:
         # Handle any exceptions by returning an error message
-        return chat_history, f'Looks like there was an error: {e}'
+        return chat_history, f'Looks like there was an error: {repr(e)}'
 
     
 def function_call(ai_response):
@@ -120,7 +120,7 @@ function_descriptions = [
             "properties": {
                 "location": {
                     "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA",
+                    "description": "The city and state, ex. San Francisco, CA. Default is Boston, MA when not specified.",
                 },
                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
@@ -195,8 +195,8 @@ def get_minecraft_server(ip_address='51.81.151.253:25583'):
 
 def append_and_shift(arr, v, max_len):
     """
-    Append a value to an array up to a set maximum length.
-    If the maximum length is reached, shift out the second earliest entry.
+    Append a value (v) to an array (arr) up to a set maximum length (max_len).
+    If the maximum length is reached, shift out the second earliest registry.
     """
     arr.append(v)
     if len(arr) > max_len:
