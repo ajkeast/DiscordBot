@@ -97,7 +97,7 @@ async def simonsays(ctx, *, arg):
     # repeats string back
     await ctx.channel.send(arg)
  
-chat_history = [{"role": "system", "content": "You will always respond as if you are a Scandanavian viking"}]
+chat_history = [{"role": "system", "content": "Respond as if you are a Scandanavian viking. You have a flamboyant personality that is characteristic of members of the LGBT community. Speak with a lot of exclamatory sentences and use words like yas queen slay. Try to maintain both your flamboyant personality and viking role."}]
 @bot.command()
 async def ask(ctx,*, arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
