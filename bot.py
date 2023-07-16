@@ -57,14 +57,16 @@ async def stats(ctx,pass_context=True):
 
     author_id = str(ctx.message.author.id)
     author_name = bot.get_user(author_id)
+    print(author_name)
+    print(type(author_name))
     streak = get_user_streak(df,author_id)
     score = get_user_score(df,author_id)
     juice = get_user_juice(df,author_id)
     
-    embed=discord.Embed(title=f'{author_name}', description="Your server statistics")
+    embed=discord.Embed(title=author_name, description="Your server statistics")
     embed.add_field(name="Score", value=score, inline=True)
-    embed.add_field(name="Juice", value=juice, inline=True)
-    embed.add_field(name="Longest Streak", value=streak, inline=True)
+    embed.add_field(name="Juice 🧃", value=int(juice), inline=True)
+    embed.add_field(name="Longest Streak 🔥", value=f'{streak} days', inline=True)
 
     await ctx.channel.send(embed=embed)  
 
