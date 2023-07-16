@@ -204,7 +204,7 @@ def get_user_streak(df,user_id):
 
     df = df[(df==user_id).any(axis=1)]
     id = df['streak_counter'].idxmax()
-    user_streak = df.loc[id][5]
+    user_streak = df.loc[id][4]
 
     return user_streak
 
