@@ -57,8 +57,8 @@ async def stats(ctx,pass_context=True):
 
     author_id = str(ctx.message.author.id)
     author = bot.get_user(int(author_id))
-    print(author.avatar)
-    print(str(author.avatar))
+    print(author.display_avatar)
+    print(str(author.display_avatar))
     streak = get_user_streak(df,author_id)
     score = get_user_score(df,author_id)
     juice = get_user_juice(df,author_id)
