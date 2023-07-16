@@ -48,7 +48,25 @@ async def score(ctx,pass_context=True):
                         inline=False)
     txt = f'Most recent: {bot.get_user(int(df.user_id.iloc[-1]))} 🔥 {streak} days'
     embed.set_footer(text=txt)
-    await ctx.channel.send(embed=embed) 
+    await ctx.channel.send(embed=embed)
+
+@bot.command()
+async def stats(ctx,pass_context=True):
+    # reads SQL database and generates an embed with list of names and scores
+    df = get_db('firstlist_id')
+
+    author_id = str(ctx.message.author.id)
+    author_name = bot.get_user(author_id)
+    streak = get_user_streak(df,author_id)
+    score = get_user_score(df,author_id)
+    juice = get_user_juice(df,author_id)
+    
+    embed=discord.Embed(title=f'{author_name}', description="Your server statistics")
+    embed.add_field(name="Score", value=score, inline=True)
+    embed.add_field(name="Juice", value=juice, inline=True)
+    embed.add_field(name="Longest Streak", value=streak, inline=True)
+
+    await ctx.channel.send(embed=embed)  
 
 @bot.command()
 async def donation(ctx):
@@ -178,6 +196,18 @@ def get_streak(df):
 
     return df.streak_counter.iloc[-1]
 
+def get_user_streak(df,user_id):
+    # find streak of repeated user_ids
+    df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
+    df['streak_id'] = df['start_of_streak'].cumsum()
+    df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
+
+    df = df[(df==user_id).any(axis=1)]
+    id = df['streak_counter'].idxmax()
+    user_streak = df.loc[id][5]
+
+    return user_streak
+
 def get_juice(df):
     # localize to UTC time and convert to EST
     df['timesent'] = df['timesent'].dt.tz_localize('utc').dt.tz_convert('US/Eastern')
@@ -194,6 +224,28 @@ def get_juice(df):
     df_juice = df_grouped.sort_values('Juice',ascending=False).iloc[0:len(df_grouped)]
 
     return df_juice,highscore_user,highscore_value
+
+def get_user_juice(df,user_id):    
+    # localize to UTC time and convert to EST
+    df['timesent'] = df['timesent'].dt.tz_localize('utc').dt.tz_convert('US/Eastern')
+    hours = df['timesent'].dt.hour
+    minutes = df['timesent'].dt.minute
+    seconds = df['timesent'].dt.second
+    total_mins = (seconds/60)+minutes+(hours*60)
+    df['Juice'] = total_mins
+
+    df = df[['user_id','Juice']].groupby('user_id',as_index=False).sum()
+    df = df.sort_values('Juice',ascending=False).iloc[0:len(df)]
+    df = df[(df==user_id).any(axis=1)]
+
+    user_juice = df.iloc[0][1]
+
+    return user_juice
+
+def get_user_score(df,user_id):
+    df = df['user_id'].value_counts().to_dict()
+    user_score = df[user_id]
+    return user_score
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
