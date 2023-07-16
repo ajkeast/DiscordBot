@@ -171,7 +171,6 @@ def get_current_weather(location, unit="fahrenheit"):
                "humidity":response.get("current").get("humidity"),
                "precip_inches":response.get("current").get("precip_in")
     }
-    print(response)
 
     return json.dumps(weather)
 
