@@ -63,7 +63,7 @@ async def stats(ctx,pass_context=True):
     
     embed=discord.Embed(title=author, description="Your server statistics")
     embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
-    embed.add_field(name="Score", value=score, inline=True)
+    embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
     embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
     embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
 
