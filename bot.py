@@ -56,14 +56,13 @@ async def stats(ctx,pass_context=True):
     df = get_db('firstlist_id')
 
     author_id = str(ctx.message.author.id)
-    author_name = bot.get_user(int(author_id))
-    print(author_name)
-    print(type(author_name))
+    author = bot.get_user(int(author_id))
     streak = get_user_streak(df,author_id)
     score = get_user_score(df,author_id)
     juice = get_user_juice(df,author_id)
     
-    embed=discord.Embed(title=author_name, description="Your server statistics")
+    embed=discord.Embed(title=author, description="Your server statistics")
+    embed.set_thumbnail(url=author.avatar)
     embed.add_field(name="Score", value=score, inline=True)
     embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
     embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
