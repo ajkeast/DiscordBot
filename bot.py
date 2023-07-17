@@ -61,14 +61,14 @@ async def stats(ctx,arg=None,pass_context=True):
         streak = get_user_streak(df,author_id)
         score = get_user_score(df,author_id)
         juice = get_user_juice(df,author_id)
+
+        embed=discord.Embed(title=author, description="Your server statistics")
+        embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
+        embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
+        embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
+        embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
     else:
         print(arg)
-    
-    embed=discord.Embed(title=author, description="Your server statistics")
-    embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
-    embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
-    embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
-    embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
 
     await ctx.channel.send(embed=embed)  
 
