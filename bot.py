@@ -5,7 +5,7 @@ from discord.ext import commands
 from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
 import aiocron                                              # Schedule events
-import os, string, time, random, asyncio                    # Core python libraries
+import os, string, time, random, asyncio, re                # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
 from chatgpt_functions import *                             # function calls for ChatGPT API
 from dotenv import load_dotenv                              # Load .env
@@ -55,24 +55,24 @@ async def stats(ctx,*, arg=None, pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
 
-    if arg == None:
-        author_id = str(ctx.message.author.id)
-        author = bot.get_user(int(author_id))
-        streak = get_user_streak(df,author_id)
-        score = get_user_score(df,author_id)
-        juice = get_user_juice(df,author_id)
-
-        embed=discord.Embed(title=author, description="Your server statistics")
-        embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
-        embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
-        embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
-        embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
-
-        await ctx.channel.send(embed=embed) 
+    mention = re.findall(r"<(\d+)>", arg)
+    if len(mention) > 0:
+        author_id = mention
     else:
-        print(str(arg))
+        author_id = str(ctx.message.author.id)
 
-     
+    author = bot.get_user(int(author_id))
+    streak = get_user_streak(df,author_id)
+    score = get_user_score(df,author_id)
+    juice = get_user_juice(df,author_id)
+
+    embed=discord.Embed(title=author, description="Your server statistics")
+    embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
+    embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
+    embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
+    embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
+
+    await ctx.channel.send(embed=embed) 
 
 @bot.command()
 async def donation(ctx):
