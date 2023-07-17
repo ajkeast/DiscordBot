@@ -56,6 +56,7 @@ async def stats(ctx,*, arg='None', pass_context=True):
     df = get_db('firstlist_id')
 
     mention = re.findall(r"<(\d+)>", arg)
+    print(mention)
     if len(mention) > 0:
         author_id = mention[0]
     else:
