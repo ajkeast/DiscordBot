@@ -51,12 +51,13 @@ async def score(ctx,pass_context=True):
     await ctx.channel.send(embed=embed)
 
 @bot.command()
-async def stats(ctx,*, arg='None', pass_context=True):
+async def stats(ctx,*, args='None', pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
-
-    print(arg)
-    mention = re.findall(r"<(\d+)>", str(arg))
+    print(args)
+    print(type(args))
+    print(len(args))
+    mention = re.findall(r"<(\d+)>", " ".join(args))
     print(mention)
     if len(mention) > 0:
         author_id = mention[0]
