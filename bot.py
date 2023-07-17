@@ -67,10 +67,12 @@ async def stats(ctx,arg=None,pass_context=True):
         embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
         embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
         embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
+
+        await ctx.channel.send(embed=embed) 
     else:
         print(arg)
 
-    await ctx.channel.send(embed=embed)  
+     
 
 @bot.command()
 async def donation(ctx):
