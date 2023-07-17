@@ -51,15 +51,18 @@ async def score(ctx,pass_context=True):
     await ctx.channel.send(embed=embed)
 
 @bot.command()
-async def stats(ctx,pass_context=True):
+async def stats(ctx,arg=None,pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
 
-    author_id = str(ctx.message.author.id)
-    author = bot.get_user(int(author_id))
-    streak = get_user_streak(df,author_id)
-    score = get_user_score(df,author_id)
-    juice = get_user_juice(df,author_id)
+    if arg == None:
+        author_id = str(ctx.message.author.id)
+        author = bot.get_user(int(author_id))
+        streak = get_user_streak(df,author_id)
+        score = get_user_score(df,author_id)
+        juice = get_user_juice(df,author_id)
+    else:
+        print(arg)
     
     embed=discord.Embed(title=author, description="Your server statistics")
     embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
