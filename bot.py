@@ -55,7 +55,8 @@ async def stats(ctx,*, arg='None', pass_context=True):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
 
-    mention = re.findall(r"<(\d+)>", arg)
+    print(arg)
+    mention = re.findall(r"<(\d+)>", str(arg))
     print(mention)
     if len(mention) > 0:
         author_id = mention[0]
