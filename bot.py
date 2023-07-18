@@ -56,7 +56,7 @@ async def stats(ctx,*, args=None, pass_context=True):
     df = get_db('firstlist_id')
 
     if len(ctx.message.mentions) > 0:
-        author_id = ctx.message.mentions[0].id
+        author_id = str(ctx.message.mentions[0].id)
         print(author_id)
     else:
         author_id = str(ctx.message.author.id)
