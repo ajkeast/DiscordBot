@@ -61,18 +61,22 @@ async def stats(ctx,*, args=None, pass_context=True):
     else:
         author_id = str(ctx.message.author.id)
 
-    author = bot.get_user(int(author_id))
-    streak = get_user_streak(df,author_id)
-    score = get_user_score(df,author_id)
-    juice = get_user_juice(df,author_id)
+    try:
+        author = bot.get_user(int(author_id))
+        streak = get_user_streak(df,author_id)
+        score = get_user_score(df,author_id)
+        juice = get_user_juice(df,author_id)
 
-    embed=discord.Embed(title=author, description="Your server statistics")
-    embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
-    embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
-    embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
-    embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
+        embed=discord.Embed(title=author, description="Your server statistics")
+        embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
+        embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
+        embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
+        embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
 
-    await ctx.channel.send(embed=embed) 
+        await ctx.channel.send(embed=embed)
+    except Exception as error:
+        print("An error occurred:", type(error).__name__)
+        await ctx.channel.send('This user has never gotten a first!')
 
 @bot.command()
 async def donation(ctx):
