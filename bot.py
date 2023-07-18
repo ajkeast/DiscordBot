@@ -5,10 +5,11 @@ from discord.ext import commands
 from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
 import aiocron                                              # Schedule events
-import os, string, time, random, asyncio, re                # Core python libraries
+import os,io,base64,string,time,random,asyncio,re           # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
 from chatgpt_functions import *                             # function calls for ChatGPT API
 from dotenv import load_dotenv                              # Load .env
+import matplotlib.pyplot as plt
 
 flag_first=True                                             # initialize first flag
 load_dotenv()
@@ -136,6 +137,46 @@ async def ask(ctx,*, arg, pass_context=True):
         await ctx.send(response)
     else:
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
+
+@bot.command()
+async def graph(ctx):
+    # Initialize IO
+    data_stream = io.BytesIO()
+
+    df_first = get_db('firstlist_id')
+    df_first['_1st to date'] = df_first.groupby('user_id').cumcount()+1
+
+    # Assuming your DataFrame is named df_first
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Group the DataFrame by 'user_id'
+    grouped_data = df_first.groupby('user_id')
+
+    # Iterate over each unique 'user_id' and plot the corresponding data
+    for user_id, data in grouped_data:
+        # Extract x-axis and y-axis values for the current 'user_id'
+        x_values = data['timesent']
+        y_values = data['_1st to date']
+
+        # Plot the line chart for the current 'user_id'
+        ax.plot(x_values, y_values, label=f'User ID: {user_id}')
+
+    # Customize the plot as needed
+    ax.set_xlabel('Date')
+    ax.set_ylabel('# of firsts')
+    ax.set_title('Firsts to Date')
+
+    plt.savefig(data_stream, format='png', bbox_inches="tight", dpi = 80)
+
+    ## Create file
+    # Reset point back to beginning of stream
+    data_stream.seek(0)
+    chart = discord.File(data_stream,filename="first_graph.png")
+    embed=discord.Embed(title='Firsts to Date',color=0x395060)
+    embed.set_image(url="attachment://first_graph.png")
+
+    await ctx.send(embed=embed, file=chart)
+    
 
 
 @bot.command(name='1st', pass_context=True)
