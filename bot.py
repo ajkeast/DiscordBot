@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 
 flag_first=True                                             # initialize first flag
 load_dotenv()
-intents = discord.Intents.all()                                             # load .env
-bot = commands.Bot(intents=intents,command_prefix='_')                      # structure for bot commands
+intents = discord.Intents.all()                                             
+bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
 DiscordComponents(bot)                                      # structure for buttons
@@ -25,7 +25,7 @@ bot.remove_command('help')                                  # remove default hel
 @bot.command(name = 'help')
 async def a_help(ctx):
     # provides an embed of all availble commands
-    embed=discord.Embed(title="Commands", color=0x395060)
+    embed=discord.Embed(title="Commands", color=0x4d4170)
     embed.add_field(name="_1st", value="Try for first", inline=True)
     embed.add_field(name="_score", value="First leaderboard", inline=True)
     embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
@@ -42,7 +42,7 @@ async def score(ctx,pass_context=True):
     df = get_db('firstlist_id')
     streak = get_streak(df)
     counts = df.user_id.value_counts()
-    embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x395060)
+    embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x4d4170)
     for i in range(5):  # display top 5
         embed.add_field(name=bot.get_user(int(counts.index[i])),
                         value=counts[i],
@@ -68,7 +68,7 @@ async def stats(ctx,*, args=None, pass_context=True):
         score = get_user_score(df,author_id)
         juice = get_user_juice(df,author_id)
 
-        embed=discord.Embed(title=author, description="Your server statistics")
+        embed=discord.Embed(title=author, description="Your server statistics", color=0x4d4170)
         embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
         embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
         embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
@@ -82,7 +82,7 @@ async def stats(ctx,*, args=None, pass_context=True):
 @bot.command()
 async def donation(ctx):
     # provides embed of all donations
-    embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x395060)
+    embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x4d4170)
     embed.add_field(name='Mike S',value='$8.01',inline=False)
     embed.add_field(name='Danny E',value='$8.00',inline=False)
     embed.add_field(name='Sammy T',value='$6.90',inline=False)
@@ -98,7 +98,7 @@ async def juice(ctx, pass_context=True):
     df = get_db('firstlist_id')
     df_juice,highscore_user_id,val = get_juice(df)
     value = int(val)
-    embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x395060)
+    embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x4d4170)
     for i in range(5):
         embed.add_field(name=bot.get_user(int(df_juice.iloc[i][0])),value=int(df_juice.iloc[i][1]),inline=False)
     txt = f'1-Day Highscore: {bot.get_user(int(highscore_user_id))}🧃{value} mins'
@@ -172,7 +172,7 @@ async def graph(ctx):
     # Reset point back to beginning of stream
     data_stream.seek(0)
     chart = discord.File(data_stream,filename="first_graph.png")
-    embed=discord.Embed(title='Firsts to Date',color=0x395060)
+    embed=discord.Embed(title='Firsts to Date',color=0x4d4170)
     embed.set_image(url="attachment://first_graph.png")
 
     await ctx.send(embed=embed, file=chart)
