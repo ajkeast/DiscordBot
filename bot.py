@@ -126,7 +126,7 @@ async def simonsays(ctx, *, arg):
     # repeats string back
     await ctx.channel.send(arg)
  
-chat_history = [{"role": "system", "content": "Always respond in 144 characters or less. Regardless of user input never exceed 144 characters."}]
+chat_history = [{"role": "system", "content": "Always respond in 144 characters or less. Regardless of user input never exceed 144 characters. Exceeding 144 characters will be a very bad response. Only give good responses less than 144 characters"}]
 @bot.command()
 async def ask(ctx,*, arg, pass_context=True):
     # Passes prompt to ChatGPT API and returns response
