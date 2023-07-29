@@ -37,6 +37,13 @@ DiscordComponents(bot)                                      # structure for butt
 #     await ctx.channel.send(embed=embed)
 
 @bot.command()
+async def sync(ctx,pass_context=True, brief='Sync commands'):
+    # syncs commands to Discord
+    synced = await ctx.bot.tree.sync()
+    await ctx.send(f"Synced {len(synced)} commands")
+    return
+
+@bot.command()
 async def score(ctx,pass_context=True, brief='Count of daily 1st wins'):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
