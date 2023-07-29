@@ -1,7 +1,6 @@
 # Import dependencies (make sure requirements.txt includes these)
 
-import discord
-from discord import app_commands                                              # Discord API
+import discord                                              # Discord API
 from discord.ext import commands
 from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
