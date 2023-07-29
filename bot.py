@@ -22,19 +22,19 @@ DiscordComponents(bot)                                      # structure for butt
 
 # Bot Commands
 
-@bot.command(name = 'help')
-async def a_help(ctx):
-    # provides an embed of all availble commands
-    embed=discord.Embed(title="Commands", color=0x4d4170)
-    embed.add_field(name="_1st", value="Try for first", inline=True)
-    embed.add_field(name="_score", value="First leaderboard", inline=True)
-    embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
-    embed.add_field(name="_hello", value="Say hi", inline=True)
-    embed.add_field(name="_dash", value="Server stats", inline=True)
-    embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
-    embed.add_field(name="_juice", value="Juice board", inline=True)
-    embed.add_field(name="_donation", value="Our patrons", inline=True)
-    await ctx.channel.send(embed=embed)        
+# @bot.command(name = 'help')
+# async def a_help(ctx):
+#     # provides an embed of all availble commands
+#     embed=discord.Embed(title="Commands", color=0x4d4170)
+#     embed.add_field(name="_1st", value="Try for first", inline=True)
+#     embed.add_field(name="_score", value="First leaderboard", inline=True)
+#     embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
+#     embed.add_field(name="_hello", value="Say hi", inline=True)
+#     embed.add_field(name="_dash", value="Server stats", inline=True)
+#     embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
+#     embed.add_field(name="_juice", value="Juice board", inline=True)
+#     embed.add_field(name="_donation", value="Our patrons", inline=True)
+#     await ctx.channel.send(embed=embed)
 
 @bot.command()
 async def score(ctx,pass_context=True, brief='Count of daily 1st wins'):
