@@ -17,7 +17,8 @@ intents = discord.Intents.all()
 bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
-DiscordComponents(bot)                                      # structure for buttons
+DiscordComponents(bot)    
+tree = commands.CommandTree(bot)                                  # structure for buttons
 # bot.remove_command('help')                                  # remove default help command
 
 # Bot Commands
