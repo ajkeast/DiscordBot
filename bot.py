@@ -18,7 +18,7 @@ bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot 
 discord.Intents.all()
 discord.MemberCacheFlags.all()
 DiscordComponents(bot)                                      # structure for buttons
-bot.remove_command('help')                                  # remove default help command
+# bot.remove_command('help')                                  # remove default help command
 
 # Bot Commands
 
@@ -37,7 +37,7 @@ async def a_help(ctx):
     await ctx.channel.send(embed=embed)        
 
 @bot.command()
-async def score(ctx,pass_context=True):
+async def score(ctx,pass_context=True, brief='Count of daily 1st wins'):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
     streak = get_streak(df)
@@ -52,7 +52,7 @@ async def score(ctx,pass_context=True):
     await ctx.channel.send(embed=embed)
 
 @bot.command()
-async def stats(ctx,*, args=None, pass_context=True):
+async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual users stats'):
     # reads SQL database and generates an embed with list of names and scores
     df = get_db('firstlist_id')
 
@@ -80,7 +80,7 @@ async def stats(ctx,*, args=None, pass_context=True):
         await ctx.channel.send('This user has never gotten a first!')
 
 @bot.command()
-async def donation(ctx):
+async def donation(ctx, brief='Get a list of all donations'):
     # provides embed of all donations
     embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x4d4170)
     embed.add_field(name='Mike S',value='$8.01',inline=False)
@@ -93,7 +93,7 @@ async def donation(ctx):
     await ctx.channel.send(embed=embed)    
 
 @bot.command()
-async def juice(ctx, pass_context=True):
+async def juice(ctx, pass_context=True, brief='Get the server juice scores'):
     # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
     df = get_db('firstlist_id')
     df_juice,highscore_user_id,val = get_juice(df)
@@ -118,17 +118,18 @@ async def hello(ctx):
     await ctx.channel.send(msg)
 
 @bot.command()
-async def ping(ctx):
+async def ping(ctx, brief='Ping the bot'):
+    # response with pong
     await ctx.channel.send('pong')
 
 @bot.command()
-async def simonsays(ctx, *, arg):
+async def simonsays(ctx, *, arg, pass_context=True, brief='I will repeat after you'):
     # repeats string back
     await ctx.channel.send(arg)
  
 chat_history = [{"role": "system", "content": "Always respond in 144 characters or less. Regardless of user input never exceed 144 characters. Exceeding 144 characters will be a very bad response. Only give good responses less than 144 characters"}]
 @bot.command()
-async def ask(ctx,*, arg, pass_context=True):
+async def ask(ctx,*, arg, pass_context=True, brief='Ask ChatGPT'):
     # Passes prompt to ChatGPT API and returns response
     global chat_history
     if str(ctx.message.author.id) in IDCARD:
@@ -139,7 +140,7 @@ async def ask(ctx,*, arg, pass_context=True):
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
 
 @bot.command()
-async def graph(ctx):
+async def graph(ctx, brief='Get a graph of the firsts to date'):
     # Initialize IO
     data_stream = io.BytesIO()
 
@@ -179,7 +180,7 @@ async def graph(ctx):
     
 
 
-@bot.command(name='1st', pass_context=True)
+@bot.command(name='1st', pass_context=True, brief='Claim your first today')
 async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
     global flag_first
