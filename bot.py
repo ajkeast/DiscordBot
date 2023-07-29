@@ -1,6 +1,7 @@
 # Import dependencies (make sure requirements.txt includes these)
 
-import discord                                              # Discord API
+import discord
+from discord import app_commands                                              # Discord API
 from discord.ext import commands
 from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
@@ -13,36 +14,29 @@ import matplotlib.pyplot as plt
 
 flag_first=True                                             # initialize first flag
 load_dotenv()
-intents = discord.Intents.all()                                             
+intents = discord.Intents.all()
+                                            
 bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
-DiscordComponents(bot)    
-tree = commands.CommandTree(bot)                                  # structure for buttons
-# bot.remove_command('help')                                  # remove default help command
+DiscordComponents(bot)                                      # structure for buttons
+bot.remove_command('help')                                  # remove default help command
 
 # Bot Commands
 
-# @bot.command(name = 'help')
-# async def a_help(ctx):
-#     # provides an embed of all availble commands
-#     embed=discord.Embed(title="Commands", color=0x4d4170)
-#     embed.add_field(name="_1st", value="Try for first", inline=True)
-#     embed.add_field(name="_score", value="First leaderboard", inline=True)
-#     embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
-#     embed.add_field(name="_hello", value="Say hi", inline=True)
-#     embed.add_field(name="_dash", value="Server stats", inline=True)
-#     embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
-#     embed.add_field(name="_juice", value="Juice board", inline=True)
-#     embed.add_field(name="_donation", value="Our patrons", inline=True)
-#     await ctx.channel.send(embed=embed)
-
-@bot.command()
-async def sync(ctx,pass_context=True, brief='Sync commands'):
-    # syncs commands to Discord
-    synced = await ctx.bot.tree.sync()
-    await ctx.send(f"Synced {len(synced)} commands")
-    return
+@bot.command(name = 'help')
+async def a_help(ctx):
+    # provides an embed of all availble commands
+    embed=discord.Embed(title="Commands", color=0x4d4170)
+    embed.add_field(name="_1st", value="Try for first", inline=True)
+    embed.add_field(name="_score", value="First leaderboard", inline=True)
+    embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
+    embed.add_field(name="_hello", value="Say hi", inline=True)
+    embed.add_field(name="_dash", value="Server stats", inline=True)
+    embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
+    embed.add_field(name="_juice", value="Juice board", inline=True)
+    embed.add_field(name="_donation", value="Our patrons", inline=True)
+    await ctx.channel.send(embed=embed)
 
 @bot.command()
 async def score(ctx,pass_context=True, brief='Count of daily 1st wins'):
@@ -208,6 +202,8 @@ async def first(ctx):
 async def on_ready():
     print("Live: " + bot.user.name)
     DiscordComponents(bot)
+
+
 
 # Cron job to reset first flag each night
 # EST time zone offset is UTC-05. EDT time zone offset is UTC-04.
