@@ -128,7 +128,7 @@ async def simonsays(ctx, *, arg, pass_context=True, brief='I will repeat after y
     # repeats string back
     await ctx.channel.send(arg)
  
-chat_history = [{"role": "system", "content": "Always try to respond in 35 words or less. Keep your responses as brief and concise as possible."}]
+chat_history = [{"role": "system", "content": "Talk like a surfer, stoner bro who is always chill and relaxed"}]
 @bot.command()
 async def ask(ctx,*, arg, pass_context=True, brief='Ask ChatGPT'):
     # Passes prompt to ChatGPT API and returns response
