@@ -3,6 +3,7 @@ import openai                       # chatGPT API
 from dotenv import load_dotenv      # load .env
 import pytz                         # timezones
 import requests                     # http queries
+import tweepy                       # twitter API
 
 load_dotenv()
 openai.api_key = os.getenv('CHAT_API_KEY')
@@ -94,6 +95,10 @@ def function_call(ai_response):
         # Extract the IP address argument and invoke the get_minecraft_server function
         ip_address = eval(arguments).get("ip_address")
         return get_minecraft_server(ip_address)
+    elif function_name == "post_tweet":
+        # Extract the tweet message argument and invoke post_tweet function
+         message = eval(arguments).get("message")
+         return post_tweet(message)
     else:
         # If the function name is not supported, return None
         return None
@@ -140,6 +145,20 @@ function_descriptions = [
                 "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
             "required": ["ip_address"]
+        },
+    },
+    {
+        "name": "post_tweet",
+        "description": "Takes a message and posts it to twitter. returns the tweet url",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "the message that will be tweeted",
+                },
+            },
+            "required": ["message"],
         },
     }
 ]
@@ -191,6 +210,20 @@ def get_minecraft_server(ip_address='51.81.151.253:25583'):
 
     return response.json()
 
+auth = tweepy.OAuthHandler(os.getenv('TWITTER_API_KEY'),os.getenv('TWITTER_API_KEY_SECRET'))
+auth.set_access_token(os.getenv('TWITTER_ACCESS_KEY'),os.getenv('TWITTER_ACCESS_KEY_SECRET'))
+twitter = tweepy.API(auth)
+
+def post_tweet(message):
+    try:
+        tweet = twitter.update_status(message)
+        tweet_id = tweet.id_str
+        tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
+        tweet_json = {"Tweet URL":tweet_url}
+        return json.dumps(tweet_json)
+    except Exception as e:
+        exception_json = {"Error":f'{repr(e)}'}
+        return json.dumps(exception_json)
 
 def append_and_shift(arr, v, max_len):
     """
