@@ -195,7 +195,7 @@ def get_current_weather(location, unit="fahrenheit"):
 
 def get_minecraft_server(ip_address='51.81.151.253:25583'):
     """Get the server details based on the IP address """
-    
+   
     url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
 
     payload = { "host": ip_address }
@@ -220,7 +220,9 @@ def post_tweet(message):
         tweet_id = tweet.id_str
         tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
         tweet_json = {"Tweet URL":tweet_url}
+        print(tweet_url)
         return json.dumps(tweet_json)
+
     except Exception as e:
         exception_json = {"Error":f'{repr(e)}'}
         return json.dumps(exception_json)
