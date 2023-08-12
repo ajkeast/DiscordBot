@@ -223,10 +223,11 @@ def post_tweet(message):
     try:
         print(message)
         tweet = twitter.create_tweet(text=message)
+        tweet_text = tweet.data['text']
         tweet_id = tweet.data['id']
         tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
-        tweet_json = {"Tweet_URL":tweet_url,
-                      "Tweet_id":tweet_id,
+        tweet_json = {"Tweet_text":tweet_text,
+                      "Tweet_URL":tweet_url,
                       "Tweet_Status":"Complete"}
         return json.dumps(tweet_json)
 
