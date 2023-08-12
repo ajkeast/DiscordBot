@@ -142,14 +142,13 @@ function_descriptions = [
                     "type": "string",
                     "description": "ip address string",
                 },
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
             },
             "required": ["ip_address"]
         },
     },
     {
         "name": "post_tweet",
-        "description": "Takes a message and posts it to twitter. returns the tweet url",
+        "description": "Takes a message and posts it to twitter.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -226,7 +225,9 @@ def post_tweet(message):
         tweet = twitter.create_tweet(text=message)
         tweet_id = tweet.data['id']
         tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
-        tweet_json = {"Tweet URL":tweet_url}
+        tweet_json = {"Tweet_URL":tweet_url,
+                      "Tweet_id":tweet_id,
+                      "Tweet_Status":"Complete"}
         return json.dumps(tweet_json)
 
     except Exception as e:
