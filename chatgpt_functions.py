@@ -210,17 +210,23 @@ def get_minecraft_server(ip_address='51.81.151.253:25583'):
 
     return response.json()
 
-auth = tweepy.OAuthHandler(os.getenv('TWITTER_API_KEY'),os.getenv('TWITTER_API_KEY_SECRET'))
-auth.set_access_token(os.getenv('TWITTER_ACCESS_KEY'),os.getenv('TWITTER_ACCESS_KEY_SECRET'))
-twitter = tweepy.API(auth)
 
+TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
+TWITTER_API_KEY_SECRET = os.getenv('TWITTER_API_KEY_SECRET')
+TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
+TWITTER_ACCESS_TOKEN_SECRET = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+
+twitter = tweepy.Client(consumer_key=TWITTER_API_KEY,
+                        consumer_secret=TWITTER_API_KEY_SECRET, 
+                        access_token=TWITTER_ACCESS_TOKEN, 
+                        access_token_secret=TWITTER_ACCESS_TOKEN_SECRET)
 def post_tweet(message):
     try:
-        tweet = twitter.update_status(message)
-        tweet_id = tweet.id_str
+        print(message)
+        tweet = twitter.create_tweet(text=message)
+        tweet_id = tweet.data['id']
         tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
         tweet_json = {"Tweet URL":tweet_url}
-        print(tweet_url)
         return json.dumps(tweet_json)
 
     except Exception as e:
