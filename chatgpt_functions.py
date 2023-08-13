@@ -215,25 +215,30 @@ TWITTER_API_KEY_SECRET = os.getenv('TWITTER_API_KEY_SECRET')
 TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
 TWITTER_ACCESS_TOKEN_SECRET = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
 
-twitter = tweepy.Client(consumer_key=TWITTER_API_KEY,
-                        consumer_secret=TWITTER_API_KEY_SECRET, 
-                        access_token=TWITTER_ACCESS_TOKEN, 
-                        access_token_secret=TWITTER_ACCESS_TOKEN_SECRET)
+twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
+                        consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
+                        access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+                        access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET'))
+
 def post_tweet(message):
     try:
-        print(message)
-        tweet = twitter.create_tweet(text=message)
-        tweet_text = tweet.data['text']
-        tweet_id = tweet.data['id']
-        tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'
-        tweet_json = {"Tweet_text":tweet_text,
-                      "Tweet_URL":tweet_url,
-                      "Tweet_Status":"Complete"}
-        return json.dumps(tweet_json)
+        tweet = twitter.create_tweet(text=message)  # Create a tweet using the 'twitter' object
+        tweet_text = tweet.data['text']  # Get the tweet text
+        tweet_id = tweet.data['id']  # Get the tweet ID
+        tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'  # Construct the tweet URL
+        tweet_json = {
+            "Tweet_text": tweet_text,
+            "Tweet_URL": tweet_url,
+            "Tweet_Status": "Complete"
+        }  # Create a JSON-ready dictionary with tweet info
+        return json.dumps(tweet_json)  # Convert and return as JSON
 
     except Exception as e:
-        exception_json = {"Error":f'{repr(e)}'}
-        return json.dumps(exception_json)
+        exception_json = {"Error": repr(e)}  # Create an exception JSON
+        return json.dumps(exception_json)  # Convert and return as JSON
+
+# Assumes 'twitter' object and 'json' module are defined elsewhere
+
 
 def append_and_shift(arr, v, max_len):
     """
