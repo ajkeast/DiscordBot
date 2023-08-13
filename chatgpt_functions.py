@@ -7,6 +7,11 @@ import tweepy                       # twitter API
 
 load_dotenv()
 openai.api_key = os.getenv('CHAT_API_KEY')
+twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
+                        consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
+                        access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+                        access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+                        )
 
 def call_chatGPT(chat_history, prompt):
     """Call ChatGPT API with error handling blocks.
@@ -208,17 +213,6 @@ def get_minecraft_server(ip_address='51.81.151.253:25583'):
     print(response.json)
 
     return response.json()
-
-
-TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
-TWITTER_API_KEY_SECRET = os.getenv('TWITTER_API_KEY_SECRET')
-TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
-TWITTER_ACCESS_TOKEN_SECRET = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
-
-twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
-                        consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
-                        access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
-                        access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET'))
 
 def post_tweet(message):
     try:
