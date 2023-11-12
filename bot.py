@@ -9,6 +9,7 @@ import os,io,base64,string,time,random,asyncio,re           # Core python librar
 import pandas as pd                                         # Manipulate tabular data
 from chatgpt_functions import *                             # function calls for ChatGPT API
 from dotenv import load_dotenv                              # Load .env
+from datetime import datetime
 import matplotlib.pyplot as plt
 
 flag_first=True                                             # initialize first flag
@@ -184,13 +185,18 @@ async def graph(ctx, brief='Get a graph of the firsts to date'):
 @bot.command(name='1st', pass_context=True, brief='Claim your first today')
 async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
-    global flag_first
-    if flag_first==True:
+
+    df = get_db('firstlist_id')
+    timestamp_most_recent = df['timesent'].iloc[-1].to_pydatetime()
+    timestamp_most_recent = pytz.timezone('UTC').localize(timestamp_most_recent).astimezone(pytz.timezone('US/Eastern'))
+    utc_now = datetime.utcnow()
+    utc_now = pytz.timezone('UTC').localize(utc_now).astimezone(pytz.timezone('US/Eastern'))
+    
+    if utc_now.strftime("%Y-%m-%d") == timestamp_most_recent.strftime("%Y-%m-%d"):
         Author = ctx.author.mention
         msg = f'Sorry {Author}, first has already been claimed today. 😭'
         await ctx.channel.send(msg)
     else:
-        flag_first=True
         Author = ctx.author.mention
         msg = f'{Author} is first today! 🥳'
         await ctx.channel.send(msg)
