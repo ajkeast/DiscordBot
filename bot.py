@@ -4,7 +4,6 @@ import discord                                              # Discord API
 from discord.ext import commands
 from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
-import aiocron                                              # Schedule events
 import os,io,base64,string,time,random,asyncio,re           # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
 from chatgpt_functions import *                             # function calls for ChatGPT API
@@ -12,7 +11,6 @@ from dotenv import load_dotenv                              # Load .env
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-flag_first=True                                             # initialize first flag
 load_dotenv()
 intents = discord.Intents.all()
                                             
@@ -60,7 +58,6 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
 
     if len(ctx.message.mentions) > 0:
         author_id = str(ctx.message.mentions[0].id)
-        print(author_id)
     else:
         author_id = str(ctx.message.author.id)
 
@@ -207,16 +204,6 @@ async def first(ctx):
 async def on_ready():
     print("Live: " + bot.user.name)
     DiscordComponents(bot)
-
-
-
-# Cron job to reset first flag each night
-# EST time zone offset is UTC-05. EDT time zone offset is UTC-04.
-@aiocron.crontab('00 05 * * *') # (minute, hour, day, month, dayOfWeek) UTC Time
-async def cronjob1():
-    global flag_first
-    flag_first = False
-    print('flag_first reset')
 
 # Function definitions for reading, writing, and manipulating the data in SQL database
 
