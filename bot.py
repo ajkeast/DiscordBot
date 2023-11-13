@@ -195,10 +195,12 @@ async def first(ctx):
         msg = f'Sorry {Author}, first has already been claimed today. 😭'
         await ctx.channel.send(msg)
     else:
+        write_to_db('firstlist_id', ctx.author.id)
+        time.sleep(0.5)
         Author = ctx.author.mention
         msg = f'{Author} is first today! 🥳'
         await ctx.channel.send(msg)
-        write_to_db('firstlist_id', ctx.author.id)
+        
 
 # Display in console bot is working correctly
 @bot.event
