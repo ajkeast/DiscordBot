@@ -247,7 +247,7 @@ def call_dalle3(prompt):
     """
     try:        
         # Send a request to the ChatGPT API using the OpenAI library
-        response = openai.images.generate(model="dall-e-3",  # Specify the DALL-E 3 model
+        response = client.images.generate(model="dall-e-3",  # Specify the DALL-E 3 model
                                           prompt=prompt,     # Provide the prompt for image generation
                                           size="1024x1024")  # Specify the size of the generated image
         
