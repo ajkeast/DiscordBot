@@ -9,4 +9,4 @@ python-dotenv
 pytz
 matplotlib
 tweepy
-openai
+openai==1.2.0
