@@ -236,7 +236,7 @@ def connect_db():
 def write_to_db(table_name, user_id, prompt=None):
     # write to server and close connection
     conn,cursor = connect_db()
-    if prompt = None:
+    if prompt == None:
         query = f'INSERT INTO {table_name} (user_id) VALUES (\'{user_id}\');'
     else
         query = f'INSERT INTO {table_name} (user_id, prompt) VALUES (\'{user_id}\',\'{prompt}\');'
