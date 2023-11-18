@@ -139,6 +139,18 @@ async def ask(ctx,*, arg, pass_context=True, brief='Ask ChatGPT'):
         await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
 
 @bot.command()
+async def imagine(ctx,*, arg, pass_context=True, brief='Generate AI Art'):
+    if str(ctx.message.author.id) in DALLE3_WHITELIST:
+        write_to_db(table_name='dalle_3_prompts',user_id=ctx.author.id, prompt=arg)
+        async with ctx.typing():
+            response = call_dalle3(arg)
+            embed=discord.Embed(title='Dalle-3 Image',color=0x4d4170)
+            embed.set_image(url=response)
+        await ctx.channel.send(embed=embed)
+    else:
+        await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
+
+@bot.command()
 async def graph(ctx, brief='Get a graph of the firsts to date'):
     # Initialize IO
     data_stream = io.BytesIO()
@@ -195,7 +207,7 @@ async def first(ctx):
         msg = f'Sorry {Author}, first has already been claimed today. 😭'
         await ctx.channel.send(msg)
     else:
-        write_to_db('firstlist_id', ctx.author.id)
+        write_to_db(table_name='firstlist_id', user_id=ctx.author.id)
         time.sleep(0.5)
         Author = ctx.author.mention
         msg = f'{Author} is first today! 🥳'
@@ -221,19 +233,22 @@ def connect_db():
     cursor.execute(f'use {database}')
     return conn,cursor
 
-def write_to_db(table_name, value):
+def write_to_db(table_name, user_id, prompt=None):
     # write to server and close connection
     conn,cursor = connect_db()
-    query = f'INSERT INTO {table_name} (user_id) VALUES (\'{value}\');'
+    if prompt = None:
+        query = f'INSERT INTO {table_name} (user_id) VALUES (\'{user_id}\');'
+    else
+        query = f'INSERT INTO {table_name} (user_id, prompt) VALUES (\'{user_id}\',\'{prompt}\');'
     cursor.execute(query)
     conn.commit()         
     cursor.close()
     conn.close()
 
-def get_db(tablename):
+def get_db(table_name):
     # get table as pandas df and close connection
     conn,cursor = connect_db()
-    query = f'SELECT * FROM {tablename}'
+    query = f'SELECT * FROM {table_name}'
     df = pd.read_sql_query(query, conn)
     cursor.close()
     conn.close()

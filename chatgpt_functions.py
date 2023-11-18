@@ -230,8 +230,31 @@ def post_tweet(message):
     except Exception as e:
         exception_json = {"Error": repr(e)}  # Create an exception JSON
         return json.dumps(exception_json)  # Convert and return as JSON
-
 # Assumes 'twitter' object and 'json' module are defined elsewhere
+
+def call_dalle3(prompt):
+    """
+    Generate an image using the DALL-E 3 model based on the provided prompt.
+
+    Args:
+        prompt (str): The prompt for image generation.
+
+    Returns:
+        str: The URL of the generated image.
+             If an error occurs during the API request, an error message is returned.
+    """
+    try:        
+        # Send a request to the ChatGPT API using the OpenAI library
+        response = openai.images.generate(model="dall-e-3",  # Specify the DALL-E 3 model
+                                          prompt=prompt,     # Provide the prompt for image generation
+                                          size="1024x1024")  # Specify the size of the generated image
+        
+        # Return the URL of the generated image from the API response
+        return response.data[0].url
+        
+    except Exception as e:
+        # Handle any exceptions that may occur during the API request
+        return f'Looks like there was an error: {repr(e)}'
 
 
 def append_and_shift(arr, v, max_len):
@@ -245,3 +268,5 @@ def append_and_shift(arr, v, max_len):
 
 # whitelist of users who can use ChatGPT
 IDCARD = ['162725160397438978','94235023560941568','95321829031280640','94254577766891520','250729999349317632','186667084007211008']
+# whitelist of users who can use Dalle-3
+DALLE3_WHITELIST = ['162725160397438978']
