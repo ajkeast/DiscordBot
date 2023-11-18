@@ -238,7 +238,7 @@ def write_to_db(table_name, user_id, prompt=None):
     conn,cursor = connect_db()
     if prompt == None:
         query = f'INSERT INTO {table_name} (user_id) VALUES (\'{user_id}\');'
-    else
+    else:
         query = f'INSERT INTO {table_name} (user_id, prompt) VALUES (\'{user_id}\',\'{prompt}\');'
     cursor.execute(query)
     conn.commit()         
