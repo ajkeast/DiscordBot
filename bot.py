@@ -144,9 +144,10 @@ async def imagine(ctx,*, arg, pass_context=True, brief='Generate AI Art'):
         write_to_db(table_name='dalle_3_prompts',user_id=ctx.author.id, prompt=arg)
         async with ctx.typing():
             response = call_dalle3(arg)
-            embed=discord.Embed(title='Dalle-3 Image',color=0x4d4170)
-            embed.set_image(url=str(response))
-        await ctx.channel.send(embed=embed)
+        #     embed=discord.Embed(title='Dalle-3 Image',color=0x4d4170)
+        #     embed.set_image(url=str(response))
+        # await ctx.channel.send(embed=embed)
+        await ctx.channel.send(str(response))
     else:
         await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
 
