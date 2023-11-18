@@ -7,7 +7,6 @@ import tweepy                       # twitter API
 
 load_dotenv()
 
-CHAT_API_KEY='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'
 client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
 
 twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
