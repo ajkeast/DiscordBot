@@ -145,7 +145,7 @@ async def imagine(ctx,*, arg, pass_context=True, brief='Generate AI Art'):
         async with ctx.typing():
             response = call_dalle3(arg)
             embed=discord.Embed(title='Dalle-3 Image',color=0x4d4170)
-            embed.set_image(url=response)
+            embed.set_image(url='https://oaidalleapiprodscus.blob.core.windows.net/private/org-3QdrWB3HxeruxqMGcSyOruEX/user-2ixFZ7rTrOW3cprkaxfkJpDl/img-5c5Bv7KueFv408Umr1TknE7r.png?st=2023-11-17T22%3A43%3A57Z&se=2023-11-18T00%3A43%3A57Z&sp=r&sv=2021-08-06&sr=b&rscd=inline&rsct=image/png&skoid=6aaadede-4fb3-4698-a8f6-684d7786b067&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2023-11-17T19%3A52%3A25Z&ske=2023-11-18T19%3A52%3A25Z&sks=b&skv=2021-08-06&sig=RNYLM4%2Bc0zF%2BQ6751JdYygCK4B9UmEByj/o97JmPd5s%3D')
         await ctx.channel.send(embed=embed)
     else:
         await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
