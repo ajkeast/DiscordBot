@@ -6,7 +6,10 @@ import requests                     # http queries
 import tweepy                       # twitter API
 
 load_dotenv()
-openai.api_key = os.getenv('CHAT_API_KEY')
+
+CHAT_API_KEY='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'
+client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
+
 twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
                         consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
                         access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
@@ -37,28 +40,28 @@ def call_chatGPT(chat_history, prompt):
         append_and_shift(chat_history, {"role": "user", "content": prompt}, max_len=10)
         
         # Send request to the ChatGPT API
-        response = openai.chat.completions.create(model="gpt-3.5-turbo-0613",
+        response = client.chat.completions.create(model="gpt-3.5-turbo-0613",
                                                   temperature=0.7,
                                                   messages=chat_history,
                                                   functions=function_descriptions,
                                                   function_call="auto")
         
         # If the response is not a function call, append assistant's response to the chat history
-        if response["choices"][0]["finish_reason"] != "function_call":
-            append_and_shift(chat_history, {"role": "assistant", "content": response['choices'][0]['message']['content']}, max_len=10)
+        if response.choices[0].finish_reason != "function_call":
+            append_and_shift(chat_history, {"role": "assistant", "content": response.choices[0].message.content}, max_len=10)
         
         # If there was a function call, append it to the message history and run the response again
-        while response["choices"][0]["finish_reason"] == "function_call":
+        while response.choices[0].finish_reason == "function_call":
             function_response = function_call(response)
-            append_and_shift(chat_history, {"role": "function", "name": response["choices"][0]["message"]["function_call"]["name"], "content": json.dumps(function_response)}, max_len=10)
-            response = openai.chat.completions.create(model="gpt-3.5-turbo-0613",
+            append_and_shift(chat_history, {"role": "function", "name": response.choices[0].message.function_call.name, "content": json.dumps(function_response)}, max_len=10)
+            response = client.chat.completions.create(model="gpt-3.5-turbo-0613",
                                                       temperature=0.7,
                                                       messages=chat_history,
                                                       functions=function_descriptions,
                                                       function_call="auto")
         
         # Return the updated chat history and the generated response content (limited to 2000 characters)
-        return chat_history, response['choices'][0]['message']['content'][:2000]
+        return chat_history, response.choices[0].message.content[:2000]
     
     except Exception as e:
         # Handle any exceptions by returning an error message
@@ -83,9 +86,9 @@ def function_call(ai_response):
     """
     
     # Extract function call details from the AI response
-    function_call = ai_response["choices"][0]["message"]["function_call"]
-    function_name = function_call["name"]
-    arguments = function_call["arguments"]
+    function_call = ai_response.choices[0].message.function_call
+    function_name = function_call.name
+    arguments = function_call.arguments
     
     # Process the function call based on the function name
     if function_name == "get_todays_date":
