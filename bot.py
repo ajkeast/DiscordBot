@@ -196,9 +196,8 @@ async def graph(ctx, brief='Get a graph of the firsts to date'):
 async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
 
-    print(ctx.channel.name)
-    if ctx.channel.name != 'general':
-        channel_id = 94235299445493760
+    channel_id = 1081986952540201052    # dinkscord general text-channel id
+    if ctx.channel.id != channel_id:
         msg = f'Please send your message to <#{channel_id}>.'
         await ctx.channel.send(msg)
     else:
