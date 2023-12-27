@@ -159,7 +159,7 @@ async def graph(ctx, brief='Get a graph of the firsts to date'):
     df_first = get_db('firstlist_id')
     df_first['_1st to date'] = df_first.groupby('user_id').cumcount()+1
 
-    # Assuming your DataFrame is named df_first
+    # Initiate plot
     fig, ax = plt.subplots(figsize=(8, 6))
 
     # Group the DataFrame by 'user_id'
@@ -199,7 +199,7 @@ async def first(ctx):
     print(ctx.channel.name)
     if ctx.channel.name != 'general':
         channel_id = 1081986952540201052
-        msg = f'Please send your message to <{channel_id}>.'
+        msg = f'Please send your message to <#{channel_id}>.'
         await ctx.channel.send(msg)
     else:
         utc_now = datetime.utcnow()
