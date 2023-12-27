@@ -196,6 +196,8 @@ async def graph(ctx, brief='Get a graph of the firsts to date'):
 async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
 
+    print(ctx.channel.name)
+
     utc_now = datetime.utcnow()
     utc_now = pytz.timezone('UTC').localize(utc_now).astimezone(pytz.timezone('US/Eastern'))
 
