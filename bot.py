@@ -198,7 +198,7 @@ async def first(ctx):
 
     print(ctx.channel.name)
     if ctx.channel.name != 'general':
-        channel_id = 1081986952540201052
+        channel_id = 94235299445493760
         msg = f'Please send your message to <#{channel_id}>.'
         await ctx.channel.send(msg)
     else:
