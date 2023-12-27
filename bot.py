@@ -197,24 +197,28 @@ async def first(ctx):
     # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
 
     print(ctx.channel.name)
-
-    utc_now = datetime.utcnow()
-    utc_now = pytz.timezone('UTC').localize(utc_now).astimezone(pytz.timezone('US/Eastern'))
-
-    df = get_db('firstlist_id')
-    timestamp_most_recent = df['timesent'].iloc[-1].to_pydatetime()
-    timestamp_most_recent = pytz.timezone('UTC').localize(timestamp_most_recent).astimezone(pytz.timezone('US/Eastern'))
-    
-    if utc_now.strftime("%Y-%m-%d") == timestamp_most_recent.strftime("%Y-%m-%d"):
-        Author = ctx.author.mention
-        msg = f'Sorry {Author}, first has already been claimed today. 😭'
+    if ctx.channel.name != 'general':
+        channel_id = 1081986952540201052
+        msg = f'Please send your message to <{channel_id}>.'
         await ctx.channel.send(msg)
     else:
-        write_to_db(table_name='firstlist_id', user_id=ctx.author.id)
-        time.sleep(0.5)
-        Author = ctx.author.mention
-        msg = f'{Author} is first today! 🥳'
-        await ctx.channel.send(msg)
+        utc_now = datetime.utcnow()
+        utc_now = pytz.timezone('UTC').localize(utc_now).astimezone(pytz.timezone('US/Eastern'))
+
+        df = get_db('firstlist_id')
+        timestamp_most_recent = df['timesent'].iloc[-1].to_pydatetime()
+        timestamp_most_recent = pytz.timezone('UTC').localize(timestamp_most_recent).astimezone(pytz.timezone('US/Eastern'))
+        
+        if utc_now.strftime("%Y-%m-%d") == timestamp_most_recent.strftime("%Y-%m-%d"):
+            Author = ctx.author.mention
+            msg = f'Sorry {Author}, first has already been claimed today. 😭'
+            await ctx.channel.send(msg)
+        else:
+            write_to_db(table_name='firstlist_id', user_id=ctx.author.id)
+            time.sleep(0.5)
+            Author = ctx.author.mention
+            msg = f'{Author} is first today! 🥳'
+            await ctx.channel.send(msg)
         
 
 # Display in console bot is working correctly
