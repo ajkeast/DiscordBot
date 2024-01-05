@@ -83,7 +83,7 @@ async def donation(ctx, brief='Get a list of all donations'):
     # provides embed of all donations
     embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x4d4170)
     embed.add_field(name='Mike S',value='$8.01',inline=False)
-    embed.add_field(name='Danny E',value='$8.00',inline=False)
+    embed.add_field(name='Danny E',value=f'${(8.00 + 6.90):.2f}',inline=False)
     embed.add_field(name='Sammy T',value='$6.90',inline=False)
     embed.add_field(name='Jacky P',value='$6.69',inline=False)
     embed.add_field(name='Matt',value='$6.00',inline=False)
