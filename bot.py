@@ -81,20 +81,18 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
 @bot.command()
 async def members(ctx):
     members = ctx.guild.members
-
-    print(f'# of members: {len(members)}')
-    print(f'Member info: {members}')
-
+    vals=[]
     for member in members:
         id = int(member.id)
         user = bot.get_user(id)
-
-        avatar = user.avatar
+        avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128')
         name = user.name
+        created_at = user.created_at
+        display_name = user.display_name
 
-        print(id)
-        print(name)
-        print(f'https://cdn.discordapp.com/avatars/{id}/{avatar}.webp?size=128')
+        vals.append([id,name,display_name,avatar,created_at])
+    
+    print(vals)
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
