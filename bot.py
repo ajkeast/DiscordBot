@@ -87,7 +87,7 @@ async def members(ctx):
         user = bot.get_user(id)
         avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128'
         name = user.name
-        created_at = user.created_at
+        created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
         display_name = user.display_name
 
         vals.append([id,name,display_name,avatar,created_at])
@@ -201,7 +201,7 @@ async def graph(ctx, brief='Get a graph of the firsts to date'):
     # Reset point back to beginning of stream
     data_stream.seek(0)
     chart = discord.File(data_stream,filename="first_graph.png")
-    embed=discord.Embed(title='Firsts to Date',color=0x4d4170)
+    embed = discord.Embed(title='Firsts to Date',color=0x4d4170)
     embed.set_image(url="attachment://first_graph.png")
 
     await ctx.send(embed=embed, file=chart)
