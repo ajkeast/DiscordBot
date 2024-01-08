@@ -79,8 +79,13 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
         await ctx.channel.send('This user has never gotten a first!')
 @bot.command()
 async def members(ctx):
-    memberList = ctx.guild.members
-    print(memberList)
+    members = ctx.guild.members
+
+    print(f'# of members: {members}')
+    print(f'Member info: {len(members)}')
+
+    for member in memberList:
+        print(member.name)
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
