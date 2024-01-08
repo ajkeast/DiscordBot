@@ -77,6 +77,7 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
     except Exception as error:
         print("An error occurred:", type(error).__name__)
         await ctx.channel.send('This user has never gotten a first!')
+
 @bot.command()
 async def members(ctx):
     members = ctx.guild.members
@@ -86,9 +87,14 @@ async def members(ctx):
 
     for member in members:
         id = int(member.id)
+        user = bot.get_user(id)
+
+        avatar = user.avatar
+        name = bot.get_user(id).avatar
+
         print(id)
-        print(bot.get_user(id).name)
-        print(bot.get_user(id).display_avatar)
+        print(name)
+        print(url=f'https://cdn.discordapp.com/avatars/{id}/{avatar}.webp?size=128')
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
