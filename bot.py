@@ -90,11 +90,11 @@ async def members(ctx):
         user = bot.get_user(id)
 
         avatar = user.avatar
-        name = bot.get_user(id).avatar
+        name = user.name
 
         print(id)
         print(name)
-        print(url=f'https://cdn.discordapp.com/avatars/{id}/{avatar}.webp?size=128')
+        print(f'https://cdn.discordapp.com/avatars/{id}/{avatar}.webp?size=128')
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
