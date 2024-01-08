@@ -86,11 +86,11 @@ async def members(ctx):
         id = int(member.id)
         user = bot.get_user(id)
         avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128'
-        name = user.name
+        user_name = user.name
+        display_name = member.nick
         created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        display_name = user.display_name
 
-        vals.append([id,name,display_name,avatar,created_at])
+        vals.append([id,user_name,display_name,avatar,created_at])
     
     print(vals)
 
