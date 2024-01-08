@@ -85,7 +85,7 @@ async def members(ctx):
     for member in members:
         id = int(member.id)
         user = bot.get_user(id)
-        avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128')
+        avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128'
         name = user.name
         created_at = user.created_at
         display_name = user.display_name
