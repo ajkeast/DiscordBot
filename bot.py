@@ -77,6 +77,10 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
     except Exception as error:
         print("An error occurred:", type(error).__name__)
         await ctx.channel.send('This user has never gotten a first!')
+@bot.command()
+async def members(ctx):
+    memberList = ctx.guild.members
+    print(memberList)
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
