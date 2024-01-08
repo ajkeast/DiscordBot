@@ -81,10 +81,10 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
 async def members(ctx):
     members = ctx.guild.members
 
-    print(f'# of members: {members}')
-    print(f'Member info: {len(members)}')
+    print(f'# of members: {len(members)}')
+    print(f'Member info: {members}')
 
-    for member in memberList:
+    for member in members:
         print(member.name)
 
 @bot.command()
