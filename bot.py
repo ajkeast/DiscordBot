@@ -85,7 +85,10 @@ async def members(ctx):
     print(f'Member info: {members}')
 
     for member in members:
-        print(member.name)
+        id = int(member.id)
+        print(id)
+        print(bot.get_user(id).name)
+        print(bot.get_user(id).display_avatar)
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
