@@ -80,6 +80,7 @@ async def stats(ctx,*, args=None, pass_context=True, brief='Get an individual us
 
 @bot.command()
 async def members(ctx):
+    # updates database with all current members of the server and their info
     members = ctx.guild.members
     vals=[]
     for member in members:
@@ -89,10 +90,14 @@ async def members(ctx):
         user_name = user.name
         display_name = member.nick
         created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
-
         vals.append([id,user_name,display_name,avatar,created_at])
+        
+    update_sql_members(vals)    # write to database
+
+    await ctx.channel.send("Member info succesfully updated.")
+
     
-    print(vals)
+    
 
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
@@ -266,6 +271,24 @@ def write_to_db(table_name, user_id, prompt=None):
     conn.commit()         
     cursor.close()
     conn.close()
+
+def update_sql_members(vals):
+    conn,cursor = connect_db()
+    with cursor:
+        cursor.executemany
+        (
+            f"INSERT INTO members (id, user_name, display_name, avatar, created_at)
+            VALUES 
+                (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                user_name = VALUES(user_name),
+                display_name = VALUES(display_name),
+                avatar = VALUES(avatar),
+                created_at = VALUES(created_at);", vals
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 def get_db(table_name):
     # get table as pandas df and close connection
