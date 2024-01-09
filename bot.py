@@ -275,17 +275,16 @@ def write_to_db(table_name, user_id, prompt=None):
 def update_sql_members(vals):
     conn,cursor = connect_db()
     with cursor:
-        cursor.executemany
-        (
-            f"INSERT INTO members (id, user_name, display_name, avatar, created_at)
-            VALUES 
-                (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                user_name = VALUES(user_name),
-                display_name = VALUES(display_name),
-                avatar = VALUES(avatar),
-                created_at = VALUES(created_at);", vals
-        )
+        query=f"INSERT INTO members (id, user_name, display_name, avatar, created_at)
+                VALUES
+                    (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    user_name = VALUES(user_name),
+                    display_name = VALUES(display_name),
+                    avatar = VALUES(avatar),
+                    created_at = VALUES(created_at);"
+        
+        cursor.executemany(query, vals)
         conn.commit()
         cursor.close()
         conn.close()
