@@ -99,9 +99,19 @@ async def members(ctx):
 @bot.command()
 async def emojis(ctx):
     # updates database with all current emojis in the server
+    vals=[]
     for emoji in ctx.guild.emojis:
-        print(f'id: {emoji.id}, name: {emoji.name}, guild_id: {emoji.guild_id}, created_at: {emoji.created_at}, url: {emoji.url} ')
-        
+        id = emoji.id
+        emoji_name = emoji.name
+        guild_id = emoji.guild_id
+        url = emoji.url
+        created_at = emoji.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        vals.append([id,emoji_name,guild_id,url,created_at])
+    update_sql_emojis(vals)
+
+    await ctx.channel.send("Emoji info succesfully updated.")
+
+
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
     # provides embed of all donations
@@ -285,6 +295,23 @@ def update_sql_members(vals):
                     user_name = VALUES(user_name),
                     display_name = VALUES(display_name),
                     avatar = VALUES(avatar),
+                    created_at = VALUES(created_at);"""
+        
+        cursor.executemany(query, vals)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def update_sql_emojis(vals):
+    conn,cursor = connect_db()
+    with cursor:
+        query="""INSERT INTO emojis (id, emoji_name, guild_id, url, created_at)
+                VALUES
+                    (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    emoji_name = VALUES(name),
+                    guild_id = VALUES(guild_id),
+                    url = VALUES(url),
                     created_at = VALUES(created_at);"""
         
         cursor.executemany(query, vals)
