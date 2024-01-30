@@ -309,7 +309,7 @@ def update_sql_emojis(vals):
                 VALUES
                     (%s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
-                    emoji_name = VALUES(name),
+                    emoji_name = VALUES(emoji_name),
                     guild_id = VALUES(guild_id),
                     url = VALUES(url),
                     created_at = VALUES(created_at);"""
