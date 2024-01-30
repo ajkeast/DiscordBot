@@ -100,7 +100,7 @@ async def members(ctx):
 async def emojis(ctx):
     # updates database with all current emojis in the server
     for emoji in ctx.guild.emojis:
-        print(f'id: {emoji.id}, name: {emoji.id}, guild_id: {emoji.guild_id}, created_at: {emoji.created_at}, url: {emoji.url} ')
+        print(f'id: {emoji.id}, name: {emoji.name}, guild_id: {emoji.guild_id}, created_at: {emoji.created_at}, url: {emoji.url} ')
         
 @bot.command()
 async def donation(ctx, brief='Get a list of all donations'):
