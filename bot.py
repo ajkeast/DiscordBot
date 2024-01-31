@@ -283,11 +283,11 @@ def write_to_db(table_name, user_id, prompt=None):
     conn,cursor = connect_db()
     # mainly used for first table
     if prompt == None:
-        vals = [table_name,user_id]
+        vals = [user_id]
         query = "INSERT INTO {} (user_id) VALUES (%s);".format(table_name)
     # mainly used for dalle3 table
     else:
-        vals = [table_name,user_id,prompt]
+        vals = [user_id,prompt]
         query = "INSERT INTO {} (user_id, prompt) VALUES (%s,%s);".format(table_name)
     cursor.execute(query,vals)
     conn.commit()         
