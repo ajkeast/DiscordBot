@@ -30,10 +30,12 @@ async def a_help(ctx):
     embed.add_field(name="_score", value="First leaderboard", inline=True)
     embed.add_field(name="_ask", value="Ask ChatGPT", inline=True)
     embed.add_field(name="_hello", value="Say hi", inline=True)
-    embed.add_field(name="_dash", value="Server stats", inline=True)
+    embed.add_field(name="_dash", value="Server dashboard", inline=True)
     embed.add_field(name="_simonsays", value="I'll repeat after you", inline=True)
     embed.add_field(name="_juice", value="Juice board", inline=True)
     embed.add_field(name="_donation", value="Our patrons", inline=True)
+    embed.add_field(name="_imagine", value="Generate AI images", inline=True)
+    embed.add_field(name="_stats", value="Individual user stats", inline=True)
     await ctx.channel.send(embed=embed)
 
 @bot.command()
@@ -107,6 +109,7 @@ async def emojis(ctx):
         url = emoji.url
         created_at = emoji.created_at.strftime("%Y-%m-%d %H:%M:%S")
         vals.append([id,emoji_name,guild_id,url,created_at])
+    
     update_sql_emojis(vals)
 
     await ctx.channel.send("Emoji info succesfully updated.")
@@ -260,8 +263,10 @@ async def on_ready():
     print("Live: " + bot.user.name)
     DiscordComponents(bot)
 
+# ====================================================================================
 # Function definitions for reading, writing, and manipulating the data in SQL database
-
+# ====================================================================================
+    
 def connect_db():
     # connect to database
     host = os.getenv('SQL_HOST')
@@ -276,11 +281,15 @@ def connect_db():
 def write_to_db(table_name, user_id, prompt=None):
     # write to server and close connection
     conn,cursor = connect_db()
+    # mainly used for first table
     if prompt == None:
-        query = f'INSERT INTO {table_name} (user_id) VALUES (\'{user_id}\');'
+        vals = [table_name,user_id]
+        query = """INSERT INTO %s (user_id) VALUES (%s);"""
+    # mainly used for dalle3 table
     else:
-        query = f'INSERT INTO {table_name} (user_id, prompt) VALUES (\'{user_id}\',\'{prompt}\');'
-    cursor.execute(query)
+        vals = [table_name,user_id,prompt]
+        query = """INSERT INTO %s (user_id, prompt) VALUES (%s,%s);"""
+    cursor.execute(query,vals)
     conn.commit()         
     cursor.close()
     conn.close()
