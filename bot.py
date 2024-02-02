@@ -22,6 +22,14 @@ bot.remove_command('help')                                  # remove default hel
 
 # Bot Commands
 
+@bot.event
+async def on_message(message):
+    if(message.author.bot): 
+        return
+    else: 
+        print(f'Author: {message.author.id}, Content: {message.content}')
+    bot.process_commands(message)
+
 @bot.command(name = 'help')
 async def a_help(ctx):
     # provides an embed of all availble commands
@@ -255,17 +263,6 @@ async def first(ctx):
             Author = ctx.author.mention
             msg = f'{Author} is first today! 🥳'
             await ctx.channel.send(msg)
-        
-
-@bot.event
-async def on_message(ctx):
-    print(ctx.author.bot)
-    if(ctx.author.bot): 
-        return
-    else: 
-        print(ctx.author.id)
-        print(ctx.content)
-        print(ctx.id)
 
 # Display in console bot is working correctly
 @bot.event
