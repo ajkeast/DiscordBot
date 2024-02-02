@@ -32,11 +32,10 @@ async def on_message(message):
         member_id = message.author.id
         channel_id = message.channel.id
         content = message.content
-        attachments = message.attachments
         created_at = message.created_at
-        vals = [id,member_id,channel_id,content,attachments,created_at]
+        vals = [id,member_id,channel_id,content,created_at]
         vals = [value if value is not None else 'NULL' for value in vals]
-        print(attachments)
+        print(vals)
 
         update_sql_messages(vals)
 
@@ -315,9 +314,9 @@ def write_to_db(table_name, user_id, prompt=None):
 def update_sql_messages(vals):
     conn,cursor = connect_db()
     with cursor:
-        query="""INSERT INTO messages (id,member_id,channel_id,content,attachments,created_at)
+        query="""INSERT INTO messages (id,member_id,channel_id,content,created_at)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s)"""
+                    (%s, %s, %s, %s, %s)"""
         
         cursor.execute(query, vals)
         conn.commit()
