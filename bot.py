@@ -35,7 +35,6 @@ async def on_message(message):
         created_at = message.created_at
         vals = [id,member_id,channel_id,content,created_at]
         vals = [value if value is not None else 'NULL' for value in vals]
-        print(vals)
 
         update_sql_messages(vals)
 
@@ -131,6 +130,24 @@ async def emojis(ctx):
     update_sql_emojis(vals)
 
     await ctx.channel.send("Emoji info succesfully updated.")
+
+@bot.command()
+async def channels(ctx):
+    # updates database with all current channels of the server and their info
+    channels = ctx.guild.channels
+    vals=[]
+    for channel in channels:
+        id = channel.id
+        name = channel.name
+        category = channel.category
+        created_at = channel.created_at
+        vals.append([id,name,category,created_at])
+    
+    print(vals)
+        
+    # update_sql_members(vals)    # write to database
+
+    # await ctx.channel.send("Member info succesfully updated.")
 
 
 @bot.command()
