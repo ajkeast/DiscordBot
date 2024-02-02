@@ -133,21 +133,17 @@ async def emojis(ctx):
 
 @bot.command()
 async def channels(ctx):
-    # updates database with all current channels of the server and their info
-    channels = ctx.guild.channels
+    # updates database with all current channels on the server
     vals=[]
-    for channel in channels:
+    for channel in ctx.guild.channels:
         id = channel.id
         name = channel.name
-        category = channel.category.name
         created_at = channel.created_at
-        vals.append([id,name,category,created_at])
+        vals.append([id,name,created_at])
     
-    print(vals)
+    update_sql_channels(vals)
         
-    # update_sql_members(vals)    # write to database
-
-    # await ctx.channel.send("Member info succesfully updated.")
+    await ctx.channel.send("Channel info succesfully updated.")
 
 
 @bot.command()
@@ -367,6 +363,21 @@ def update_sql_emojis(vals):
                     emoji_name = VALUES(emoji_name),
                     guild_id = VALUES(guild_id),
                     url = VALUES(url),
+                    created_at = VALUES(created_at);"""
+        
+        cursor.executemany(query, vals)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def update_sql_channels(vals):
+    conn,cursor = connect_db()
+    with cursor:
+        query="""INSERT INTO channels (id, channel_name, created_at)
+                VALUES
+                    (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    channel_name = VALUES(channel_name),
                     created_at = VALUES(created_at);"""
         
         cursor.executemany(query, vals)
