@@ -36,6 +36,8 @@ async def on_message(message):
         created_at = message.created_at
         vals = [id,member_id,channel_id,content,attachments,created_at]
 
+        print(attachments)
+
         update_sql_messages(vals)
 
 
