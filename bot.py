@@ -32,9 +32,9 @@ async def on_message(message):
         member_id = message.author
         channel_id = message.channel.id
         content = message.content
-        attachment = message.attachment
+        attachments = message.attachments
         created_at = message.created_at
-        vals = [id,member_id,channel_id,content,attachment,created_at]
+        vals = [id,member_id,channel_id,content,attachments,created_at]
 
         update_sql_messages(vals)
 
@@ -313,7 +313,7 @@ def write_to_db(table_name, user_id, prompt=None):
 def update_sql_messages(vals):
     conn,cursor = connect_db()
     with cursor:
-        query="""INSERT INTO messages (id,member_id,channel_id,content,attachment,created_at)
+        query="""INSERT INTO messages (id,member_id,channel_id,content,attachments,created_at)
                 VALUES
                     (%s, %s, %s, %s, %s, %s)"""
         
