@@ -257,6 +257,16 @@ async def first(ctx):
             await ctx.channel.send(msg)
         
 
+@bot.event
+async def on_message(ctx):
+    print(ctx.author.bot)
+    if(ctx.author.bot): 
+        return
+    else: 
+        print(ctx.author.id)
+        print(ctx.content)
+        print(ctx.id)
+
 # Display in console bot is working correctly
 @bot.event
 async def on_ready():
