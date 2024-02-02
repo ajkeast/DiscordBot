@@ -24,11 +24,20 @@ bot.remove_command('help')                                  # remove default hel
 
 @bot.event
 async def on_message(message):
-    await bot.process_commands(message)
+    await bot.process_commands(message)     # ensures all commands are completed first
     if(message.author.bot): 
         return
     else: 
-        print(f'Author: {message.author.id}, Content: {message.content}')
+        id = message.id
+        member_id = message.author
+        channel_id = message.channel.id
+        content = message.content
+        attachment = message.attachment
+        created_at = message.created_at
+        vals = [id,member_id,channel_id,content,attachment,created_at]
+
+        update_sql_messages(vals)
+
 
 @bot.command(name = 'help')
 async def a_help(ctx):
@@ -300,6 +309,18 @@ def write_to_db(table_name, user_id, prompt=None):
     conn.commit()         
     cursor.close()
     conn.close()
+
+def update_sql_messages(vals):
+    conn,cursor = connect_db()
+    with cursor:
+        query="""INSERT INTO messages (id,member_id,channel_id,content,attachment,created_at)
+                VALUES
+                    (%s, %s, %s, %s, %s, %s)"""
+        
+        cursor.execute(query, vals)
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 def update_sql_members(vals):
     conn,cursor = connect_db()
