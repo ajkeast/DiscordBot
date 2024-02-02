@@ -24,11 +24,11 @@ bot.remove_command('help')                                  # remove default hel
 
 @bot.event
 async def on_message(message):
+    await bot.process_commands(message)
     if(message.author.bot): 
         return
     else: 
         print(f'Author: {message.author.id}, Content: {message.content}')
-    bot.process_commands(message)
 
 @bot.command(name = 'help')
 async def a_help(ctx):
