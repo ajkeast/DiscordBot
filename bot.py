@@ -139,7 +139,7 @@ async def channels(ctx):
     for channel in channels:
         id = channel.id
         name = channel.name
-        category = channel.category
+        category = channel.category.name
         created_at = channel.created_at
         vals.append([id,name,category,created_at])
     
