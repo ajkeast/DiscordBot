@@ -41,7 +41,7 @@ def call_chatGPT(chat_history, prompt):
         # Send request to the ChatGPT API
         response = client.chat.completions.create(model="gpt-3.5-turbo-0613",
                                                   temperature=0.7,
-                                                  max_tokens=128,
+                                                  max_tokens=256,
                                                   messages=chat_history,
                                                   functions=function_descriptions,
                                                   function_call="auto")
