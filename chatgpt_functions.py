@@ -56,7 +56,7 @@ def call_chatGPT(chat_history, prompt):
             append_and_shift(chat_history, {"role": "function", "name": response.choices[0].message.function_call.name, "content": json.dumps(function_response)}, max_len=10)
             response = client.chat.completions.create(model="gpt-3.5-turbo-0613",
                                                       temperature=0.7,
-                                                      max_tokens=128,
+                                                      max_tokens=256,
                                                       messages=chat_history,
                                                       functions=function_descriptions,
                                                       function_call="auto")
