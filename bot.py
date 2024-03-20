@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 load_dotenv()
 intents = discord.Intents.all()
-                                            
+
 bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
@@ -175,7 +175,7 @@ async def juice(ctx, pass_context=True, brief='Get the server juice scores'):
 @bot.command()
 async def dash(ctx):
     # sends button with hyperlink to server dashboard
-    await ctx.send('Here you go!', components=[Button(label="Go to your dashboard",style=5,url='https://peterdinklage.streamlit.app/')])
+    await ctx.send('Here you go!', components=[Button(label="Go to your dashboard",style=5,url='https://dinkscord.onrender.com')])
 
 @bot.command(pass_context=True)
 async def hello(ctx):
@@ -193,7 +193,7 @@ async def ping(ctx, brief='Ping the bot'):
 async def simonsays(ctx, *, arg, pass_context=True, brief='I will repeat after you'):
     # repeats string back
     await ctx.channel.send(arg)
- 
+
 chat_history = [{"role": "system", "content": "Talk like a surfer, stoner bro who is always chill and relaxed"}]
 @bot.command()
 async def ask(ctx,*, arg, pass_context=True, brief='Ask ChatGPT'):
