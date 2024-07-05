@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 load_dotenv()
 intents = discord.Intents.all()
 
-bot = commands.Bot(intents=intents,command_prefix='_')      # structure for bot commands
+bot = commands.Bot(intents=intents,command_prefix='_', case_insensitive=True)      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
 DiscordComponents(bot)                                      # structure for buttons
