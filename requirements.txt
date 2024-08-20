@@ -1,4 +1,4 @@
-discord
+discord==1.7.3
 discord-components
 pymysql
 aiocron
