@@ -291,7 +291,6 @@ async def first(ctx):
 @bot.event
 async def on_ready():
     print("Live: " + bot.user.name)
-    DiscordComponents(bot)
 
 # ====================================================================================
 # Function definitions for reading, writing, and manipulating the data in SQL database
