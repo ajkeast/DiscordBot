@@ -2,7 +2,7 @@
 
 import discord                                              # Discord API
 from discord.ext import commands
-from discord_components import Button, DiscordComponents
+# from discord_components import Button, DiscordComponents
 import pymysql                                              # Connect to AWS SQL
 import os,io,base64,string,time,random,asyncio,re           # Core python libraries
 import pandas as pd                                         # Manipulate tabular data
@@ -17,7 +17,7 @@ intents = discord.Intents.all()
 bot = commands.Bot(intents=intents,command_prefix='_', case_insensitive=True)      # structure for bot commands
 discord.Intents.all()
 discord.MemberCacheFlags.all()
-DiscordComponents(bot)                                      # structure for buttons
+# DiscordComponents(bot)                                      # structure for buttons
 bot.remove_command('help')                                  # remove default help command
 
 # Bot Commands
@@ -172,10 +172,10 @@ async def juice(ctx, pass_context=True, brief='Get the server juice scores'):
     embed.set_footer(text=txt)
     await ctx.channel.send(embed=embed)
 
-@bot.command()
-async def dash(ctx):
-    # sends button with hyperlink to server dashboard
-    await ctx.send('Here you go!', components=[Button(label="Go to your dashboard",style=5,url='https://dinkscord.onrender.com')])
+# @bot.command()
+# async def dash(ctx):
+#     # sends button with hyperlink to server dashboard
+#     await ctx.send('Here you go!', components=[Button(label="Go to your dashboard",style=5,url='https://dinkscord.onrender.com')])
 
 @bot.command(pass_context=True)
 async def hello(ctx):

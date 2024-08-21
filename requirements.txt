@@ -1,5 +1,4 @@
 discord
-discord-components
 pymysql
 aiocron
 pandas
