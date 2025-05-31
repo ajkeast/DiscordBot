@@ -273,8 +273,3 @@ def append_and_shift(arr, v, max_len):
     arr.append(v)
     if len(arr) > max_len:
         arr.pop(1)
-
-# whitelist of users who can use ChatGPT
-IDCARD = ['162725160397438978','94235023560941568','95321829031280640','94254577766891520','250729999349317632','186667084007211008']
-# whitelist of users who can use Dalle-3
-DALLE3_WHITELIST = ['162725160397438978','250729999349317632','186667084007211008']

@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from chatgpt_functions import call_chatGPT, call_dalle3, IDCARD, DALLE3_WHITELIST
+from chatgpt_functions import call_chatGPT, call_dalle3
+from utils.constants import IDCARD, DALLE3_WHITELIST
 from utils.db import write_to_db
 
 class AI(commands.Cog):

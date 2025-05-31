@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import pytz
 import time
-from utils.db import get_db, write_to_db, get_streak, get_user_streak, get_user_score, get_user_juice, get_juice
+from utils.db import db_ops, streak_calc, juice_calc
+from utils.constants import GENERAL_CHANNEL_ID
 
 class First(commands.Cog):
     def __init__(self, bot):
@@ -14,7 +15,7 @@ class First(commands.Cog):
     @commands.command(name='1st', brief='Claim your first today')
     async def first(self, ctx):
         # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
-        channel_id = 94235299445493760    # dinkscord general text-channel id
+        channel_id = GENERAL_CHANNEL_ID    # dinkscord general text-channel id
         if ctx.channel.id != channel_id:
             msg = f'Please send your message to <#{channel_id}>.'
             await ctx.channel.send(msg)
@@ -22,7 +23,7 @@ class First(commands.Cog):
             utc_now = datetime.utcnow()
             utc_now = pytz.timezone('UTC').localize(utc_now).astimezone(pytz.timezone('US/Eastern'))
 
-            df = get_db('firstlist_id')
+            df = db_ops.get_table_data('firstlist_id')
             timestamp_most_recent = df['timesent'].iloc[-1].to_pydatetime()
             timestamp_most_recent = pytz.timezone('UTC').localize(timestamp_most_recent).astimezone(pytz.timezone('US/Eastern'))
             
@@ -31,7 +32,7 @@ class First(commands.Cog):
                 msg = f'Sorry {Author}, first has already been claimed today. 😭'
                 await ctx.channel.send(msg)
             else:
-                write_to_db(table_name='firstlist_id', user_id=ctx.author.id)
+                db_ops.write_first_entry(ctx.author.id)
                 time.sleep(0.5)
                 Author = ctx.author.mention
                 msg = f'{Author} is first today! 🥳'
@@ -40,8 +41,8 @@ class First(commands.Cog):
     @commands.command()
     async def score(self, ctx, pass_context=True, brief='Count of daily 1st wins'):
         # reads SQL database and generates an embed with list of names and scores
-        df = get_db('firstlist_id')
-        streak = get_streak(df)
+        df = db_ops.get_table_data('firstlist_id')
+        streak = streak_calc.calculate_streak(df)
         counts = df.user_id.value_counts()
         embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x4d4170)
         for i in range(5):  # display top 5
@@ -55,7 +56,7 @@ class First(commands.Cog):
     @commands.command()
     async def stats(self, ctx, *, args=None, pass_context=True, brief='Get an individual users stats'):
         # reads SQL database and generates an embed with list of names and scores
-        df = get_db('firstlist_id')
+        df = db_ops.get_table_data('firstlist_id')
 
         if len(ctx.message.mentions) > 0:
             author_id = str(ctx.message.mentions[0].id)
@@ -64,9 +65,9 @@ class First(commands.Cog):
 
         try:
             author = self.bot.get_user(int(author_id))
-            streak = get_user_streak(df,author_id)
-            score = get_user_score(df,author_id)
-            juice = get_user_juice(df,author_id)
+            streak = streak_calc.calculate_user_streak(df, author_id)
+            score = len(df[df.user_id == author_id])
+            juice = juice_calc.calculate_user_juice(df, author_id)
 
             embed=discord.Embed(title=author, description="Your server statistics", color=0x4d4170)
             embed.set_thumbnail(url=f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
@@ -82,13 +83,15 @@ class First(commands.Cog):
     @commands.command()
     async def juice(self, ctx, pass_context=True, brief='Get the server juice scores'):
         # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
-        df = get_db('firstlist_id')
-        df_juice,highscore_user_id,val = get_juice(df)
-        value = int(val)
+        df = db_ops.get_table_data('firstlist_id')
+        juice_df, highscore_user_id, highscore_value = juice_calc.calculate_juice(df)
+        
         embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x4d4170)
         for i in range(5):
-            embed.add_field(name=self.bot.get_user(int(df_juice.iloc[i][0])),value=int(df_juice.iloc[i][1]),inline=False)
-        txt = f'1-Day Highscore: {self.bot.get_user(int(highscore_user_id))}🧃{value} mins'
+            embed.add_field(name=self.bot.get_user(int(juice_df.iloc[i]['user_id'])),
+                          value=int(juice_df.iloc[i]['juice']),
+                          inline=False)
+        txt = f'1-Day Highscore: {self.bot.get_user(int(highscore_user_id))}🧃{int(highscore_value)} mins'
         embed.set_footer(text=txt)
         await ctx.channel.send(embed=embed)
 
@@ -97,7 +100,7 @@ class First(commands.Cog):
         # Initialize IO
         data_stream = io.BytesIO()
 
-        df_first = get_db('firstlist_id')
+        df_first = db_ops.get_table_data('firstlist_id')
         df_first['_1st to date'] = df_first.groupby('user_id').cumcount()+1
 
         # Initiate plot

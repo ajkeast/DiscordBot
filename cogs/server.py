@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from utils.db import update_sql_members, update_sql_emojis, update_sql_channels
+from utils.db import db_ops
 
 class Server(commands.Cog):
     def __init__(self, bot):
@@ -10,7 +10,7 @@ class Server(commands.Cog):
     async def members(self, ctx):
         # updates database with all current members of the server and their info
         members = ctx.guild.members
-        vals=[]
+        member_data = []
         for member in members:
             id = int(member.id)
             user = self.bot.get_user(id)
@@ -18,38 +18,38 @@ class Server(commands.Cog):
             user_name = user.name
             display_name = member.nick
             created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            vals.append([id,user_name,display_name,avatar,created_at])
+            member_data.append([id, user_name, display_name, avatar, created_at])
             
-        update_sql_members(vals)    # write to database
-        await ctx.channel.send("Member info succesfully updated.")
+        db_ops.update_members(member_data)
+        await ctx.channel.send("Member info successfully updated.")
 
     @commands.command()
     async def emojis(self, ctx):
         # updates database with all current emojis in the server
-        vals=[]
+        emoji_data = []
         for emoji in ctx.guild.emojis:
             id = emoji.id
             emoji_name = emoji.name
             guild_id = emoji.guild_id
             url = emoji.url
             created_at = emoji.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            vals.append([id,emoji_name,guild_id,url,created_at])
+            emoji_data.append([id, emoji_name, guild_id, url, created_at])
         
-        update_sql_emojis(vals)
-        await ctx.channel.send("Emoji info succesfully updated.")
+        db_ops.update_emojis(emoji_data)
+        await ctx.channel.send("Emoji info successfully updated.")
 
     @commands.command()
     async def channels(self, ctx):
         # updates database with all current channels on the server
-        vals=[]
+        channel_data = []
         for channel in ctx.guild.channels:
             id = channel.id
             name = channel.name
             created_at = channel.created_at
-            vals.append([id,name,created_at])
+            channel_data.append([id, name, created_at])
         
-        update_sql_channels(vals)
-        await ctx.channel.send("Channel info succesfully updated.")
+        db_ops.update_channels(channel_data)
+        await ctx.channel.send("Channel info successfully updated.")
 
 async def setup(bot):
     await bot.add_cog(Server(bot)) 
