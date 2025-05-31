@@ -106,6 +106,7 @@ class First(commands.Cog):
             embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
             embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
 
+            print(f'https://cdn.discordapp.com/avatars/{author_id}/{author.avatar}.webp?size=128')
             await ctx.channel.send(embed=embed)
         except Exception as error:
             print("An error occurred:", type(error).__name__)
