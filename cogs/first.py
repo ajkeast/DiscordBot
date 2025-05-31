@@ -101,12 +101,12 @@ class First(commands.Cog):
             juice = juice_calc.calculate_user_juice(df, author_id)
 
             embed=discord.Embed(title=author, description="Your server statistics", color=0x4d4170)
-            embed.set_thumbnail(url=str(author.avatar.with_size(128)))
+            embed.set_thumbnail(url=str(author.display_avatar.with_size(128)))
             embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
             embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
             embed.add_field(name="Longest streak", value=f'{streak} days 🔥', inline=True)
 
-            print(str(author.avatar.with_size(128)))
+            print(str(author.display_avatar.with_size(128)))
             await ctx.channel.send(embed=embed)
         except Exception as error:
             print("An error occurred:", type(error).__name__)
