@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from contextlib import contextmanager
 from typing import Tuple, List, Optional
+import json
 
 load_dotenv()
 
@@ -126,6 +127,59 @@ class DataOperations:
                 created_at = VALUES(created_at)
         """
         self.db.executemany(query, channel_data)
+
+    def create_chatgpt_logs_table(self) -> None:
+        """Create the chatgpt_logs table if it doesn't exist"""
+        query = """
+            CREATE TABLE IF NOT EXISTS chatgpt_logs (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                model VARCHAR(50) NOT NULL,
+                request_messages JSON NOT NULL,
+                response_content TEXT,
+                input_tokens INT,
+                output_tokens INT,
+                total_tokens INT,
+                function_calls JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES members(id)
+            )
+        """
+        self.db.execute(query)
+
+    def log_chatgpt_interaction(self, user_id: int, model: str, request_messages: list, 
+                              response_content: str, input_tokens: int, output_tokens: int,
+                              function_calls: list = None, image_urls: list = None) -> None:
+        """Log a ChatGPT interaction to the database
+        
+        Args:
+            user_id (int): Discord user ID (will be converted to string)
+            model (str): GPT model used
+            request_messages (list): List of message objects in the conversation
+            response_content (str): Assistant's response
+            input_tokens (int): Number of input tokens
+            output_tokens (int): Number of output tokens
+            function_calls (list, optional): List of function calls made
+            image_urls (list, optional): List of image URLs attached to the request
+        """
+        query = """
+            INSERT INTO chatgpt_logs 
+            (user_id, model, request_messages, response_content, input_tokens, 
+             output_tokens, total_tokens, function_calls, image_urls)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        total_tokens = input_tokens + output_tokens
+        self.db.execute(query, (
+            str(user_id),  # Convert user_id to string to match VARCHAR(20)
+            model,
+            json.dumps(request_messages),
+            response_content,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            json.dumps(function_calls) if function_calls else None,
+            json.dumps(image_urls) if image_urls else None
+        ))
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
         """Get entire table as DataFrame"""

@@ -345,16 +345,32 @@ class ChatGPTClient:
     def __init__(self, api_key=None):
         self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
         self.function_registry = FunctionRegistry()
+        self.model = "gpt-4"  # Store model name as instance variable
     
-    def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512):
-        """Call ChatGPT API with function calling support."""
+    def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
+        """Call ChatGPT API with function calling support.
+        
+        Args:
+            chat_history (list): List of previous messages
+            prompt (str): User's prompt
+            max_history (int, optional): Maximum number of messages to keep. Defaults to 20.
+            max_tokens (int, optional): Maximum tokens in response. Defaults to 512.
+            user_id (int, optional): Discord user ID for logging. Defaults to None.
+            image_urls (list, optional): List of image URLs to include. Defaults to None.
+        """
         try:
             # Append user prompt and maintain history length
-            self._append_and_shift(chat_history, {"role": "user", "content": prompt}, max_history)
+            message = {"role": "user", "content": prompt}
+            if image_urls:
+                message["content"] = [
+                    {"type": "text", "text": prompt},
+                    *[{"type": "image_url", "image_url": url} for url in image_urls]
+                ]
+            self._append_and_shift(chat_history, message, max_history)
             
             while True:
                 response = self.client.chat.completions.create(
-                    model="gpt-4",
+                    model=self.model,
                     temperature=0.7,
                     max_tokens=max_tokens,
                     messages=chat_history,
@@ -363,6 +379,27 @@ class ChatGPTClient:
                 )
                 
                 message = response.choices[0].message
+                
+                # Log the interaction if user_id is provided
+                if user_id is not None:
+                    from utils.db import db_ops
+                    function_calls = []
+                    if message.function_call:
+                        function_calls.append({
+                            "name": message.function_call.name,
+                            "arguments": message.function_call.arguments
+                        })
+                    
+                    db_ops.log_chatgpt_interaction(
+                        user_id=user_id,
+                        model=self.model,
+                        request_messages=chat_history,
+                        response_content=message.content,
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
+                        function_calls=function_calls if function_calls else None,
+                        image_urls=image_urls
+                    )
                 
                 # If no function call, return the response
                 if response.choices[0].finish_reason != "function_call":

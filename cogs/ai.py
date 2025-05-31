@@ -14,8 +14,17 @@ class AI(commands.Cog):
     async def ask(self, ctx, *, arg, pass_context=True, brief='Ask ChatGPT'):
         # Passes prompt to ChatGPT API and returns response
         if str(ctx.message.author.id) in IDCARD:
+            # Get image URLs from message attachments
+            image_urls = [attachment.url for attachment in ctx.message.attachments 
+                        if attachment.content_type and attachment.content_type.startswith('image/')]
+            
             async with ctx.typing():
-                self.chat_history, response = self.chat_client.call_chatgpt(self.chat_history, arg)
+                self.chat_history, response = self.chat_client.call_chatgpt(
+                    self.chat_history, 
+                    arg,
+                    user_id=ctx.author.id,
+                    image_urls=image_urls if image_urls else None
+                )
             await ctx.send(response)
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
