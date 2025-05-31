@@ -28,7 +28,7 @@ class Server(commands.Cog):
         for member in members:
             id = int(member.id)
             user = self.bot.get_user(id)
-            avatar = f'https://cdn.discordapp.com/avatars/{id}/{user.avatar}.webp?size=128'
+            avatar = str(user.avatar.with_size(128))
             user_name = user.name
             display_name = member.nick
             created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
