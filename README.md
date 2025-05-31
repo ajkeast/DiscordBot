@@ -12,7 +12,8 @@ What makes it really special is how it can interact with real-world data. I impl
 
 - Check the current weather for any location
 - Tell you the time in different timezones
-- Even post tweets (when it's feeling social!)
+- Post tweets (when it's feeling social!)
+- Search the web with Brave Search API
 
 Here's what it looks like in action:
 ![image](https://github.com/ajkeast/DiscordBot/assets/94143736/03f72ced-98a6-44bd-a016-38233738e049)
