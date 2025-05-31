@@ -9,3 +9,5 @@ pytz
 matplotlib
 tweepy
 openai==1.2.0
+beautifulsoup4>=4.12.0
+trafilatura>=1.6.0

@@ -4,6 +4,8 @@ from dotenv import load_dotenv      # load .env
 import pytz                         # timezones
 import requests                     # http queries
 import tweepy                       # twitter API
+from bs4 import BeautifulSoup      # HTML parsing
+import trafilatura                 # web content extraction
 
 load_dotenv()
 
@@ -25,6 +27,9 @@ class FunctionRegistry:
         
         # Social Media Functions
         self._register_social_functions()
+
+        # Search Functions
+        self._register_search_functions()
     
     def _register_date_functions(self):
         """Register all date and time related functions."""
@@ -82,6 +87,49 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["message"]
+            }
+        )
+
+    def _register_search_functions(self):
+        """Register all search related functions."""
+        self.register(
+            name="brave_search",
+            func=self._brave_search,
+            description="Search the web using Brave Search API and optionally fetch page content",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (max 400 chars, 50 words)"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of results to return (max 20)",
+                        "default": 10
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Results offset for pagination (max 9)",
+                        "default": 0
+                    },
+                    "result_filter": {
+                        "type": "string",
+                        "description": "Comma-delimited types to include (e.g., 'web,news,videos')",
+                        "default": "web"
+                    },
+                    "freshness": {
+                        "type": "string",
+                        "description": "Filter by time (pd: 24h, pw: week, pm: month, py: year)",
+                        "default": None
+                    },
+                    "fetch_content": {
+                        "type": "boolean",
+                        "description": "Whether to fetch and include the actual content of web pages",
+                        "default": False
+                    }
+                },
+                "required": ["query"]
             }
         )
 
@@ -200,6 +248,92 @@ class FunctionRegistry:
                 "status": "success"
             }
         except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _fetch_url_content(self, url):
+        """Fetch and extract meaningful content from a URL.
+        
+        Args:
+            url (str): URL to fetch content from
+            
+        Returns:
+            str: Extracted text content from the webpage
+        """
+        try:
+            downloaded = trafilatura.fetch_url(url)
+            if downloaded:
+                content = trafilatura.extract(downloaded, include_links=False, include_images=False)
+                if content:
+                    return content.strip()
+            
+            response = requests.get(url, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            for script in soup(["script", "style"]):
+                script.decompose()
+                
+            text = soup.get_text()
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            
+            return text.strip()
+            
+        except Exception as e:
+            return f"Error fetching content: {str(e)}"
+
+    def _brave_search(self, query, count=10, offset=0, result_filter="web", freshness=None, fetch_content=False):
+        """Perform a web search using Brave Search API and optionally fetch page content.
+        
+        Args:
+            query (str): Search query (max 400 chars, 50 words)
+            count (int, optional): Number of results. Defaults to 10.
+            offset (int, optional): Results offset. Defaults to 0.
+            result_filter (str, optional): Result types to include. Defaults to "web".
+            freshness (str, optional): Time filter. Defaults to None.
+            fetch_content (bool, optional): Whether to fetch and include actual page content. Defaults to False.
+            
+        Returns:
+            dict: Search results from Brave API, optionally including page content
+        """
+        url = "https://api.search.brave.com/res/v1/web/search"
+        
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": os.getenv('BRAVE_API_KEY')
+        }
+        
+        params = {
+            "q": query,
+            "count": min(count, 20),  # Ensure count doesn't exceed max
+            "offset": min(offset, 9),  # Ensure offset doesn't exceed max
+            "result_filter": result_filter
+        }
+        
+        if freshness:
+            params["freshness"] = freshness
+            
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params
+            )
+            response.raise_for_status()
+            results = response.json()
+            
+            if fetch_content and 'web' in result_filter:
+                if 'web' in results and 'results' in results['web']:
+                    for result in results['web']['results']:
+                        result['page_content'] = self._fetch_url_content(result['url'])
+            
+            return results
+            
+        except requests.exceptions.RequestException as e:
             return {
                 "status": "error",
                 "error": str(e)
