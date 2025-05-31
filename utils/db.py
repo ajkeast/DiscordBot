@@ -2,11 +2,9 @@ import pymysql
 import os
 import pandas as pd
 from dotenv import load_dotenv
-import pytz
 from datetime import datetime
 from contextlib import contextmanager
-from typing import Tuple, List, Optional, Any, Dict
-import logging
+from typing import Tuple, List, Optional
 
 load_dotenv()
 

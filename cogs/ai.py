@@ -1,12 +1,13 @@
 import discord
 from discord.ext import commands
-from chatgpt_functions import call_chatGPT, call_dalle3
+from chatgpt_functions import ChatGPTClient, call_dalle3
 from utils.constants import IDCARD, DALLE3_WHITELIST
 from utils.db import db_ops
 
 class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.chat_client = ChatGPTClient()
         self.chat_history = [{"role": "system", "content": "Talk like a surfer, stoner bro who is always chill and relaxed"}]
 
     @commands.command()
@@ -14,7 +15,7 @@ class AI(commands.Cog):
         # Passes prompt to ChatGPT API and returns response
         if str(ctx.message.author.id) in IDCARD:
             async with ctx.typing():
-                self.chat_history, response = call_chatGPT(self.chat_history, arg)
+                self.chat_history, response = self.chat_client.call_chatgpt(self.chat_history, arg)
             await ctx.send(response)
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')

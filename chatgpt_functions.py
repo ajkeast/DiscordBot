@@ -7,269 +7,269 @@ import tweepy                       # twitter API
 
 load_dotenv()
 
-client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
-
-twitter = tweepy.Client(consumer_key=os.getenv('TWITTER_API_KEY'),
-                        consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
-                        access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
-                        access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
-                        )
-
-def call_chatGPT(chat_history, prompt):
-    """Call ChatGPT API with error handling blocks.
+class FunctionRegistry:
+    """Registry for all available functions that can be called by ChatGPT."""
     
-    This function interacts with the ChatGPT API to generate responses based on the given chat history
-    and a prompt. It appends the prompt to the chat history, sends the request to the API, and processes
-    the response. If there is a function call in the response, it appends the function response to the chat
-    history and sends the updated history again. The function returns the updated chat history and the
-    generated response.
+    def __init__(self):
+        """Initialize the registry with all available functions."""
+        self.functions = {}
+        self._register_all_functions()
     
-    Args:
-        chat_history (list of dict): List of dictionaries representing the chat history.
-        prompt (str): The user prompt to be sent to the ChatGPT API.
-    
-    Returns:
-        tuple: A tuple containing the updated chat history and the generated response.
-            chat_history (list): Updated chat history after appending new messages.
-            response_content (str): The generated response content limited to 2000 characters.
-    """
-    
-    try:
-        # Append the user prompt to the chat history
-        append_and_shift(chat_history, {"role": "user", "content": prompt}, max_len=20)
+    def _register_all_functions(self):
+        """Register all available functions with their metadata."""
+        # Date and Time Functions
+        self._register_date_functions()
         
-        # Send request to the ChatGPT API
-        model = "gpt-4o-mini"
-        temperature = 0.7
-        max_tokens=512
-
-        response = client.chat.completions.create(model=model,
-                                                  temperature=temperature,
-                                                  max_tokens=max_tokens,
-                                                  messages=chat_history,
-                                                  functions=function_descriptions,
-                                                  function_call="auto")
+        # Weather Functions
+        self._register_weather_functions()
         
-        # If the response is not a function call, append assistant's response to the chat history
-        if response.choices[0].finish_reason != "function_call":
-            append_and_shift(chat_history, {"role": "assistant", "content": response.choices[0].message.content}, max_len=10)
-        
-        # If there was a function call, append it to the message history and run the response again
-        while response.choices[0].finish_reason == "function_call":
-            function_response = function_call(response)
-            append_and_shift(chat_history, {"role": "function", "name": response.choices[0].message.function_call.name, "content": json.dumps(function_response)}, max_len=10)
-            response = client.chat.completions.create(model=model,
-                                                      temperature=temperature,
-                                                      max_tokens=max_tokens,
-                                                      messages=chat_history,
-                                                      functions=function_descriptions,
-                                                      function_call="auto")
-        
-        # Return the updated chat history and the generated response content (limited to 2000 characters)
-        return chat_history, response.choices[0].message.content[:2000]
+        # Social Media Functions
+        self._register_social_functions()
     
-    except Exception as e:
-        # Handle any exceptions by returning an error message
-        return chat_history, f'Looks like there was an error: {repr(e)}'
-
-    
-def function_call(ai_response):
-    """Process the function call in the AI response and invoke the corresponding function.
-    
-    This function extracts the function call details from the AI response and invokes the appropriate
-    function based on the function name. The function call typically includes the function name and its
-    corresponding arguments. The supported functions in this implementation are:
-    - get_todays_date: Retrieves today's date based on the provided timezone.
-    - get_current_weather: Retrieves the current weather based on the provided location.
-    - get_minecraft_server: Retrieves information about a Minecraft server based on the provided IP address.
-    
-    Args:
-        ai_response (json): The AI response containing the function call details.
-    
-    Returns:
-        The result of the invoked function (must be json) or None if the function name is not supported.
-    """
-    
-    # Extract function call details from the AI response
-    function_call = ai_response.choices[0].message.function_call
-    function_name = function_call.name
-    arguments = function_call.arguments
-    
-    # Process the function call based on the function name
-    if function_name == "get_todays_date":
-        # Extract the timezone argument and invoke the get_todays_date function
-        timezone = eval(arguments).get("timezone")
-        return get_todays_date(timezone)
-    elif function_name == "get_current_weather":
-        # Extract the location argument and invoke the get_current_weather function
-        location = eval(arguments).get("location")
-        return get_current_weather(location)
-    elif function_name == "get_minecraft_server":
-        # Extract the IP address argument and invoke the get_minecraft_server function
-        ip_address = eval(arguments).get("ip_address")
-        return get_minecraft_server(ip_address)
-    elif function_name == "post_tweet":
-        # Extract the tweet message argument and invoke post_tweet function
-         message = eval(arguments).get("message")
-         return post_tweet(message)
-    else:
-        # If the function name is not supported, return None
-        return None
-
-
-# .json of all functions & arguments with descriptions so the model can intelligently decide when and how to invoke
-function_descriptions = [
-    {
-        "name": "get_todays_date",
-        "description": "Get todays date, returned as a string in format of yyyy-mm-dd hh:mm:ss",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timezone": {"type":"string", "description":"location where a common standard time is used. Default to US/Eastern if not specified"}
-            },
-             "required": ["timezone"]
-        },
-    },
-    {
-        "name": "get_current_weather",
-        "description": "Get the current weather in a given location",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and state, ex. San Francisco, CA. Default is Boston, MA when not specified.",
+    def _register_date_functions(self):
+        """Register all date and time related functions."""
+        self.register(
+            name="get_todays_date",
+            func=self._get_todays_date,
+            description="Get the current date and time for a specific timezone",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "description": "Timezone identifier (e.g., 'US/Eastern', 'UTC', 'Europe/London')"
+                    }
                 },
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-            },
-            "required": ["location"],
-        },
-    },
-    {
-        "name": "get_minecraft_server",
-        "description": "Get the number of players online and the online status for the minecraft server",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "ip_address": {
-                    "type": "string",
-                    "description": "ip address string",
+                "required": ["timezone"]
+            }
+        )
+    
+    def _register_weather_functions(self):
+        """Register all weather related functions."""
+        self.register(
+            name="get_current_weather",
+            func=self._get_current_weather,
+            description="Get current weather conditions for a specific location",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City and state/country (e.g., 'San Francisco, CA', 'London, UK')"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "Temperature unit preference"
+                    }
                 },
-            },
-            "required": ["ip_address"]
-        },
-    },
-    {
-        "name": "post_tweet",
-        "description": "Takes a message and posts it to twitter.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "the message that will be tweeted",
+                "required": ["location"]
+            }
+        )
+    
+    def _register_social_functions(self):
+        """Register all social media related functions."""
+        self.register(
+            name="post_tweet",
+            func=self._post_tweet,
+            description="Post a message to Twitter",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Tweet content (max 280 characters)"
+                    }
                 },
-            },
-            "required": ["message"],
-        },
-    }
-]
+                "required": ["message"]
+            }
+        )
 
-def get_todays_date(timezone='US/Eastern'):
-    """Get the current date and time based on the timezone"""
-    tz = pytz.timezone(timezone)
-    today = {
-        "timezone": timezone,
-        "today": str(datetime.datetime.now(tz))
-    }
-    return json.dumps(today)
+    def register(self, name, func, description, parameters):
+        """Register a new function with its metadata.
+        
+        Args:
+            name (str): Unique identifier for the function
+            func (callable): The actual function to be called
+            description (str): Clear description of what the function does
+            parameters (dict): JSONSchema object describing the function's parameters
+        """
+        self.functions[name] = {
+            "func": func,
+            "description": {
+                "name": name,
+                "description": description,
+                "parameters": parameters
+            }
+        }
+    
+    @property
+    def function_descriptions(self):
+        """Get all function descriptions for ChatGPT API."""
+        return [func["description"] for func in self.functions.values()]
+    
+    def execute(self, name, arguments):
+        """Execute a registered function by name with given arguments.
+        
+        Args:
+            name (str): Name of the function to execute
+            arguments (str or dict): Function arguments as string or dict
+            
+        Returns:
+            str: JSON string containing the function's response
+            
+        Raises:
+            ValueError: If function name is not registered
+        """
+        if name not in self.functions:
+            raise ValueError(f"Unknown function: {name}")
+        
+        try:
+            parsed_args = json.loads(arguments) if isinstance(arguments, str) else arguments
+            result = self.functions[name]["func"](**parsed_args)
+            return json.dumps(result) if not isinstance(result, str) else result
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+    
+    def _get_todays_date(self, timezone='US/Eastern'):
+        """Get the current date and time for a specific timezone.
+        
+        Args:
+            timezone (str): Timezone identifier (e.g., 'US/Eastern', 'UTC')
+            
+        Returns:
+            dict: Timezone and formatted datetime string
+        """
+        tz = pytz.timezone(timezone)
+        return {
+            "timezone": timezone,
+            "today": str(datetime.datetime.now(tz))
+        }
 
+    def _get_current_weather(self, location, unit="fahrenheit"):
+        """Get current weather conditions for a specific location.
+        
+        Args:
+            location (str): City and state/country
+            unit (str, optional): Temperature unit. Defaults to "fahrenheit"
+            
+        Returns:
+            dict: Weather information including temperature, conditions, etc.
+        """
+        url = "https://weatherapi-com.p.rapidapi.com/current.json"
+        headers = {
+            "X-RapidAPI-Key": os.getenv('RAPID_API_KEY'),
+            "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
+        }
+        
+        response = requests.get(url, headers=headers, params={"q": location}).json()
+        
+        return {
+            "location": response.get("location"),
+            "unit": unit,
+            "temperature": response.get("current").get("temp_f"),
+            "conditions": response.get("current").get("condition").get("text"),
+            "uv_level": response.get("current").get("uv"),
+            "humidity": response.get("current").get("humidity"),
+            "precip_inches": response.get("current").get("precip_in")
+        }
+    
+    def _post_tweet(self, message):
+        """Post a message to Twitter.
+        
+        Args:
+            message (str): Tweet content (max 280 characters)
+            
+        Returns:
+            dict: Tweet information including URL and status
+        """
+        try:
+            twitter = tweepy.Client(
+                consumer_key=os.getenv('TWITTER_API_KEY'),
+                consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
+                access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+                access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+            )
+            
+            tweet = twitter.create_tweet(text=message)
+            tweet_id = tweet.data['id']
+            
+            return {
+                "tweet_text": message,
+                "tweet_url": f'https://twitter.com/twitter/statuses/{tweet_id}',
+                "status": "success"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
 
-def get_current_weather(location, unit="fahrenheit"):
-    """Get the current weather in a given location"""
-
-    url = "https://weatherapi-com.p.rapidapi.com/current.json"
-    querystring = {"q":location}
-    headers = {"X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
-               "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"}
-    response = requests.get(url, headers=headers, params=querystring).json()
-
-    weather = {"location":response.get("location"),
-               "unit":unit,
-               "temperature":response.get("current").get("temp_f"),
-               "conditions":response.get("current").get("condition").get("text"),
-               "uv level":response.get("current").get("uv"),
-               "humidity":response.get("current").get("humidity"),
-               "precip_inches":response.get("current").get("precip_in")
-    }
-
-    return json.dumps(weather)
-
-def get_minecraft_server(ip_address='51.81.151.253:25583'):
-    """Get the server details based on the IP address """
-   
-    url = "https://minecraft-server-status1.p.rapidapi.com/servers/single/lite"
-
-    payload = { "host": ip_address }
-    headers = {
-        "content-type": "application/json",
-        "X-RapidAPI-Key": "d66e36c641msh71bd179143810dep11f9f8jsn691562db2764",
-        "X-RapidAPI-Host": "minecraft-server-status1.p.rapidapi.com"
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-    print(response.json)
-
-    return response.json()
-
-def post_tweet(message):
-    try:
-        tweet = twitter.create_tweet(text=message)  # Create a tweet using the 'twitter' object
-        tweet_text = tweet.data['text']  # Get the tweet text
-        tweet_id = tweet.data['id']  # Get the tweet ID
-        tweet_url = f'https://twitter.com/twitter/statuses/{tweet_id}'  # Construct the tweet URL
-        tweet_json = {
-            "Tweet_text": tweet_text,
-            "Tweet_URL": tweet_url,
-            "Tweet_Status": "Complete"
-        }  # Create a JSON-ready dictionary with tweet info
-        return json.dumps(tweet_json)  # Convert and return as JSON
-
-    except Exception as e:
-        exception_json = {"Error": repr(e)}  # Create an exception JSON
-        return json.dumps(exception_json)  # Convert and return as JSON
-# Assumes 'twitter' object and 'json' module are defined elsewhere
+class ChatGPTClient:
+    """Client for interacting with ChatGPT API."""
+    
+    def __init__(self, api_key=None):
+        self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
+        self.function_registry = FunctionRegistry()
+    
+    def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512):
+        """Call ChatGPT API with function calling support."""
+        try:
+            # Append user prompt and maintain history length
+            self._append_and_shift(chat_history, {"role": "user", "content": prompt}, max_history)
+            
+            while True:
+                response = self.client.chat.completions.create(
+                    model="gpt-4",
+                    temperature=0.7,
+                    max_tokens=max_tokens,
+                    messages=chat_history,
+                    functions=self.function_registry.function_descriptions,
+                    function_call="auto"
+                )
+                
+                message = response.choices[0].message
+                
+                # If no function call, return the response
+                if response.choices[0].finish_reason != "function_call":
+                    self._append_and_shift(chat_history, {
+                        "role": "assistant",
+                        "content": message.content
+                    }, max_history)
+                    return chat_history, message.content[:2000]
+                
+                # Handle function call
+                function_name = message.function_call.name
+                function_response = self.function_registry.execute(
+                    function_name,
+                    message.function_call.arguments
+                )
+                
+                self._append_and_shift(chat_history, {
+                    "role": "function",
+                    "name": function_name,
+                    "content": function_response
+                }, max_history)
+                
+        except Exception as e:
+            return chat_history, f'Error: {str(e)}'
+    
+    @staticmethod
+    def _append_and_shift(arr, item, max_len):
+        """Append an item to array and maintain maximum length."""
+        arr.append(item)
+        if len(arr) > max_len:
+            arr.pop(1)  # Keep system message, remove oldest message
 
 def call_dalle3(prompt):
-    """
-    Generate an image using the DALL-E 3 model based on the provided prompt.
-
-    Args:
-        prompt (str): The prompt for image generation.
-
-    Returns:
-        str: The URL of the generated image.
-             If an error occurs during the API request, an error message is returned.
-    """
-    try:        
-        # Send a request to the ChatGPT API using the OpenAI library
-        response = client.images.generate(model="dall-e-3",  # Specify the DALL-E 3 model
-                                          prompt=prompt,     # Provide the prompt for image generation
-                                          size="1024x1024")  # Specify the size of the generated image
-        
-        # Return the URL of the generated image from the API response
+    """Generate an image using DALL-E 3."""
+    try:
+        client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024"
+        )
         return response.data[0].url
-        
     except Exception as e:
-        # Handle any exceptions that may occur during the API request
-        return f'Looks like there was an error: {repr(e)}'
-
-
-def append_and_shift(arr, v, max_len):
-    """
-    Append a value (v) to an array (arr) up to a set maximum length (max_len).
-    If the maximum length is reached, shift out the second earliest registry.
-    """
-    arr.append(v)
-    if len(arr) > max_len:
-        arr.pop(1)
+        return f'Error generating image: {str(e)}'
