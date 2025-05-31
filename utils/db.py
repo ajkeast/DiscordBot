@@ -128,25 +128,6 @@ class DataOperations:
         """
         self.db.executemany(query, channel_data)
 
-    def create_chatgpt_logs_table(self) -> None:
-        """Create the chatgpt_logs table if it doesn't exist"""
-        query = """
-            CREATE TABLE IF NOT EXISTS chatgpt_logs (
-                id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                model VARCHAR(50) NOT NULL,
-                request_messages JSON NOT NULL,
-                response_content TEXT,
-                input_tokens INT,
-                output_tokens INT,
-                total_tokens INT,
-                function_calls JSON,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES members(id)
-            )
-        """
-        self.db.execute(query)
-
     def log_chatgpt_interaction(self, user_id: int, model: str, request_messages: list, 
                               response_content: str, input_tokens: int, output_tokens: int,
                               function_calls: list = None, image_urls: list = None) -> None:

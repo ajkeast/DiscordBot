@@ -1,4 +1,3 @@
-import discord
 from discord.ext import commands
 from chatgpt_functions import ChatGPTClient, call_dalle3
 from utils.constants import IDCARD, DALLE3_WHITELIST
