@@ -352,23 +352,18 @@ class ChatGPTClient:
         
         Args:
             chat_history (list): List of previous messages
-            prompt (str or dict): User's prompt or full message object
+            prompt (str): User's prompt
             max_history (int, optional): Maximum number of messages to keep. Defaults to 20.
             max_tokens (int, optional): Maximum tokens in response. Defaults to 512.
             user_id (int, optional): Discord user ID for logging. Defaults to None.
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
         try:
-            # Handle prompt whether it's a string or message object
-            if isinstance(prompt, str):
-                message = {"role": "user", "content": prompt}
-            else:
-                message = prompt
-
-            # Add image URLs if present
+            # Append user prompt and maintain history length
+            message = {"role": "user", "content": prompt}
             if image_urls:
                 message["content"] = [
-                    {"type": "text", "text": message["content"]},
+                    {"type": "text", "text": prompt},
                     *[{"type": "image_url", "image_url": url} for url in image_urls]
                 ]
             self._append_and_shift(chat_history, message, max_history)
