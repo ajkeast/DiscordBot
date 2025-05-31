@@ -1,15 +1,9 @@
-# Import dependencies (make sure requirements.txt includes these)
-
-import discord                                              # Discord API
+# Import dependencies
+import discord                          # Discord API
 from discord.ext import commands
-# from discord_components import Button, DiscordComponents
-import pymysql                                              # Connect to AWS SQL
-import os,io,base64,string,time,random,asyncio,re           # Core python libraries
-import pandas as pd                                         # Manipulate tabular data
-from chatgpt_functions import *                             # function calls for ChatGPT API
-from dotenv import load_dotenv                              # Load .env
-from datetime import datetime
-import matplotlib.pyplot as plt
+import os                              # For environment variables
+from dotenv import load_dotenv         # Load .env
+from utils.db import db_ops            # Database operations
 
 # Load environment variables
 load_dotenv()
@@ -37,16 +31,14 @@ class DinkBot(commands.Bot):
             return
         
         # Store message in database
-        id = message.id
-        member_id = message.author.id
-        channel_id = message.channel.id
-        content = message.content
-        created_at = message.created_at
-        vals = [id, member_id, channel_id, content, created_at]
-        vals = [value if value is not None else 'NULL' for value in vals]
-
-        from utils.db import update_sql_messages
-        update_sql_messages(vals)
+        message_data = (
+            message.id,
+            message.author.id,
+            message.channel.id,
+            message.content,
+            message.created_at
+        )
+        db_ops.update_messages(message_data)
         
         await self.process_commands(message)
 
