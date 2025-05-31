@@ -52,8 +52,8 @@ coverage.xml
 .pytest_cache/
 
 # Pebble Host
-pebblehost.yml
-pebble-python-config.json
+/.pebblehost.yml
+/.pebble-python-config.json
 
 # Translations
 *.mo
