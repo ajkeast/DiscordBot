@@ -17,10 +17,13 @@ class AI(commands.Cog):
             image_urls = [attachment.url for attachment in ctx.message.attachments 
                         if attachment.content_type and attachment.content_type.startswith('image/')]
             
+            # Create message with user's Discord name
+            message = {"role": "user", "content": arg, "name": str(ctx.author)}
+            
             async with ctx.typing():
                 self.chat_history, response = self.chat_client.call_chatgpt(
                     self.chat_history, 
-                    arg,
+                    message,  # Pass the full message object instead of just arg
                     user_id=ctx.author.id,
                     image_urls=image_urls if image_urls else None
                 )
