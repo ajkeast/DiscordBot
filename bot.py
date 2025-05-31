@@ -14,7 +14,6 @@ class DinkBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
         super().__init__(command_prefix='_', case_insensitive=True, intents=intents)
-        # Default help command will be used
 
     async def setup_hook(self):
         # Load all cogs
