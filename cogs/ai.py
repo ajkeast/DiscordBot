@@ -30,5 +30,14 @@ class AI(commands.Cog):
         else:
             await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
 
+    @commands.command()
+    async def clear(self, ctx, pass_context=True, brief='Clear chat history'):
+        """Clear the chat history and reset to initial state"""
+        if str(ctx.message.author.id) in IDCARD:
+            self.chat_history = [{"role": "system", "content": "Talk like a surfer, stoner bro who is always chill and relaxed"}]
+            await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
+        else:
+            await ctx.channel.send('To conserve compute resources, only specific users can use _clear')
+
 async def setup(bot):
     await bot.add_cog(AI(bot)) 
