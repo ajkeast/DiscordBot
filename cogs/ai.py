@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from chatgpt_functions import call_chatGPT, call_dalle3
 from utils.constants import IDCARD, DALLE3_WHITELIST
-from utils.db import write_to_db
+from utils.db import db_ops
 
 class AI(commands.Cog):
     def __init__(self, bot):
@@ -22,7 +22,7 @@ class AI(commands.Cog):
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief='Generate AI Art'):
         if str(ctx.message.author.id) in DALLE3_WHITELIST:
-            write_to_db(table_name='dalle_3_prompts',user_id=ctx.author.id, prompt=arg)
+            db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
             async with ctx.typing():
                 response = call_dalle3(arg)
             await ctx.channel.send(str(response))
