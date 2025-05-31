@@ -9,11 +9,22 @@ from utils.db import db_ops, streak_calc, juice_calc
 from utils.constants import GENERAL_CHANNEL_ID
 
 class First(commands.Cog):
+    """A cog that manages the daily 'first' claiming game and related statistics."""
+    
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(name='1st', brief='Claim your first today')
     async def first(self, ctx):
+        """Attempt to claim first place for the day.
+        
+        Args:
+            ctx: The command context
+            
+        The command only works in the designated general channel.
+        First can only be claimed once per day (Eastern Time).
+        Successful claims are recorded in the database.
+        """
         # Checks if first has been claimed, if not, writes user_id and timestamp to SQL database
         channel_id = GENERAL_CHANNEL_ID    # dinkscord general text-channel id
         if ctx.channel.id != channel_id:
@@ -40,6 +51,15 @@ class First(commands.Cog):
 
     @commands.command()
     async def score(self, ctx, pass_context=True, brief='Count of daily 1st wins'):
+        """Display the leaderboard of first place claims.
+        
+        Args:
+            ctx: The command context
+            
+        Shows:
+        - Top 5 users by number of first place claims
+        - Most recent winner and their current streak
+        """
         # reads SQL database and generates an embed with list of names and scores
         df = db_ops.get_table_data('firstlist_id')
         streak = streak_calc.calculate_streak(df)
@@ -55,6 +75,17 @@ class First(commands.Cog):
 
     @commands.command()
     async def stats(self, ctx, *, args=None, pass_context=True, brief='Get an individual users stats'):
+        """Display detailed statistics for a specific user.
+        
+        Args:
+            ctx: The command context
+            args: Optional mention of another user to view their stats
+            
+        Shows:
+        - Total first place claims (Score)
+        - Juice score (minutes saved from midnight)
+        - Longest streak of consecutive first places
+        """
         # reads SQL database and generates an embed with list of names and scores
         df = db_ops.get_table_data('firstlist_id')
 
@@ -82,6 +113,17 @@ class First(commands.Cog):
 
     @commands.command()
     async def juice(self, ctx, pass_context=True, brief='Get the server juice scores'):
+        """Display the juice leaderboard showing time efficiency of first claims.
+        
+        Args:
+            ctx: The command context
+            
+        Shows:
+        - Top 5 users by total juice score
+        - The highest single-day juice score and its holder
+        
+        Juice score is calculated as minutes between claim time and midnight.
+        """
         # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
         df = db_ops.get_table_data('firstlist_id')
         juice_df, highscore_user_id, highscore_value = juice_calc.calculate_juice(df)
@@ -97,6 +139,16 @@ class First(commands.Cog):
 
     @commands.command()
     async def graph(self, ctx, brief='Get a graph of the firsts to date'):
+        """Generate and send a graph showing the progression of first claims over time.
+        
+        Args:
+            ctx: The command context
+            
+        Creates a line chart where:
+        - X-axis represents dates
+        - Y-axis shows cumulative number of firsts
+        - Each user has their own line
+        """
         # Initialize IO
         data_stream = io.BytesIO()
 

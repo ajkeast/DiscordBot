@@ -10,10 +10,11 @@ load_dotenv()
 
 # Setup bot
 class DinkBot(commands.Bot):
+    """A Discord bot with first-tracking, AI capabilities, and utility functions."""
     def __init__(self):
         intents = discord.Intents.all()
         super().__init__(command_prefix='_', case_insensitive=True, intents=intents)
-        self.remove_command('help')  # Remove default help command
+        # Default help command will be used
 
     async def setup_hook(self):
         # Load all cogs

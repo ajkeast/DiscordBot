@@ -3,11 +3,25 @@ from discord.ext import commands
 from utils.db import db_ops
 
 class Server(commands.Cog):
+    """A cog for managing and tracking server-related information and updates."""
+    
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command()
     async def members(self, ctx):
+        """Update the database with current server member information.
+        
+        Args:
+            ctx: The command context
+            
+        Stores for each member:
+        - User ID
+        - Username
+        - Display name (nickname)
+        - Avatar URL
+        - Account creation date
+        """
         # updates database with all current members of the server and their info
         members = ctx.guild.members
         member_data = []
@@ -25,6 +39,18 @@ class Server(commands.Cog):
 
     @commands.command()
     async def emojis(self, ctx):
+        """Update the database with current server emoji information.
+        
+        Args:
+            ctx: The command context
+            
+        Stores for each emoji:
+        - Emoji ID
+        - Name
+        - Guild ID
+        - Image URL
+        - Creation date
+        """
         # updates database with all current emojis in the server
         emoji_data = []
         for emoji in ctx.guild.emojis:
@@ -40,6 +66,16 @@ class Server(commands.Cog):
 
     @commands.command()
     async def channels(self, ctx):
+        """Update the database with current server channel information.
+        
+        Args:
+            ctx: The command context
+            
+        Stores for each channel:
+        - Channel ID
+        - Channel name
+        - Creation date
+        """
         # updates database with all current channels on the server
         channel_data = []
         for channel in ctx.guild.channels:
