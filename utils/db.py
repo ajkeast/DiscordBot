@@ -167,6 +167,26 @@ class DataOperations:
         query = f"SELECT * FROM {table_name}"
         return self.db.fetch_df(query)
 
+    def get_monthly_message_counts(self, year: int, month: int) -> pd.DataFrame:
+        """Get message counts for all members in a specific month
+        
+        Args:
+            year (int): The year to check
+            month (int): The month to check (1-12)
+            
+        Returns:
+            pd.DataFrame: DataFrame containing user_id, username, and message count
+        """
+        query = """
+            SELECT m.id, m.user_name, COUNT(msg.id) as message_count
+            FROM members m
+            LEFT JOIN messages msg ON m.id = msg.member_id
+            WHERE YEAR(msg.created_at) = %s AND MONTH(msg.created_at) = %s
+            GROUP BY m.id, m.user_name
+            ORDER BY message_count DESC
+        """
+        return self.db.fetch_df(query, (year, month))
+
 class StreakCalculator:
     @staticmethod
     def calculate_streak(df: pd.DataFrame) -> int:

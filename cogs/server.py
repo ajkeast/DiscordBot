@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from utils.db import db_ops
+from datetime import datetime, timedelta
 
 class Server(commands.Cog):
     """A cog for managing and tracking server-related information and updates."""
@@ -86,6 +87,51 @@ class Server(commands.Cog):
         
         db_ops.update_channels(channel_data)
         await ctx.channel.send("Channel info successfully updated.")
+
+    @commands.command()
+    async def monthly_stats(self, ctx):
+        """Display the most active members for the previous month.
+        
+        Args:
+            ctx: The command context
+        """
+        # Get the previous month
+        today = datetime.now()
+        if today.month == 1:
+            year = today.year - 1
+            month = 12
+        else:
+            year = today.year
+            month = today.month - 1
+
+        # Get message counts
+        df = db_ops.get_monthly_message_counts(year, month)
+        
+        if df.empty:
+            await ctx.send("No messages found for the previous month.")
+            return
+
+        # Create embed
+        month_name = datetime(year, month, 1).strftime("%B")
+        embed = discord.Embed(
+            title=f"📊 Monthly Activity Report - {month_name} {year}",
+            color=discord.Color.blue()
+        )
+
+        # Add top 5 members to embed
+        for i, (_, row) in enumerate(df.head(5).iterrows(), 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            embed.add_field(
+                name=f"{medal} {row['user_name']}",
+                value=f"{row['message_count']} messages",
+                inline=False
+            )
+
+        # Add total messages
+        total_messages = df['message_count'].sum()
+        embed.set_footer(text=f"Total messages: {total_messages}")
+
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Server(bot)) 
