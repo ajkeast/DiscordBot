@@ -1,13 +1,83 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utils.db import db_ops
+from utils.constants import GENERAL_CHANNEL_ID
 from datetime import datetime, timedelta
+import pytz
+import asyncio
 
 class Server(commands.Cog):
     """A cog for managing and tracking server-related information and updates."""
     
     def __init__(self, bot):
         self.bot = bot
+        self.monthly_stats.start()
+
+    def cog_unload(self):
+        """Clean up tasks when cog is unloaded"""
+        self.monthly_stats.cancel()
+
+    @tasks.loop(hours=1)
+    async def monthly_stats(self):
+        """Post monthly stats at 9am EST on the first of each month"""
+        # Get current time in EST
+        est = pytz.timezone('US/Eastern')
+        now = datetime.now(est)
+        
+        # Check if it's 9am on the first of the month
+        if now.hour == 9 and now.minute == 0 and now.day == 1:
+            # Get the previous month
+            if now.month == 1:
+                year = now.year - 1
+                month = 12
+            else:
+                year = now.year
+                month = now.month - 1
+
+            # Get message counts
+            df = db_ops.get_monthly_message_counts(year, month)
+            
+            if df.empty:
+                return
+
+            # Create embed
+            month_name = datetime(year, month, 1).strftime("%B")
+            embed = discord.Embed(
+                title=f"📊 Monthly Activity Report - {month_name} {year}",
+                color=discord.Color.blue()
+            )
+
+            # Add top 5 members to embed
+            for i, (_, row) in enumerate(df.head(5).iterrows(), 1):
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                embed.add_field(
+                    name=f"{medal} {row['user_name']}",
+                    value=f"{row['message_count']} messages",
+                    inline=False
+                )
+
+            # Add total messages
+            total_messages = df['message_count'].sum()
+            embed.set_footer(text=f"Total messages: {total_messages}")
+
+            # Get the general channel
+            channel = self.bot.get_channel(GENERAL_CHANNEL_ID)
+            if channel:
+                try:
+                    await channel.send(embed=embed)
+                except discord.Forbidden:
+                    print(f"Bot doesn't have permission to send messages in channel {GENERAL_CHANNEL_ID}")
+
+    @monthly_stats.before_loop
+    async def before_monthly_stats(self):
+        """Wait until bot is ready before starting the task"""
+        await self.bot.wait_until_ready()
+        # Calculate time until next hour
+        est = pytz.timezone('US/Eastern')
+        now = datetime.now(est)
+        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        seconds_until_next_hour = (next_hour - now).total_seconds()
+        await asyncio.sleep(seconds_until_next_hour)
 
     @commands.command()
     async def members(self, ctx):
@@ -87,51 +157,6 @@ class Server(commands.Cog):
         
         db_ops.update_channels(channel_data)
         await ctx.channel.send("Channel info successfully updated.")
-
-    @commands.command()
-    async def monthly_stats(self, ctx):
-        """Display the most active members for the previous month.
-        
-        Args:
-            ctx: The command context
-        """
-        # Get the previous month
-        today = datetime.now()
-        if today.month == 1:
-            year = today.year - 1
-            month = 12
-        else:
-            year = today.year
-            month = today.month - 1
-
-        # Get message counts
-        df = db_ops.get_monthly_message_counts(year, month)
-        
-        if df.empty:
-            await ctx.send("No messages found for the previous month.")
-            return
-
-        # Create embed
-        month_name = datetime(year, month, 1).strftime("%B")
-        embed = discord.Embed(
-            title=f"📊 Monthly Activity Report - {month_name} {year}",
-            color=discord.Color.blue()
-        )
-
-        # Add top 5 members to embed
-        for i, (_, row) in enumerate(df.head(5).iterrows(), 1):
-            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-            embed.add_field(
-                name=f"{medal} {row['user_name']}",
-                value=f"{row['message_count']} messages",
-                inline=False
-            )
-
-        # Add total messages
-        total_messages = df['message_count'].sum()
-        embed.set_footer(text=f"Total messages: {total_messages}")
-
-        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Server(bot)) 
