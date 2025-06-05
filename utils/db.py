@@ -80,7 +80,7 @@ class DataOperations:
 
     def write_dalle_entry(self, user_id: int, prompt: str) -> None:
         """Record a DALL-E prompt entry"""
-        query = "INSERT INTO dalle3 (user_id, prompt) VALUES (%s, %s);"
+        query = "INSERT INTO dalle_3_prompts (user_id, prompt) VALUES (%s, %s);"
         self.db.execute(query, (user_id, prompt))
 
     def update_messages(self, message_data: Tuple) -> None:
