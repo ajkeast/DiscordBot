@@ -346,10 +346,9 @@ class ChatGPTClient:
         self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
         self.function_registry = FunctionRegistry()
         self.model = "gpt-4.1-mini"  # Store model name as instance variable
-        self.previous_response_id = None  # Track conversation state
     
     def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
-        """Call ChatGPT API with function calling, vision support, and image generation.
+        """Call ChatGPT API with function calling and vision support.
         
         Args:
             chat_history (list): List of previous messages
@@ -360,146 +359,75 @@ class ChatGPTClient:
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
         try:
-            # Prepare input based on whether there are images
+            # Prepare message content based on whether there are images
             if image_urls:
-                input_content = [
-                    {"type": "input_text", "text": prompt},
-                    *[{"type": "input_image", "image_url": {"url": url}} for url in image_urls]
+                message_content = [
+                    {"type": "text", "text": prompt},
+                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
                 ]
             else:
-                input_content = prompt
+                message_content = prompt
 
-            print(f"Debug: Making API call with model={self.model}, input={input_content}")
-
-            # Make the API call with both function calling and image generation support
-            try:
+            # Append user prompt and maintain history length
+            message = {"role": "user", "content": message_content}
+            self._append_and_shift(chat_history, message, max_history)
+            
+            while True:
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": input_content}
-                    ],
-                    tools=[
-                        *[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions],
-                        {"type": "image_generation"}
-                    ],
-                    stream=True,  # Enable streaming for partial image updates
+                    temperature=0.7,
+                    max_tokens=max_tokens,
+                    messages=chat_history,
+                    functions=self.function_registry.function_descriptions,
+                    function_call="auto"
                 )
-                print("Debug: API call successful")
-            except AttributeError as e:
-                print(f"Debug: AttributeError - {str(e)}")
-                print(f"Debug: Available client methods: {dir(self.client)}")
-                raise Exception(f"API client error: {str(e)}")
-            except Exception as e:
-                print(f"Debug: API call failed - {str(e)}")
-                raise
-            
-            # Process the streaming response
-            image_data = None
-            revised_prompt = None
-            text_response = ""
-            function_calls = []
-            
-            try:
-                for event in response:
-                    print(f"Debug: Processing event type: {event.type if hasattr(event, 'type') else 'unknown'}")
-                    
-                    if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
-                        text_response += event.delta.content
-                    elif hasattr(event, 'delta') and hasattr(event.delta, 'tool_calls'):
-                        for tool_call in event.delta.tool_calls:
-                            if tool_call.type == 'function':
-                                function_calls.append({
-                                    "call_id": tool_call.id,
-                                    "name": tool_call.function.name,
-                                    "arguments": tool_call.function.arguments
-                                })
-            except Exception as e:
-                print(f"Debug: Error processing stream - {str(e)}")
-                raise
-            
-            # If we have function calls, execute them and get a new response
-            if function_calls:
-                print(f"Debug: Processing {len(function_calls)} function calls")
-                # Prepare function results
-                function_results = []
-                for function_call in function_calls:
-                    try:
-                        # Execute the function
-                        function_response = self.function_registry.execute(
-                            function_call["name"],
-                            function_call["arguments"]
-                        )
-                        
-                        # Add the function result with its call_id
-                        function_results.append({
-                            "type": "function_result",
-                            "call_id": function_call["call_id"],
-                            "result": function_response
-                        })
-                    except Exception as e:
-                        print(f"Debug: Error executing function {function_call['name']} - {str(e)}")
-                        raise
                 
-                print("Debug: Getting follow-up response with function results")
-                # Get a new response from the model with the function results
-                try:
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": input_content},
-                            {"role": "function", "name": function_call["name"], "content": function_response}
-                        ],
-                        tools=[
-                            *[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions],
-                            {"type": "image_generation"}
-                        ],
-                        stream=True
-                    )
-                except Exception as e:
-                    print(f"Debug: Error getting follow-up response - {str(e)}")
-                    raise
+                message = response.choices[0].message
                 
-                # Process the follow-up response
-                image_data = None
-                revised_prompt = None
-                text_response = ""
-                
-                try:
-                    for event in response:
-                        if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
-                            text_response += event.delta.content
-                except Exception as e:
-                    print(f"Debug: Error processing follow-up stream - {str(e)}")
-                    raise
-            
-            # Log the interaction if user_id is provided
-            if user_id is not None:
-                try:
+                # Log the interaction if user_id is provided
+                if user_id is not None:
                     from utils.db import db_ops
+                    function_calls = []
+                    if message.function_call:
+                        function_calls.append({
+                            "name": message.function_call.name,
+                            "arguments": message.function_call.arguments
+                        })
+                    
                     db_ops.log_chatgpt_interaction(
                         user_id=user_id,
                         model=self.model,
                         request_messages=chat_history,
-                        response_content=text_response,
-                        input_tokens=response.usage.prompt_tokens if hasattr(response, 'usage') else None,
-                        output_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else None,
+                        response_content=message.content,
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
                         function_calls=function_calls if function_calls else None,
                         image_urls=image_urls
                     )
-                except Exception as e:
-                    print(f"Debug: Error logging interaction - {str(e)}")
-                    # Don't raise here, as this is not critical
-            
-            # Add the assistant's response to chat history
-            self._append_and_shift(chat_history, {"role": "assistant", "content": text_response}, max_history)
-            
-            return chat_history, text_response, image_data, revised_prompt
+                
+                # If no function call, return the response
+                if response.choices[0].finish_reason != "function_call":
+                    self._append_and_shift(chat_history, {
+                        "role": "assistant",
+                        "content": message.content
+                    }, max_history)
+                    return chat_history, message.content[:2000]
+                
+                # Handle function call
+                function_name = message.function_call.name
+                function_response = self.function_registry.execute(
+                    function_name,
+                    message.function_call.arguments
+                )
+                
+                self._append_and_shift(chat_history, {
+                    "role": "function",
+                    "name": function_name,
+                    "content": function_response
+                }, max_history)
                 
         except Exception as e:
-            print(f"Debug: Top-level error - {str(e)}")
-            return chat_history, f'Error: {str(e)}', None, None
+            return chat_history, f'Error: {str(e)}'
     
     @staticmethod
     def _append_and_shift(arr, item, max_len):
@@ -507,3 +435,33 @@ class ChatGPTClient:
         arr.append(item)
         if len(arr) > max_len:
             arr.pop(1)  # Keep system message, remove oldest message
+
+def call_dalle3(prompt):
+    """Generate an image using DALL-E 3.
+    
+    Args:
+        prompt (str): The image generation prompt
+        
+    Returns:
+        dict: A dictionary containing the image URL and any error information
+    """
+    try:
+        client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
+        
+        return {
+            "status": "success",
+            "image_url": response.data[0].url,
+            "revised_prompt": response.data[0].revised_prompt
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
