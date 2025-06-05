@@ -383,11 +383,47 @@ class ChatGPTClient:
                 tools=[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions]
             )
             
-            # Validate response and extract content
+            # Validate response
             if not response or not response.choices:
                 return chat_history, "Error: No response received from the API", None, None
                 
             message = response.choices[0].message
+            
+            # Handle function calls if present
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                # Add the assistant's message to chat history
+                self._append_and_shift(chat_history, message, max_history)
+                
+                # Process each function call
+                for tool_call in message.tool_calls:
+                    if tool_call.type == "function":
+                        # Execute the function
+                        function_response = self.function_registry.execute(
+                            tool_call.function.name,
+                            tool_call.function.arguments
+                        )
+                        
+                        # Add the function response to chat history
+                        self._append_and_shift(chat_history, {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": function_response
+                        }, max_history)
+                
+                # Get a new response from the model with the function results
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=chat_history,
+                    max_tokens=max_tokens
+                )
+                
+                if not response or not response.choices:
+                    return chat_history, "Error: No response received after function execution", None, None
+                    
+                message = response.choices[0].message
+            
+            # Validate message content
             if not message or not message.content:
                 return chat_history, "Error: Empty response from the API", None, None
                 
