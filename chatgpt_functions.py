@@ -372,56 +372,45 @@ class ChatGPTClient:
             message = {"role": "user", "content": message_content}
             self._append_and_shift(chat_history, message, max_history)
             
-            while True:
-                response = self.client.responses.create(
+            # Prepare the messages for the API call
+            messages = chat_history.copy()
+            
+            # Make the API call
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                tools=[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions]
+            )
+            
+            # Extract the response content
+            text_response = response.choices[0].message.content
+            
+            # Log the interaction if user_id is provided
+            if user_id is not None:
+                from utils.db import db_ops
+                function_calls = []
+                if hasattr(response.choices[0].message, 'tool_calls'):
+                    function_calls = [{
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments
+                    } for tool_call in response.choices[0].message.tool_calls]
+                
+                db_ops.log_chatgpt_interaction(
+                    user_id=user_id,
                     model=self.model,
-                    input=prompt,
-                    tools=[
-                        *self.function_registry.function_descriptions,
-                        {"type": "image_generation"}  # Add image generation tool
-                    ],
-                    stream=True  # Enable streaming for partial image updates
+                    request_messages=chat_history,
+                    response_content=text_response,
+                    input_tokens=response.usage.prompt_tokens if hasattr(response, 'usage') else None,
+                    output_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else None,
+                    function_calls=function_calls if function_calls else None,
+                    image_urls=image_urls
                 )
-                
-                # Process the streaming response
-                image_data = None
-                revised_prompt = None
-                text_response = ""
-                
-                for event in response:
-                    if event.type == "response.image_generation_call.partial_image":
-                        # Store the final partial image
-                        image_data = event.partial_image_b64
-                    elif event.type == "response.image_generation_call":
-                        # Store the revised prompt
-                        revised_prompt = event.revised_prompt
-                    elif event.type == "response.text":
-                        # Accumulate text response
-                        text_response += event.text
-                
-                # Log the interaction if user_id is provided
-                if user_id is not None:
-                    from utils.db import db_ops
-                    function_calls = []
-                    if hasattr(response, 'function_call'):
-                        function_calls.append({
-                            "name": response.function_call.name,
-                            "arguments": response.function_call.arguments
-                        })
-                    
-                    db_ops.log_chatgpt_interaction(
-                        user_id=user_id,
-                        model=self.model,
-                        request_messages=chat_history,
-                        response_content=text_response,
-                        input_tokens=response.usage.prompt_tokens if hasattr(response, 'usage') else None,
-                        output_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else None,
-                        function_calls=function_calls if function_calls else None,
-                        image_urls=image_urls
-                    )
-                
-                # Return both text response and any generated image
-                return chat_history, text_response, image_data, revised_prompt
+            
+            # Add the assistant's response to chat history
+            self._append_and_shift(chat_history, {"role": "assistant", "content": text_response}, max_history)
+            
+            return chat_history, text_response, None, None
                 
         except Exception as e:
             return chat_history, f'Error: {str(e)}', None, None
