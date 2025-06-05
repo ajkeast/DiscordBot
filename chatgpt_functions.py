@@ -383,18 +383,25 @@ class ChatGPTClient:
                 tools=[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions]
             )
             
-            # Extract the response content
-            text_response = response.choices[0].message.content
+            # Validate response and extract content
+            if not response or not response.choices:
+                return chat_history, "Error: No response received from the API", None, None
+                
+            message = response.choices[0].message
+            if not message or not message.content:
+                return chat_history, "Error: Empty response from the API", None, None
+                
+            text_response = message.content
             
             # Log the interaction if user_id is provided
             if user_id is not None:
                 from utils.db import db_ops
                 function_calls = []
-                if hasattr(response.choices[0].message, 'tool_calls'):
+                if hasattr(message, 'tool_calls') and message.tool_calls:
                     function_calls = [{
                         "name": tool_call.function.name,
                         "arguments": tool_call.function.arguments
-                    } for tool_call in response.choices[0].message.tool_calls]
+                    } for tool_call in message.tool_calls]
                 
                 db_ops.log_chatgpt_interaction(
                     user_id=user_id,
