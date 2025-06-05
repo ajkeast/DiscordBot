@@ -346,6 +346,7 @@ class ChatGPTClient:
         self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
         self.function_registry = FunctionRegistry()
         self.model = "gpt-4.1-mini"  # Store model name as instance variable
+        self.previous_response_id = None  # Track conversation state
     
     def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
         """Call ChatGPT API with function calling, vision support, and image generation.
@@ -359,103 +360,103 @@ class ChatGPTClient:
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
         try:
-            # Prepare message content based on whether there are images
+            # Prepare input based on whether there are images
             if image_urls:
-                message_content = [
-                    {"type": "text", "text": prompt},
-                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
+                input_content = [
+                    {"type": "input_text", "text": prompt},
+                    *[{"type": "input_image", "image_url": {"url": url}} for url in image_urls]
                 ]
             else:
-                message_content = prompt
+                input_content = prompt
 
-            # Append user prompt and maintain history length
-            message = {"role": "user", "content": message_content}
-            self._append_and_shift(chat_history, message, max_history)
-            
-            # Prepare the messages for the API call
-            messages = chat_history.copy()
-            
-            # Make the API call
-            response = self.client.chat.completions.create(
+            # Make the API call with both function calling and image generation support
+            response = self.client.responses.create(
                 model=self.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                tools=[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions]
+                input=input_content,
+                tools=[
+                    *[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions],
+                    {"type": "image_generation"}
+                ],
+                stream=True,  # Enable streaming for partial image updates
+                previous_response_id=self.previous_response_id
             )
             
-            # Validate response
-            if not response or not response.choices:
-                return chat_history, "Error: No response received from the API", None, None
-                
-            message = response.choices[0].message
+            # Process the streaming response
+            image_data = None
+            revised_prompt = None
+            text_response = ""
+            function_calls = []
             
-            # Handle function calls if present
-            if hasattr(message, 'tool_calls') and message.tool_calls:
-                # Convert ChatCompletionMessage to dict format
-                assistant_message = {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        {
-                            "id": tool_call.id,
-                            "type": tool_call.type,
-                            "function": {
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments
-                            }
-                        }
-                        for tool_call in message.tool_calls
-                    ]
-                }
-                
-                # Add the assistant's message to chat history
-                self._append_and_shift(chat_history, assistant_message, max_history)
-                
-                # Process each function call
-                for tool_call in message.tool_calls:
-                    if tool_call.type == "function":
-                        # Execute the function
-                        function_response = self.function_registry.execute(
-                            tool_call.function.name,
-                            tool_call.function.arguments
-                        )
-                        
-                        # Add the function response to chat history
-                        self._append_and_shift(chat_history, {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": function_response
-                        }, max_history)
+            for event in response:
+                if event.type == "response.image_generation_call.partial_image":
+                    # Store the final partial image
+                    image_data = event.partial_image_b64
+                elif event.type == "response.image_generation_call":
+                    # Store the revised prompt
+                    revised_prompt = event.revised_prompt
+                elif event.type == "response.text":
+                    # Accumulate text response
+                    text_response += event.text
+                elif event.type == "response.tool_call":
+                    # Handle function calls with call_id
+                    function_calls.append({
+                        "call_id": event.id,
+                        "name": event.function.name,
+                        "arguments": event.function.arguments
+                    })
+            
+            # Store the response ID for conversation continuity
+            self.previous_response_id = response.id
+            
+            # If we have function calls, execute them and get a new response
+            if function_calls:
+                # Prepare function results
+                function_results = []
+                for function_call in function_calls:
+                    # Execute the function
+                    function_response = self.function_registry.execute(
+                        function_call["name"],
+                        function_call["arguments"]
+                    )
+                    
+                    # Add the function result with its call_id
+                    function_results.append({
+                        "type": "function_result",
+                        "call_id": function_call["call_id"],
+                        "result": function_response
+                    })
                 
                 # Get a new response from the model with the function results
-                response = self.client.chat.completions.create(
+                response = self.client.responses.create(
                     model=self.model,
-                    messages=chat_history,
-                    max_tokens=max_tokens
+                    input=function_results,  # Pass function results as input
+                    tools=[
+                        *[{"type": "function", "function": desc} for desc in self.function_registry.function_descriptions],
+                        {"type": "image_generation"}
+                    ],
+                    stream=True,
+                    previous_response_id=self.previous_response_id
                 )
                 
-                if not response or not response.choices:
-                    return chat_history, "Error: No response received after function execution", None, None
-                    
-                message = response.choices[0].message
-            
-            # Validate message content
-            if not message or not message.content:
-                return chat_history, "Error: Empty response from the API", None, None
+                # Store the new response ID
+                self.previous_response_id = response.id
                 
-            text_response = message.content
+                # Process the follow-up response
+                image_data = None
+                revised_prompt = None
+                text_response = ""
+                
+                for event in response:
+                    if event.type == "response.image_generation_call.partial_image":
+                        image_data = event.partial_image_b64
+                    elif event.type == "response.image_generation_call":
+                        revised_prompt = event.revised_prompt
+                    elif event.type == "response.text":
+                        text_response += event.text
             
             # Log the interaction if user_id is provided
             if user_id is not None:
                 from utils.db import db_ops
-                function_calls = []
-                if hasattr(message, 'tool_calls') and message.tool_calls:
-                    function_calls = [{
-                        "name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
-                    } for tool_call in message.tool_calls]
-                
                 db_ops.log_chatgpt_interaction(
                     user_id=user_id,
                     model=self.model,
@@ -470,7 +471,7 @@ class ChatGPTClient:
             # Add the assistant's response to chat history
             self._append_and_shift(chat_history, {"role": "assistant", "content": text_response}, max_history)
             
-            return chat_history, text_response, None, None
+            return chat_history, text_response, image_data, revised_prompt
                 
         except Exception as e:
             return chat_history, f'Error: {str(e)}', None, None
