@@ -391,8 +391,25 @@ class ChatGPTClient:
             
             # Handle function calls if present
             if hasattr(message, 'tool_calls') and message.tool_calls:
+                # Convert ChatCompletionMessage to dict format
+                assistant_message = {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "type": tool_call.type,
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments
+                            }
+                        }
+                        for tool_call in message.tool_calls
+                    ]
+                }
+                
                 # Add the assistant's message to chat history
-                self._append_and_shift(chat_history, message, max_history)
+                self._append_and_shift(chat_history, assistant_message, max_history)
                 
                 # Process each function call
                 for tool_call in message.tool_calls:
