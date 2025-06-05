@@ -348,7 +348,7 @@ class ChatGPTClient:
         self.model = "gpt-4.1-mini"  # Store model name as instance variable
     
     def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
-        """Call ChatGPT API with function calling and vision support.
+        """Call ChatGPT API with function calling, vision support, and image generation.
         
         Args:
             chat_history (list): List of previous messages
@@ -373,61 +373,58 @@ class ChatGPTClient:
             self._append_and_shift(chat_history, message, max_history)
             
             while True:
-                response = self.client.chat.completions.create(
+                response = self.client.responses.create(
                     model=self.model,
-                    temperature=0.7,
-                    max_tokens=max_tokens,
-                    messages=chat_history,
-                    functions=self.function_registry.function_descriptions,
-                    function_call="auto"
+                    input=prompt,
+                    tools=[
+                        *self.function_registry.function_descriptions,
+                        {"type": "image_generation"}  # Add image generation tool
+                    ],
+                    stream=True  # Enable streaming for partial image updates
                 )
                 
-                message = response.choices[0].message
+                # Process the streaming response
+                image_data = None
+                revised_prompt = None
+                text_response = ""
+                
+                for event in response:
+                    if event.type == "response.image_generation_call.partial_image":
+                        # Store the final partial image
+                        image_data = event.partial_image_b64
+                    elif event.type == "response.image_generation_call":
+                        # Store the revised prompt
+                        revised_prompt = event.revised_prompt
+                    elif event.type == "response.text":
+                        # Accumulate text response
+                        text_response += event.text
                 
                 # Log the interaction if user_id is provided
                 if user_id is not None:
                     from utils.db import db_ops
                     function_calls = []
-                    if message.function_call:
+                    if hasattr(response, 'function_call'):
                         function_calls.append({
-                            "name": message.function_call.name,
-                            "arguments": message.function_call.arguments
+                            "name": response.function_call.name,
+                            "arguments": response.function_call.arguments
                         })
                     
                     db_ops.log_chatgpt_interaction(
                         user_id=user_id,
                         model=self.model,
                         request_messages=chat_history,
-                        response_content=message.content,
-                        input_tokens=response.usage.prompt_tokens,
-                        output_tokens=response.usage.completion_tokens,
+                        response_content=text_response,
+                        input_tokens=response.usage.prompt_tokens if hasattr(response, 'usage') else None,
+                        output_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else None,
                         function_calls=function_calls if function_calls else None,
                         image_urls=image_urls
                     )
                 
-                # If no function call, return the response
-                if response.choices[0].finish_reason != "function_call":
-                    self._append_and_shift(chat_history, {
-                        "role": "assistant",
-                        "content": message.content
-                    }, max_history)
-                    return chat_history, message.content[:2000]
-                
-                # Handle function call
-                function_name = message.function_call.name
-                function_response = self.function_registry.execute(
-                    function_name,
-                    message.function_call.arguments
-                )
-                
-                self._append_and_shift(chat_history, {
-                    "role": "function",
-                    "name": function_name,
-                    "content": function_response
-                }, max_history)
+                # Return both text response and any generated image
+                return chat_history, text_response, image_data, revised_prompt
                 
         except Exception as e:
-            return chat_history, f'Error: {str(e)}'
+            return chat_history, f'Error: {str(e)}', None, None
     
     @staticmethod
     def _append_and_shift(arr, item, max_len):
@@ -435,33 +432,3 @@ class ChatGPTClient:
         arr.append(item)
         if len(arr) > max_len:
             arr.pop(1)  # Keep system message, remove oldest message
-
-def call_dalle3(prompt):
-    """Generate an image using DALL-E 3.
-    
-    Args:
-        prompt (str): The image generation prompt
-        
-    Returns:
-        dict: A dictionary containing the image URL and any error information
-    """
-    try:
-        client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
-        response = client.images.generate(
-            model="dall-e-3",
-            prompt=prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1
-        )
-        
-        return {
-            "status": "success",
-            "image_url": response.data[0].url,
-            "revised_prompt": response.data[0].revised_prompt
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }

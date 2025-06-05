@@ -1,10 +1,13 @@
 from discord.ext import commands
-from chatgpt_functions import ChatGPTClient, call_dalle3
+from chatgpt_functions import ChatGPTClient
 from utils.constants import IDCARD, DALLE3_WHITELIST
 from utils.db import db_ops
+import base64
+import io
+import discord
 
 class AI(commands.Cog):
-    """A cog that provides AI-powered features including ChatGPT conversations and DALL-E image generation."""
+    """A cog that provides AI-powered features including ChatGPT conversations and image generation."""
     
     def __init__(self, bot):
         self.bot = bot
@@ -19,7 +22,10 @@ class AI(commands.Cog):
             ctx: The command context
             arg: The question or prompt for ChatGPT
             
-        The command supports image input through attachments for multimodal conversations.
+        The command supports:
+        - Image input through attachments for multimodal conversations
+        - Image generation when the model decides it's appropriate
+        - Function calling for various utilities
         Only users in the IDCARD whitelist can use this command.
         """
         if str(ctx.message.author.id) in IDCARD:
@@ -28,7 +34,7 @@ class AI(commands.Cog):
                         if attachment.content_type and attachment.content_type.startswith('image/')]
             
             async with ctx.typing():
-                self.chat_history, response = self.chat_client.call_chatgpt(
+                self.chat_history, response, image_data, revised_prompt = self.chat_client.call_chatgpt(
                     self.chat_history, 
                     arg,
                     user_id=ctx.author.id,
@@ -39,13 +45,30 @@ class AI(commands.Cog):
                 if image_urls:
                     response = "I've analyzed the attached image(s)!\n\n" + response
                 
-                await ctx.send(response)
+                # If an image was generated, send it along with the response
+                if image_data:
+                    # Convert base64 image data to bytes
+                    image_bytes = base64.b64decode(image_data)
+                    
+                    # Create a Discord file from the image bytes
+                    image_file = discord.File(
+                        io.BytesIO(image_bytes),
+                        filename="generated_image.png"
+                    )
+                    
+                    # Add the revised prompt to the response if available
+                    if revised_prompt:
+                        response += f"\n\n**Generated Image Prompt:** {revised_prompt}"
+                    
+                    await ctx.send(response, file=image_file)
+                else:
+                    await ctx.send(response)
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
 
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief='Generate AI Art'):
-        """Generate an AI image using DALL-E 3 based on the provided prompt.
+        """Generate an AI image using GPT-4.1-mini's built-in image generation.
         
         Args:
             ctx: The command context
@@ -58,12 +81,21 @@ class AI(commands.Cog):
             db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
             
             async with ctx.typing():
-                response = call_dalle3(arg)
+                response = self.chat_client.generate_image(arg)
                 
                 if response["status"] == "success":
-                    # Send the image URL and prompts
-                    message = f"🎨 **Generated Image**\n\n**Original Prompt:** {arg}\n**Revised Prompt:** {response['revised_prompt']}\n\n{response['image_url']}"
-                    await ctx.send(message)
+                    # Convert base64 image data to bytes
+                    image_bytes = base64.b64decode(response["image_data"])
+                    
+                    # Create a Discord file from the image bytes
+                    image_file = discord.File(
+                        io.BytesIO(image_bytes),
+                        filename="generated_image.png"
+                    )
+                    
+                    # Send the image and prompts
+                    message = f"🎨 **Generated Image**\n\n**Original Prompt:** {arg}\n**Revised Prompt:** {response['revised_prompt']}"
+                    await ctx.send(message, file=image_file)
                 else:
                     await ctx.send(f"❌ Error generating image: {response['error']}")
         else:
