@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from utils.db import db_ops
-from utils.constants import GENERAL_CHANNEL_ID
+from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR
 from datetime import datetime, timedelta
 import pytz
 import asyncio
@@ -40,7 +40,7 @@ class Server(commands.Cog):
             month_name = datetime(year, month, 1).strftime("%B")
             embed = discord.Embed(
                 title=f"📊 Monthly Activity Report - {month_name} {year}",
-                color=discord.Color.blue()
+                color=EMBED_COLOR
             )
             # Add top 5 members to embed
             for i, (_, row) in enumerate(df.head(5).iterrows(), 1):

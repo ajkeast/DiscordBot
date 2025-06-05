@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 import time
 from utils.db import db_ops, streak_calc, juice_calc
-from utils.constants import GENERAL_CHANNEL_ID
+from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR
 
 class First(commands.Cog):
     """A cog that manages the daily 'first' claiming game and related statistics."""
@@ -64,7 +64,7 @@ class First(commands.Cog):
         df = db_ops.get_table_data('firstlist_id')
         streak = streak_calc.calculate_streak(df)
         counts = df.user_id.value_counts()
-        embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=0x4d4170)
+        embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=EMBED_COLOR)
         for i in range(5):  # display top 5
             embed.add_field(name=self.bot.get_user(int(counts.index[i])),
                             value=counts[i],
@@ -100,7 +100,7 @@ class First(commands.Cog):
             score = len(df[df.user_id == author_id])
             juice = juice_calc.calculate_user_juice(df, author_id)
 
-            embed=discord.Embed(title=author, description="Your server statistics", color=0x4d4170)
+            embed=discord.Embed(title=author, description="Your server statistics", color=EMBED_COLOR)
             embed.set_thumbnail(url=str(author.display_avatar.with_size(128)))
             embed.add_field(name="Score", value=f'{score} 🏆', inline=True)
             embed.add_field(name="Juice", value=f'{int(juice)} 🧃', inline=True)
@@ -129,7 +129,7 @@ class First(commands.Cog):
         df = db_ops.get_table_data('firstlist_id')
         juice_df, highscore_user_id, highscore_value = juice_calc.calculate_juice(df)
         
-        embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=0x4d4170)
+        embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=EMBED_COLOR)
         for i in range(5):
             embed.add_field(name=self.bot.get_user(int(juice_df.iloc[i]['user_id'])),
                           value=int(juice_df.iloc[i]['juice']),
@@ -182,7 +182,7 @@ class First(commands.Cog):
         # Reset point back to beginning of stream
         data_stream.seek(0)
         chart = discord.File(data_stream,filename="first_graph.png")
-        embed = discord.Embed(title='Firsts to Date',color=0x4d4170)
+        embed = discord.Embed(title='Firsts to Date',color=EMBED_COLOR)
         embed.set_image(url="attachment://first_graph.png")
 
         await ctx.send(embed=embed, file=chart)

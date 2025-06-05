@@ -1,7 +1,8 @@
 from discord.ext import commands
 from chatgpt_functions import ChatGPTClient, call_dalle3
-from utils.constants import IDCARD, DALLE3_WHITELIST
+from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR
 from utils.db import db_ops
+import discord
 
 class AI(commands.Cog):
     """A cog that provides AI-powered features including ChatGPT conversations and DALL-E image generation."""
@@ -61,13 +62,45 @@ class AI(commands.Cog):
                 response = call_dalle3(arg)
                 
                 if response["status"] == "success":
-                    # Send the image URL and prompts
-                    message = f"🎨 **Generated Image**\n\n**Original Prompt:** {arg}\n**Revised Prompt:** {response['revised_prompt']}\n\n{response['image_url']}"
-                    await ctx.send(message)
+                    # Create an embed for the image
+                    embed = discord.Embed(
+                        title="🎨 AI Generated Image",
+                        color=EMBED_COLOR
+                    )
+                    
+                    # Add the image to the embed
+                    embed.set_image(url=response['image_url'])
+                    
+                    # Add the prompts as fields
+                    embed.add_field(
+                        name="Original Prompt",
+                        value=arg,
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="Revised Prompt",
+                        value=response['revised_prompt'],
+                        inline=False
+                    )
+                    
+                    # Add footer with user info
+                    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+                    
+                    await ctx.send(embed=embed)
                 else:
-                    await ctx.send(f"❌ Error generating image: {response['error']}")
+                    error_embed = discord.Embed(
+                        title="❌ Error",
+                        description=f"Failed to generate image: {response['error']}",
+                        color=EMBED_COLOR
+                    )
+                    await ctx.send(embed=error_embed)
         else:
-            await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
+            error_embed = discord.Embed(
+                title="Access Denied",
+                description="OpenAI charges ¢4 per image. Contact bot administrator for access.",
+                color=EMBED_COLOR
+            )
+            await ctx.send(embed=error_embed)
 
     @commands.command()
     async def clear(self, ctx, pass_context=True, brief='Clear chat history'):
