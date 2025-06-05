@@ -22,8 +22,7 @@ class Server(commands.Cog):
         """Post monthly stats at 9am EST on the first of each month"""
         # Get current time in EST
         est = pytz.timezone('US/Eastern')
-        now = datetime.now(est)
-        
+        now = datetime.now(est)    
         # Check if it's 9am on the first of the month
         if now.hour == 9 and now.minute == 0 and now.day == 1:
             # Get the previous month
@@ -33,20 +32,16 @@ class Server(commands.Cog):
             else:
                 year = now.year
                 month = now.month - 1
-
             # Get message counts
             df = db_ops.get_monthly_message_counts(year, month)
-            
             if df.empty:
                 return
-
             # Create embed
             month_name = datetime(year, month, 1).strftime("%B")
             embed = discord.Embed(
                 title=f"📊 Monthly Activity Report - {month_name} {year}",
                 color=discord.Color.blue()
             )
-
             # Add top 5 members to embed
             for i, (_, row) in enumerate(df.head(5).iterrows(), 1):
                 medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."

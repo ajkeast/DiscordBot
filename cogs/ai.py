@@ -22,7 +22,6 @@ class AI(commands.Cog):
         The command supports image input through attachments for multimodal conversations.
         Only users in the IDCARD whitelist can use this command.
         """
-        # Passes prompt to ChatGPT API and returns response
         if str(ctx.message.author.id) in IDCARD:
             # Get image URLs from message attachments
             image_urls = [attachment.url for attachment in ctx.message.attachments 
@@ -35,7 +34,12 @@ class AI(commands.Cog):
                     user_id=ctx.author.id,
                     image_urls=image_urls if image_urls else None
                 )
-            await ctx.send(response)
+                
+                # If there were images in the input, add a note
+                if image_urls:
+                    response = "I've analyzed the attached image(s)!\n\n" + response
+                
+                await ctx.send(response)
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
 
@@ -52,9 +56,16 @@ class AI(commands.Cog):
         """
         if str(ctx.message.author.id) in DALLE3_WHITELIST:
             db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
+            
             async with ctx.typing():
                 response = call_dalle3(arg)
-            await ctx.channel.send(str(response))
+                
+                if response["status"] == "success":
+                    # Send the image URL and prompts
+                    message = f"🎨 **Generated Image**\n\n**Original Prompt:** {arg}\n**Revised Prompt:** {response['revised_prompt']}\n\n{response['image_url']}"
+                    await ctx.send(message)
+                else:
+                    await ctx.send(f"❌ Error generating image: {response['error']}")
         else:
             await ctx.channel.send('OpenAI charges ¢4 per image. Contact bot administrator for access.')
 

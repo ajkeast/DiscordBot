@@ -348,7 +348,7 @@ class ChatGPTClient:
         self.model = "gpt-4.1-mini"  # Store model name as instance variable
     
     def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
-        """Call ChatGPT API with function calling support.
+        """Call ChatGPT API with function calling and vision support.
         
         Args:
             chat_history (list): List of previous messages
@@ -359,13 +359,17 @@ class ChatGPTClient:
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
         try:
-            # Append user prompt and maintain history length
-            message = {"role": "user", "content": prompt}
+            # Prepare message content based on whether there are images
             if image_urls:
-                message["content"] = [
+                message_content = [
                     {"type": "text", "text": prompt},
-                    *[{"type": "image_url", "image_url": url} for url in image_urls]
+                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
                 ]
+            else:
+                message_content = prompt
+
+            # Append user prompt and maintain history length
+            message = {"role": "user", "content": message_content}
             self._append_and_shift(chat_history, message, max_history)
             
             while True:
@@ -433,14 +437,31 @@ class ChatGPTClient:
             arr.pop(1)  # Keep system message, remove oldest message
 
 def call_dalle3(prompt):
-    """Generate an image using DALL-E 3."""
+    """Generate an image using DALL-E 3.
+    
+    Args:
+        prompt (str): The image generation prompt
+        
+    Returns:
+        dict: A dictionary containing the image URL and any error information
+    """
     try:
         client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
         response = client.images.generate(
             model="dall-e-3",
             prompt=prompt,
-            size="1024x1024"
+            size="1024x1024",
+            quality="standard",
+            n=1
         )
-        return response.data[0].url
+        
+        return {
+            "status": "success",
+            "image_url": response.data[0].url,
+            "revised_prompt": response.data[0].revised_prompt
+        }
     except Exception as e:
-        return f'Error generating image: {str(e)}'
+        return {
+            "status": "error",
+            "error": str(e)
+        }
