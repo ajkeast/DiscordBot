@@ -88,6 +88,8 @@ class DataOperations:
         query = """
             INSERT INTO messages (id, member_id, channel_id, content, created_at)
             VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                content = VALUES(content)
         """
         self.db.execute(query, message_data)
 

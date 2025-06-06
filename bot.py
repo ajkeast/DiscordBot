@@ -42,6 +42,20 @@ class DinkBot(commands.Bot):
         
         await self.process_commands(message)
 
+    async def on_message_edit(self, before, after):
+        if after.author.bot:
+            return
+            
+        # Update edited message in database
+        message_data = (
+            after.id,
+            after.author.id,
+            after.channel.id,
+            after.content,
+            after.created_at
+        )
+        db_ops.update_messages(message_data)
+
 def main():
     bot = DinkBot()
     TOKEN = os.getenv('DISCORD_TOKEN')
