@@ -136,6 +136,48 @@ class FunctionRegistry:
             }
         )
 
+        self.register(
+            name="brave_image_search",
+            func=self._brave_image_search,
+            description="Search for images using Brave Search API",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (max 400 chars, 50 words)"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of results to return (max 100)",
+                        "default": 10
+                    },
+                    "country": {
+                        "type": "string",
+                        "description": "2-character country code (e.g., 'US', 'UK')",
+                        "default": "US"
+                    },
+                    "search_lang": {
+                        "type": "string",
+                        "description": "2-character language code (e.g., 'en', 'es')",
+                        "default": "en"
+                    },
+                    "safesearch": {
+                        "type": "string",
+                        "enum": ["off", "strict"],
+                        "description": "Filter adult content",
+                        "default": "strict"
+                    },
+                    "spellcheck": {
+                        "type": "boolean",
+                        "description": "Whether to spellcheck the query",
+                        "default": True
+                    }
+                },
+                "required": ["query"]
+            }
+        )
+
     def _register_recipe_functions(self):
         """Register all recipe related functions."""
         self.register(
@@ -376,6 +418,54 @@ class FunctionRegistry:
                 "error": str(e)
             }
 
+    def _brave_image_search(self, query, count=5, country="US", search_lang="en", safesearch="off", spellcheck=True):
+        """Perform an image search using Brave Search API.
+        
+        Args:
+            query (str): Search query (max 400 chars, 50 words)
+            count (int, optional): Number of results. Defaults to 5.
+            country (str, optional): 2-character country code. Defaults to "US".
+            search_lang (str, optional): 2-character language code. Defaults to "en".
+            safesearch (str, optional): Filter adult content. Defaults to "strict".
+            spellcheck (bool, optional): Whether to spellcheck query. Defaults to True.
+            
+        Returns:
+            dict: Image search results from Brave API
+        """
+        url = "https://api.search.brave.com/res/v1/images/search"
+        
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": os.getenv('BRAVE_API_KEY')
+        }
+        
+        params = {
+            "q": query,
+            "count": min(count, 100),  # Ensure count doesn't exceed max
+            "country": country,
+            "search_lang": search_lang,
+            "safesearch": safesearch,
+            "spellcheck": spellcheck
+        }
+            
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params
+            )
+            response.raise_for_status()
+            results = response.json()
+            
+            return results
+            
+        except requests.exceptions.RequestException as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
     def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url=None):
         """Create and store a new recipe in the database.
         
@@ -396,16 +486,13 @@ class FunctionRegistry:
 
             # If no image URL provided, search for one
             if not image_url:
-                results = self._brave_search(
-                    f"{name} {cuisine} food recipe image",
-                    count=5,
-                    result_filter="images"
+                results = self._brave_image_search(
+                    f"{name} {cuisine} food recipe",
+                    count=5
                 )
-                if results and 'images' in results and 'results' in results['images']:
-                    for result in results['images']['results']:
-                        if result.get('url'):
-                            image_url = result['url']
-                            break
+                if results and 'results' in results and len(results['results']) > 0:
+                    # Get the first image result's URL
+                    image_url = results['results'][0]['url']
                 if not image_url:
                     return {
                         "status": "error",
