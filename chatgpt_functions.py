@@ -491,8 +491,8 @@ class FunctionRegistry:
                     count=5
                 )
                 if results and 'results' in results and len(results['results']) > 0:
-                    # Get the first image result's URL
-                    image_url = results['results'][0]['url']
+                    # Get the first image result's source URL
+                    image_url = results['results'][0]['source']
                 if not image_url:
                     return {
                         "status": "error",
