@@ -30,6 +30,9 @@ class FunctionRegistry:
 
         # Search Functions
         self._register_search_functions()
+
+        # Recipe Functions
+        self._register_recipe_functions()
     
     def _register_date_functions(self):
         """Register all date and time related functions."""
@@ -130,6 +133,48 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["query"]
+            }
+        )
+
+    def _register_recipe_functions(self):
+        """Register all recipe related functions."""
+        self.register(
+            name="create_recipe",
+            func=self._create_recipe,
+            description="Create and store a new recipe in the database",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the recipe"
+                    },
+                    "ingredients": {
+                        "type": "string",
+                        "description": "List of ingredients with quantities"
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": "Step-by-step cooking instructions"
+                    },
+                    "cuisine": {
+                        "type": "string",
+                        "description": "Type of cuisine (e.g., Italian, Mexican, etc.)"
+                    },
+                    "dietary_preference": {
+                        "type": "string",
+                        "description": "Dietary category (e.g., vegetarian, vegan, gluten-free, etc.)"
+                    },
+                    "image_url": {
+                        "type": "string",
+                        "description": "URL of the recipe image"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Discord user ID of the recipe creator (passed from the chat context)"
+                    }
+                },
+                "required": ["name", "ingredients", "instructions", "cuisine", "dietary_preference", "image_url", "user_id"]
             }
         )
 
@@ -334,6 +379,42 @@ class FunctionRegistry:
             return results
             
         except requests.exceptions.RequestException as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url, user_id):
+        """Create and store a new recipe in the database.
+        
+        Args:
+            name (str): Name of the recipe
+            ingredients (str): List of ingredients with quantities
+            instructions (str): Step-by-step cooking instructions
+            cuisine (str): Type of cuisine
+            dietary_preference (str): Dietary category
+            image_url (str): URL of the recipe image
+            user_id (int): Discord user ID of the recipe creator
+            
+        Returns:
+            dict: Status of the recipe creation
+        """
+        try:
+            from utils.db import db_ops
+            db_ops.write_recipe_entry(
+                member_id=user_id,
+                name=name,
+                ingredients=ingredients,
+                instructions=instructions,
+                cuisine=cuisine,
+                dietary_preference=dietary_preference,
+                image_url=image_url
+            )
+            return {
+                "status": "success",
+                "message": f"Recipe '{name}' has been successfully created and stored!"
+            }
+        except Exception as e:
             return {
                 "status": "error",
                 "error": str(e)

@@ -83,6 +83,35 @@ class DataOperations:
         query = "INSERT INTO dalle_3_prompts (user_id, prompt) VALUES (%s, %s);"
         self.db.execute(query, (user_id, prompt))
 
+    def write_recipe_entry(self, member_id: int, name: str, ingredients: str, 
+                          instructions: str, cuisine: str, dietary_preference: str, 
+                          image_url: str) -> None:
+        """Record a new recipe entry
+        
+        Args:
+            member_id (int): Discord user ID of the recipe creator
+            name (str): Name of the recipe
+            ingredients (str): List of ingredients with quantities
+            instructions (str): Step-by-step cooking instructions
+            cuisine (str): Type of cuisine
+            dietary_preference (str): Dietary category
+            image_url (str): URL of the recipe image
+        """
+        query = """
+            INSERT INTO recipes 
+            (member_id, name, ingredients, instructions, cuisine, dietary_preference, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        self.db.execute(query, (
+            member_id,
+            name,
+            ingredients,
+            instructions,
+            cuisine,
+            dietary_preference,
+            image_url
+        ))
+
     def update_messages(self, message_data: Tuple) -> None:
         """Update messages table"""
         query = """

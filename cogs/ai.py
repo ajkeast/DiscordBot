@@ -36,10 +36,6 @@ class AI(commands.Cog):
                     image_urls=image_urls if image_urls else None
                 )
                 
-                # If there were images in the input, add a note
-                if image_urls:
-                    response = "I've analyzed the attached image(s)!\n\n" + response
-                
                 await ctx.send(response)
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
