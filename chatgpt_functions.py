@@ -500,7 +500,7 @@ class FunctionRegistry:
                     }
 
             db_ops.write_recipe_entry(
-                member_id=BOT_USER_ID,
+                member_id=BOT_USER_ID,  # Using BIGINT in database now
                 name=name,
                 ingredients=ingredients,
                 instructions=instructions,
