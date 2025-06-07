@@ -406,16 +406,28 @@ class FunctionRegistry:
 
             # If no image URL provided, search for one
             if not image_url:
-                results = self._brave_search(
+                # Try different search queries to find an image
+                search_queries = [
                     f"{name} {cuisine} food recipe image",
-                    count=5,
-                    result_filter="images"
-                )
-                if results and 'images' in results and 'results' in results['images']:
-                    for result in results['images']['results']:
-                        if result.get('url'):
-                            image_url = result['url']
+                    f"{name} recipe photo",
+                    f"{name} dish image"
+                ]
+                
+                for query in search_queries:
+                    results = self._brave_search(
+                        query,
+                        count=5,
+                        result_filter="images"
+                    )
+                    
+                    if results and 'images' in results and 'results' in results['images']:
+                        for result in results['images']['results']:
+                            if result.get('url'):
+                                image_url = result['url']
+                                break
+                        if image_url:
                             break
+                
                 if not image_url:
                     return {
                         "status": "error",
