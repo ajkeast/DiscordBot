@@ -193,14 +193,12 @@ class FunctionRegistry:
         """Get all function descriptions for ChatGPT API."""
         return [func["description"] for func in self.functions.values()]
     
-    def execute(self, name, arguments, user_id=None, image_urls=None):
+    def execute(self, name, arguments):
         """Execute a registered function by name with given arguments.
         
         Args:
             name (str): Name of the function to execute
             arguments (str or dict): Function arguments as string or dict
-            user_id (int, optional): Discord user ID passed from chat context
-            image_urls (list, optional): List of image URLs passed from chat context
             
         Returns:
             str: JSON string containing the function's response
@@ -213,10 +211,6 @@ class FunctionRegistry:
         
         try:
             parsed_args = json.loads(arguments) if isinstance(arguments, str) else arguments
-            if user_id is not None:
-                parsed_args['user_id'] = user_id
-            if image_urls and len(image_urls) > 0:
-                parsed_args['image_url'] = image_urls[0]  # Use first image if available
             result = self.functions[name]["func"](**parsed_args)
             return json.dumps(result) if not isinstance(result, str) else result
         except Exception as e:
@@ -406,28 +400,16 @@ class FunctionRegistry:
 
             # If no image URL provided, search for one
             if not image_url:
-                # Try different search queries to find an image
-                search_queries = [
+                results = self._brave_search(
                     f"{name} {cuisine} food recipe image",
-                    f"{name} recipe photo",
-                    f"{name} dish image"
-                ]
-                
-                for query in search_queries:
-                    results = self._brave_search(
-                        query,
-                        count=5,
-                        result_filter="images"
-                    )
-                    
-                    if results and 'images' in results and 'results' in results['images']:
-                        for result in results['images']['results']:
-                            if result.get('url'):
-                                image_url = result['url']
-                                break
-                        if image_url:
+                    count=5,
+                    result_filter="images"
+                )
+                if results and 'images' in results and 'results' in results['images']:
+                    for result in results['images']['results']:
+                        if result.get('url'):
+                            image_url = result['url']
                             break
-                
                 if not image_url:
                     return {
                         "status": "error",
@@ -532,9 +514,7 @@ class ChatGPTClient:
                 function_name = message.function_call.name
                 function_response = self.function_registry.execute(
                     function_name,
-                    message.function_call.arguments,
-                    user_id,
-                    image_urls
+                    message.function_call.arguments
                 )
                 
                 self._append_and_shift(chat_history, {
