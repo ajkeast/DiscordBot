@@ -164,17 +164,9 @@ class FunctionRegistry:
                     "dietary_preference": {
                         "type": "string",
                         "description": "Dietary category (e.g., vegetarian, vegan, gluten-free, etc.)"
-                    },
-                    "image_url": {
-                        "type": "string",
-                        "description": "URL of the recipe image"
-                    },
-                    "user_id": {
-                        "type": "integer",
-                        "description": "Discord user ID of the recipe creator (passed from the chat context)"
                     }
                 },
-                "required": ["name", "ingredients", "instructions", "cuisine", "dietary_preference", "image_url", "user_id"]
+                "required": ["name", "ingredients", "instructions", "cuisine", "dietary_preference"]
             }
         )
 
@@ -201,12 +193,14 @@ class FunctionRegistry:
         """Get all function descriptions for ChatGPT API."""
         return [func["description"] for func in self.functions.values()]
     
-    def execute(self, name, arguments):
+    def execute(self, name, arguments, user_id=None, image_urls=None):
         """Execute a registered function by name with given arguments.
         
         Args:
             name (str): Name of the function to execute
             arguments (str or dict): Function arguments as string or dict
+            user_id (int, optional): Discord user ID passed from chat context
+            image_urls (list, optional): List of image URLs passed from chat context
             
         Returns:
             str: JSON string containing the function's response
@@ -219,6 +213,10 @@ class FunctionRegistry:
         
         try:
             parsed_args = json.loads(arguments) if isinstance(arguments, str) else arguments
+            if user_id is not None:
+                parsed_args['user_id'] = user_id
+            if image_urls and len(image_urls) > 0:
+                parsed_args['image_url'] = image_urls[0]  # Use first image if available
             result = self.functions[name]["func"](**parsed_args)
             return json.dumps(result) if not isinstance(result, str) else result
         except Exception as e:
@@ -384,7 +382,7 @@ class FunctionRegistry:
                 "error": str(e)
             }
 
-    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url, user_id):
+    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url=None, user_id=None):
         """Create and store a new recipe in the database.
         
         Args:
@@ -393,13 +391,37 @@ class FunctionRegistry:
             instructions (str): Step-by-step cooking instructions
             cuisine (str): Type of cuisine
             dietary_preference (str): Dietary category
-            image_url (str): URL of the recipe image
-            user_id (int): Discord user ID of the recipe creator
+            image_url (str, optional): URL of the recipe image. If not provided, will search for one.
+            user_id (int, optional): Discord user ID of the recipe creator
             
         Returns:
             dict: Status of the recipe creation
         """
         try:
+            if user_id is None:
+                return {
+                    "status": "error",
+                    "error": "User ID is required to create a recipe"
+                }
+
+            # If no image URL provided, search for one
+            if not image_url:
+                results = self._brave_search(
+                    f"{name} {cuisine} food recipe image",
+                    count=5,
+                    result_filter="images"
+                )
+                if results and 'images' in results and 'results' in results['images']:
+                    for result in results['images']['results']:
+                        if result.get('url'):
+                            image_url = result['url']
+                            break
+                if not image_url:
+                    return {
+                        "status": "error",
+                        "error": "Could not find a suitable image for the recipe"
+                    }
+
             from utils.db import db_ops
             db_ops.write_recipe_entry(
                 member_id=user_id,
@@ -498,7 +520,9 @@ class ChatGPTClient:
                 function_name = message.function_call.name
                 function_response = self.function_registry.execute(
                     function_name,
-                    message.function_call.arguments
+                    message.function_call.arguments,
+                    user_id,
+                    image_urls
                 )
                 
                 self._append_and_shift(chat_history, {
