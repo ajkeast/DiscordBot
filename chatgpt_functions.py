@@ -376,7 +376,7 @@ class FunctionRegistry:
                 "error": str(e)
             }
 
-    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url=None, user_id=None):
+    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url=None):
         """Create and store a new recipe in the database.
         
         Args:
@@ -386,17 +386,13 @@ class FunctionRegistry:
             cuisine (str): Type of cuisine
             dietary_preference (str): Dietary category
             image_url (str, optional): URL of the recipe image. If not provided, will search for one.
-            user_id (int, optional): Discord user ID of the recipe creator
             
         Returns:
             dict: Status of the recipe creation
         """
         try:
-            if user_id is None:
-                return {
-                    "status": "error",
-                    "error": "User ID is required to create a recipe"
-                }
+            from utils.db import db_ops
+            from utils.constants import BOT_USER_ID
 
             # If no image URL provided, search for one
             if not image_url:
@@ -416,9 +412,8 @@ class FunctionRegistry:
                         "error": "Could not find a suitable image for the recipe"
                     }
 
-            from utils.db import db_ops
             db_ops.write_recipe_entry(
-                member_id=user_id,
+                member_id=BOT_USER_ID,
                 name=name,
                 ingredients=ingredients,
                 instructions=instructions,

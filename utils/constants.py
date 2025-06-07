@@ -14,3 +14,6 @@ GENERAL_CHANNEL_ID = 94235299445493760
 
 # Universal embed color
 EMBED_COLOR = 0x4d4170
+
+# Bot's user ID for recipe creation
+BOT_USER_ID = 908765514753531934
