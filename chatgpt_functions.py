@@ -183,7 +183,7 @@ class FunctionRegistry:
         self.register(
             name="create_recipe",
             func=self._create_recipe,
-            description="Create and store a new recipe in the database",
+            description="Create and store a new recipe in the database with markdown formatting for ingredients and instructions",
             parameters={
                 "type": "object",
                 "properties": {
@@ -193,11 +193,11 @@ class FunctionRegistry:
                     },
                     "ingredients": {
                         "type": "string",
-                        "description": "List of ingredients with quantities"
+                        "description": "List of ingredients with quantities in markdown format. Each ingredient should be on a new line with a bullet point (-). Example: '- 2 cups flour\n- 1 tsp salt'"
                     },
                     "instructions": {
                         "type": "string",
-                        "description": "Step-by-step cooking instructions"
+                        "description": "Step-by-step cooking instructions in markdown format. Each step should be numbered (1., 2., etc.) and on a new line. Example: '1. Preheat oven to 350°F\n2. Mix dry ingredients'"
                     },
                     "cuisine": {
                         "type": "string",
@@ -471,8 +471,8 @@ class FunctionRegistry:
         
         Args:
             name (str): Name of the recipe
-            ingredients (str): List of ingredients with quantities
-            instructions (str): Step-by-step cooking instructions
+            ingredients (str): List of ingredients with quantities in markdown format
+            instructions (str): Step-by-step cooking instructions in markdown format
             cuisine (str): Type of cuisine
             dietary_preference (str): Dietary category
             image_url (str, optional): URL of the recipe image. If not provided, will search for one.
@@ -484,6 +484,15 @@ class FunctionRegistry:
             from utils.db import db_ops
             from utils.constants import BOT_USER_ID
 
+            # Format ingredients if not already in markdown
+            if not ingredients.strip().startswith('-'):
+                ingredients = '\n'.join([f'- {ing.strip()}' for ing in ingredients.split('\n') if ing.strip()])
+
+            # Format instructions if not already in markdown
+            if not any(instructions.strip().startswith(str(i) + '.') for i in range(1, 10)):
+                steps = [step.strip() for step in instructions.split('\n') if step.strip()]
+                instructions = '\n'.join([f'{i+1}. {step}' for i, step in enumerate(steps)])
+
             # If no image URL provided, search for one
             if not image_url:
                 results = self._brave_image_search(
@@ -491,8 +500,8 @@ class FunctionRegistry:
                     count=5
                 )
                 if results and 'results' in results and len(results['results']) > 0:
-                    # Get the first image result's source URL
-                    image_url = results['results'][0]['source']
+                    # Get the first image result's URL
+                    image_url = results['results'][0]['url']
                 if not image_url:
                     return {
                         "status": "error",
