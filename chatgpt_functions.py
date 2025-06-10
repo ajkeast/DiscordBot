@@ -458,6 +458,12 @@ class FunctionRegistry:
             response.raise_for_status()
             results = response.json()
             
+            # Update the results to use the direct image URL
+            if 'results' in results:
+                for result in results['results']:
+                    if 'properties' in result and 'url' in result['properties']:
+                        result['url'] = result['properties']['url']
+            
             return results
             
         except requests.exceptions.RequestException as e:
@@ -497,11 +503,11 @@ class FunctionRegistry:
             if not image_url:
                 results = self._brave_image_search(
                     f"{name} {cuisine} food recipe",
-                    count=5
+                    count=1
                 )
                 if results and 'results' in results and len(results['results']) > 0:
-                    # Get the first image result's URL
-                    image_url = results['results'][0]['url']
+                    # Get the first image result's URL (now using the direct image URL)
+                    image_url = results['results'][0].get('url')
                 if not image_url:
                     return {
                         "status": "error",
