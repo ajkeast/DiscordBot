@@ -6,8 +6,49 @@ import requests                     # http queries
 import tweepy                       # twitter API
 from bs4 import BeautifulSoup      # HTML parsing
 import trafilatura                 # web content extraction
+import time                         # for rate limiting
+from collections import deque       # for rate limiting
+from threading import Lock          # for thread safety
 
 load_dotenv()
+
+class RateLimiter:
+    """Rate limiter for API calls."""
+    
+    def __init__(self, max_calls, time_window):
+        """Initialize rate limiter.
+        
+        Args:
+            max_calls (int): Maximum number of calls allowed in time window
+            time_window (int): Time window in seconds
+        """
+        self.max_calls = max_calls
+        self.time_window = time_window
+        self.calls = deque()
+        self.lock = Lock()
+    
+    def acquire(self):
+        """Acquire permission to make an API call.
+        
+        Returns:
+            bool: True if call is allowed, False otherwise
+        """
+        with self.lock:
+            now = time.time()
+            
+            # Remove old calls
+            while self.calls and now - self.calls[0] > self.time_window:
+                self.calls.popleft()
+            
+            if len(self.calls) < self.max_calls:
+                self.calls.append(now)
+                return True
+            return False
+    
+    def wait(self):
+        """Wait until a call can be made."""
+        while not self.acquire():
+            time.sleep(0.1)
 
 class FunctionRegistry:
     """Registry for all available functions that can be called by ChatGPT."""
@@ -16,6 +57,9 @@ class FunctionRegistry:
         """Initialize the registry with all available functions."""
         self.functions = {}
         self._register_all_functions()
+        # Initialize rate limiters
+        self.brave_search_limiter = RateLimiter(max_calls=10, time_window=60)  # 10 calls per minute
+        self.brave_image_limiter = RateLimiter(max_calls=10, time_window=60)   # 10 calls per minute
     
     def _register_all_functions(self):
         """Register all available functions with their metadata."""
@@ -340,19 +384,37 @@ class FunctionRegistry:
             
         Returns:
             str: Extracted text content from the webpage
+            
+        Raises:
+            ValueError: If URL is invalid
+            requests.exceptions.RequestException: If request fails
         """
+        # Validate URL
+        if not url or not isinstance(url, str):
+            raise ValueError("Invalid URL provided")
+            
+        if not url.startswith(('http://', 'https://')):
+            raise ValueError("URL must start with http:// or https://")
+            
         try:
-            downloaded = trafilatura.fetch_url(url)
+            # First try with trafilatura
+            downloaded = trafilatura.fetch_url(url, timeout=10)
             if downloaded:
                 content = trafilatura.extract(downloaded, include_links=False, include_images=False)
                 if content:
                     return content.strip()
             
-            response = requests.get(url, timeout=10)
+            # Fallback to requests + BeautifulSoup
+            response = requests.get(url, timeout=10, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            })
+            response.raise_for_status()
+            
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            for script in soup(["script", "style"]):
-                script.decompose()
+            # Remove unwanted elements
+            for element in soup(['script', 'style', 'nav', 'footer', 'header']):
+                element.decompose()
                 
             text = soup.get_text()
             lines = (line.strip() for line in text.splitlines())
@@ -361,8 +423,14 @@ class FunctionRegistry:
             
             return text.strip()
             
+        except requests.exceptions.Timeout:
+            raise requests.exceptions.RequestException("Request timed out")
+        except requests.exceptions.HTTPError as e:
+            raise requests.exceptions.RequestException(f"HTTP error occurred: {str(e)}")
+        except requests.exceptions.ConnectionError:
+            raise requests.exceptions.RequestException("Failed to connect to the server")
         except Exception as e:
-            return f"Error fetching content: {str(e)}"
+            raise requests.exceptions.RequestException(f"Error fetching content: {str(e)}")
 
     def _brave_search(self, query, count=10, offset=0, result_filter="web", freshness=None, fetch_content=False):
         """Perform a web search using Brave Search API and optionally fetch page content.
@@ -378,6 +446,9 @@ class FunctionRegistry:
         Returns:
             dict: Search results from Brave API, optionally including page content
         """
+        # Wait for rate limit
+        self.brave_search_limiter.wait()
+        
         url = "https://api.search.brave.com/res/v1/web/search"
         
         headers = {
@@ -432,6 +503,9 @@ class FunctionRegistry:
         Returns:
             dict: Image search results from Brave API
         """
+        # Wait for rate limit
+        self.brave_image_limiter.wait()
+        
         url = "https://api.search.brave.com/res/v1/images/search"
         
         headers = {
@@ -485,10 +559,30 @@ class FunctionRegistry:
             
         Returns:
             dict: Status of the recipe creation
+            
+        Raises:
+            ValueError: If any required field is invalid
+            DatabaseError: If database operation fails
         """
         try:
             from utils.db import db_ops
             from utils.constants import BOT_USER_ID
+
+            # Validate required fields
+            if not name or len(name.strip()) < 3:
+                raise ValueError("Recipe name must be at least 3 characters long")
+                
+            if not ingredients or len(ingredients.strip()) < 10:
+                raise ValueError("Ingredients list must contain at least one ingredient")
+                
+            if not instructions or len(instructions.strip()) < 20:
+                raise ValueError("Instructions must contain at least one step")
+                
+            if not cuisine or len(cuisine.strip()) < 2:
+                raise ValueError("Cuisine type is required")
+                
+            if not dietary_preference or len(dietary_preference.strip()) < 2:
+                raise ValueError("Dietary preference is required")
 
             # Format ingredients if not already in markdown
             if not ingredients.strip().startswith('-'):
@@ -499,38 +593,60 @@ class FunctionRegistry:
                 steps = [step.strip() for step in instructions.split('\n') if step.strip()]
                 instructions = '\n'.join([f'{i+1}. {step}' for i, step in enumerate(steps)])
 
+            # Validate image URL if provided
+            if image_url:
+                if not image_url.startswith(('http://', 'https://')):
+                    raise ValueError("Image URL must start with http:// or https://")
+                try:
+                    response = requests.head(image_url, timeout=5)
+                    if not response.headers.get('content-type', '').startswith('image/'):
+                        raise ValueError("Invalid image URL: not an image")
+                except requests.exceptions.RequestException:
+                    raise ValueError("Invalid image URL: could not verify image")
+
             # If no image URL provided, search for one
             if not image_url:
                 results = self._brave_image_search(
                     f"{name} {cuisine} food recipe",
-                    count=1
+                    count=1,
+                    safesearch="strict"  # Ensure safe content
                 )
                 if results and 'results' in results and len(results['results']) > 0:
-                    # Get the first image result's URL (now using the direct image URL)
                     image_url = results['results'][0].get('url')
                 if not image_url:
-                    return {
-                        "status": "error",
-                        "error": "Could not find a suitable image for the recipe"
-                    }
+                    raise ValueError("Could not find a suitable image for the recipe")
 
-            db_ops.write_recipe_entry(
-                member_id=BOT_USER_ID,  # Using BIGINT in database now
-                name=name,
-                ingredients=ingredients,
-                instructions=instructions,
-                cuisine=cuisine,
-                dietary_preference=dietary_preference,
-                image_url=image_url
-            )
+            try:
+                db_ops.write_recipe_entry(
+                    member_id=BOT_USER_ID,
+                    name=name,
+                    ingredients=ingredients,
+                    instructions=instructions,
+                    cuisine=cuisine,
+                    dietary_preference=dietary_preference,
+                    image_url=image_url
+                )
+                return {
+                    "status": "success",
+                    "message": f"Recipe '{name}' has been successfully created and stored!"
+                }
+            except Exception as e:
+                raise DatabaseError(f"Failed to store recipe in database: {str(e)}")
+                
+        except ValueError as e:
             return {
-                "status": "success",
-                "message": f"Recipe '{name}' has been successfully created and stored!"
+                "status": "error",
+                "error": str(e)
+            }
+        except DatabaseError as e:
+            return {
+                "status": "error",
+                "error": str(e)
             }
         except Exception as e:
             return {
                 "status": "error",
-                "error": str(e)
+                "error": f"Unexpected error: {str(e)}"
             }
 
 class ChatGPTClient:
