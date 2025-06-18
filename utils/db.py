@@ -229,14 +229,35 @@ class StreakCalculator:
 
     @staticmethod
     def calculate_user_streak(df: pd.DataFrame, user_id: str) -> int:
-        """Calculate streak for specific user"""
-        df = df[df.user_id == user_id].copy()
-        if df.empty:
+        """Calculate streak for specific user using vectorized operations
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing user_id and timesent columns
+            user_id (str): The user ID to calculate streak for
+            
+        Returns:
+            int: The longest sequential streak for the user
+        """
+        # Sort by timestamp to ensure chronological order
+        df = df.sort_values('timesent').copy()
+        
+        # Filter for the user and get dates
+        user_df = df[df['user_id'] == user_id].copy()
+        if user_df.empty:
             return 0
-        df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
-        df['streak_id'] = df['start_of_streak'].cumsum()
-        df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
-        return df.streak_counter.max()
+            
+        # Convert to dates and calculate day differences
+        user_df['date'] = user_df['timesent'].dt.date
+        user_df['date_diff'] = (user_df['date'] - user_df['date'].shift(1)).dt.days
+        
+        # Mark start of new streaks (first entry or gap > 1 day)
+        user_df['streak_start'] = (user_df['date_diff'].isna()) | (user_df['date_diff'] > 1)
+        
+        # Calculate streak groups and lengths
+        user_df['streak_group'] = user_df['streak_start'].cumsum()
+        streak_lengths = user_df.groupby('streak_group').size()
+        
+        return streak_lengths.max() if not streak_lengths.empty else 0
 
 class JuiceCalculator:
     @staticmethod
