@@ -96,8 +96,14 @@ class First(commands.Cog):
 
         try:
             author = self.bot.get_user(int(author_id))
+            # Check if user has any entries
+            user_entries = df[df.user_id == author_id]
+            if user_entries.empty:
+                await ctx.channel.send('This user has never gotten a first!')
+                return
+
             streak = streak_calc.calculate_user_streak(df, author_id)
-            score = len(df[df.user_id == author_id])
+            score = len(user_entries)
             juice = juice_calc.calculate_user_juice(df, author_id)
 
             embed=discord.Embed(title=author, description="Your server statistics", color=EMBED_COLOR)
@@ -108,9 +114,12 @@ class First(commands.Cog):
 
             print(str(author.display_avatar.with_size(128)))
             await ctx.channel.send(embed=embed)
-        except Exception as error:
-            print("An error occurred:", type(error).__name__)
-            await ctx.channel.send('This user has never gotten a first!')
+        except ValueError as ve:
+            print(f"ValueError in stats command: {str(ve)}")
+            await ctx.channel.send('Error: Invalid user ID format.')
+        except Exception as e:
+            print(f"Unexpected error in stats command: {type(e).__name__}: {str(e)}")
+            await ctx.channel.send('An unexpected error occurred while fetching stats.')
 
     @commands.command()
     async def juice(self, ctx, pass_context=True, brief='Get the server juice scores'):
