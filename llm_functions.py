@@ -90,7 +90,8 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["timezone"]
-            }
+            },
+            tool_type="function"
         )
     
     def _register_weather_functions(self):
@@ -131,7 +132,8 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["message"]
-            }
+            },
+            tool_type="function"
         )
 
     def _register_search_functions(self):
@@ -174,7 +176,8 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["query"]
-            }
+            },
+            tool_type="function"
         )
 
         self.register(
@@ -216,12 +219,13 @@ class FunctionRegistry:
                     }
                 },
                 "required": ["query"]
-            }
+            },
+            tool_type="function"
         )
 
 
 
-    def register(self, name, func, description, parameters):
+    def register(self, name, func, description, parameters, tool_type="function"):
         """Register a new function with its metadata.
         
         Args:
@@ -555,7 +559,7 @@ class GrokClient:
                     temperature=0.7,
                     max_tokens=max_tokens,
                     messages=chat_history,
-                    tools=self.function_registry.function_descriptions,
+                    tools=[func["description"] for func in self.function_registry.functions.values()],
                     tool_choice="auto"
                 )
                 
