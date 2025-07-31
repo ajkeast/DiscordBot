@@ -555,8 +555,8 @@ class GrokClient:
                     temperature=0.7,
                     max_tokens=max_tokens,
                     messages=chat_history,
-                    functions=self.function_registry.function_descriptions,
-                    function_call="auto"
+                    tools=self.function_registry.function_descriptions,
+                    tool_choice="auto"
                 )
                 
                 message = response.choices[0].message
