@@ -1,15 +1,15 @@
 from discord.ext import commands
-from chatgpt_functions import ChatGPTClient, call_dalle3
+from llm_functions import GrokClient, call_dalle3
 from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR
 from utils.db import db_ops
 import discord
 
 class AI(commands.Cog):
-    """A cog that provides AI-powered features including ChatGPT conversations and DALL-E image generation."""
+    """A cog that provides AI-powered features including Grok conversations and DALL-E image generation."""
     
     def __init__(self, bot):
         self.bot = bot
-        self.chat_client = ChatGPTClient()
+        self.chat_client = GrokClient()
         self.chat_history = [{
             "role": "system",
             "content": (
@@ -25,12 +25,12 @@ class AI(commands.Cog):
         }]
 
     @commands.command()
-    async def ask(self, ctx, *, arg, pass_context=True, brief='Ask ChatGPT'):
-        """Ask a question to ChatGPT and get a response in a surfer bro style.
+    async def ask(self, ctx, *, arg, pass_context=True, brief='Ask Grok'):
+        """Ask a question to Grok and get a response in a surfer bro style.
         
         Args:
             ctx: The command context
-            arg: The question or prompt for ChatGPT
+            arg: The question or prompt for Grok
             
         The command supports image input through attachments for multimodal conversations.
         Only users in the IDCARD whitelist can use this command.
@@ -41,7 +41,7 @@ class AI(commands.Cog):
                         if attachment.content_type and attachment.content_type.startswith('image/')]
             
             async with ctx.typing():
-                self.chat_history, response = self.chat_client.call_chatgpt(
+                self.chat_history, response = self.chat_client.call_grok(
                     self.chat_history, 
                     arg,
                     user_id=ctx.author.id,
@@ -112,7 +112,7 @@ class AI(commands.Cog):
 
     @commands.command()
     async def clear(self, ctx, pass_context=True, brief='Clear chat history'):
-        """Clear the ChatGPT conversation history and reset to initial surfer bro persona.
+        """Clear the Grok conversation history and reset to initial surfer bro persona.
         
         Args:
             ctx: The command context
