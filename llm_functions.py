@@ -571,7 +571,7 @@ class GrokClient:
                             "arguments": message.function_call.arguments
                         })
                     
-                    db_ops.log_grok_interaction(
+                    db_ops.log_chatgpt_interaction(
                         user_id=user_id,
                         model=self.model,
                         request_messages=chat_history,
