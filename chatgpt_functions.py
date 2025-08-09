@@ -472,7 +472,7 @@ class ChatGPTClient:
                         user_id=user_id,
                         model=self.model,
                         request_messages=chat_history,
-                        response_content=message.content,
+                        response_content=(message.content or ""),
                         input_tokens=response.usage.prompt_tokens,
                         output_tokens=response.usage.completion_tokens,
                         function_calls=function_calls if function_calls else None,
@@ -481,11 +481,15 @@ class ChatGPTClient:
                 
                 # If no tool calls, return the response
                 if not getattr(message, "tool_calls", None):
+                    # Ensure we never return an empty response which would cause Discord 400 errors
+                    assistant_text = (message.content or "").strip()
+                    if not assistant_text:
+                        assistant_text = "Sorry, I couldn't generate a reply this time. Please try again."
                     self._append_and_shift(chat_history, {
                         "role": "assistant",
-                        "content": message.content
+                        "content": assistant_text
                     }, max_history)
-                    return chat_history, message.content[:2000]
+                    return chat_history, assistant_text[:2000]
                 
                 # Handle tool calls
                 # First, append the assistant message that contains the tool_calls

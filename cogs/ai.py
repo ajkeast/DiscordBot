@@ -66,7 +66,7 @@ class AI(commands.Cog):
                 else:
                     self.chat_history = [{"role": "system", "content": self.system_prompt}]
                 
-                await ctx.send(response)
+                await ctx.send(response if (response and response.strip()) else "Sorry, I couldn't generate a reply this time. Please try again.")
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _ask')
 
