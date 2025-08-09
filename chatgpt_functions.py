@@ -6,6 +6,7 @@ import requests                     # http queries
 import tweepy                       # twitter API
 from bs4 import BeautifulSoup      # HTML parsing
 import trafilatura                 # web content extraction
+from tavily import TavilyClient     # Tavily search API
 import time                         # for rate limiting
 from collections import deque       # for rate limiting
 from threading import Lock          # for thread safety
@@ -58,8 +59,7 @@ class FunctionRegistry:
         self.functions = {}
         self._register_all_functions()
         # Initialize rate limiters
-        self.brave_search_limiter = RateLimiter(max_calls=10, time_window=60)  # 10 calls per minute
-        self.brave_image_limiter = RateLimiter(max_calls=10, time_window=60)   # 10 calls per minute
+
     
     def _register_all_functions(self):
         """Register all available functions with their metadata."""
@@ -137,82 +137,51 @@ class FunctionRegistry:
     def _register_search_functions(self):
         """Register all search related functions."""
         self.register(
-            name="brave_search",
-            func=self._brave_search,
-            description="Search the web using Brave Search API and optionally fetch page content",
+            name="tavily_search",
+            func=self._tavily_search,
+            description="Search the web using Tavily API. Returns answer, results, and optional images/raw content.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search query (max 400 chars, 50 words)"
+                        "description": "The search query"
                     },
-                    "count": {
+                    "search_depth": {
+                        "type": "string",
+                        "enum": ["basic", "advanced"],
+                        "description": "Search depth to use",
+                        "default": "basic"
+                    },
+                    "max_results": {
                         "type": "integer",
-                        "description": "Number of results to return (max 20)",
+                        "description": "Maximum number of results to return (1-20)",
                         "default": 10
                     },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Results offset for pagination (max 9)",
-                        "default": 0
-                    },
-                    "result_filter": {
-                        "type": "string",
-                        "description": "Comma-delimited types to include (e.g., 'web,news,videos')",
-                        "default": "web"
-                    },
-                    "freshness": {
-                        "type": "string",
-                        "description": "Filter by time (pd: 24h, pw: week, pm: month, py: year)",
-                        "default": None
-                    },
-                    "fetch_content": {
+                    "include_answer": {
                         "type": "boolean",
-                        "description": "Whether to fetch and include the actual content of web pages",
-                        "default": False
-                    }
-                },
-                "required": ["query"]
-            }
-        )
-
-        self.register(
-            name="brave_image_search",
-            func=self._brave_image_search,
-            description="Search for images using Brave Search API",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query (max 400 chars, 50 words)"
-                    },
-                    "count": {
-                        "type": "integer",
-                        "description": "Number of results to return (max 100)",
-                        "default": 10
-                    },
-                    "country": {
-                        "type": "string",
-                        "description": "2-character country code (e.g., 'US', 'UK')",
-                        "default": "US"
-                    },
-                    "search_lang": {
-                        "type": "string",
-                        "description": "2-character language code (e.g., 'en', 'es')",
-                        "default": "en"
-                    },
-                    "safesearch": {
-                        "type": "string",
-                        "enum": ["off", "strict"],
-                        "description": "Filter adult content",
-                        "default": "strict"
-                    },
-                    "spellcheck": {
-                        "type": "boolean",
-                        "description": "Whether to spellcheck the query",
+                        "description": "Whether to include a generated answer summary",
                         "default": True
+                    },
+                    "include_results": {
+                        "type": "boolean",
+                        "description": "Whether to include the list of source results",
+                        "default": True
+                    },
+                    "include_raw_content": {
+                        "type": "boolean",
+                        "description": "Whether to include raw page content per result",
+                        "default": False
+                    },
+                    "include_images": {
+                        "type": "boolean",
+                        "description": "Whether to include image URLs related to the query",
+                        "default": False
+                    },
+                    "topic": {
+                        "type": "string",
+                        "description": "Topic domain to guide the search (e.g., 'general', 'news', 'finance')",
+                        "default": "general"
                     }
                 },
                 "required": ["query"]
@@ -396,119 +365,40 @@ class FunctionRegistry:
         except Exception as e:
             raise requests.exceptions.RequestException(f"Error fetching content: {str(e)}")
 
-    def _brave_search(self, query, count=10, offset=0, result_filter="web", freshness=None, fetch_content=False):
-        """Perform a web search using Brave Search API and optionally fetch page content.
+    def _tavily_search(self, query, search_depth="basic", max_results=10, include_answer=True, include_results=True, include_raw_content=False, include_images=False, topic="general"):
+        """Perform a web search using the Tavily API.
         
         Args:
-            query (str): Search query (max 400 chars, 50 words)
-            count (int, optional): Number of results. Defaults to 10.
-            offset (int, optional): Results offset. Defaults to 0.
-            result_filter (str, optional): Result types to include. Defaults to "web".
-            freshness (str, optional): Time filter. Defaults to None.
-            fetch_content (bool, optional): Whether to fetch and include actual page content. Defaults to False.
-            
+            query (str): Search query
+            search_depth (str, optional): "basic" or "advanced". Defaults to "basic".
+            max_results (int, optional): Number of results. Defaults to 10.
+            include_answer (bool, optional): Include summary answer. Defaults to True.
+            include_results (bool, optional): Include list of results. Defaults to True.
+            include_raw_content (bool, optional): Include raw page content. Defaults to False.
+            include_images (bool, optional): Include image URLs. Defaults to False.
+            topic (str, optional): Topic domain. Defaults to "general".
         Returns:
-            dict: Search results from Brave API, optionally including page content
+            dict: Search results from Tavily API
         """
-        # Wait for rate limit
-        self.brave_search_limiter.wait()
-        
-        url = "https://api.search.brave.com/res/v1/web/search"
-        
-        headers = {
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-            "X-Subscription-Token": os.getenv('BRAVE_API_KEY')
-        }
-        
-        params = {
-            "q": query,
-            "count": min(count, 20),  # Ensure count doesn't exceed max
-            "offset": min(offset, 9),  # Ensure offset doesn't exceed max
-            "result_filter": result_filter
-        }
-        
-        if freshness:
-            params["freshness"] = freshness
-            
         try:
-            response = requests.get(
-                url,
-                headers=headers,
-                params=params
+            tavily_client = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
+            results = tavily_client.search(
+                query=query,
+                search_depth=search_depth,
+                max_results=min(max_results, 20),
+                include_answer=include_answer,
+                include_results=include_results,
+                include_raw_content=include_raw_content,
+                include_images=include_images,
+                topic=topic
             )
-            response.raise_for_status()
-            results = response.json()
-            
-            if fetch_content and 'web' in result_filter:
-                if 'web' in results and 'results' in results['web']:
-                    for result in results['web']['results']:
-                        result['page_content'] = self._fetch_url_content(result['url'])
-            
             return results
-            
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             return {
                 "status": "error",
                 "error": str(e)
             }
 
-    def _brave_image_search(self, query, count=5, country="US", search_lang="en", safesearch="off", spellcheck=True):
-        """Perform an image search using Brave Search API.
-        
-        Args:
-            query (str): Search query (max 400 chars, 50 words)
-            count (int, optional): Number of results. Defaults to 5.
-            country (str, optional): 2-character country code. Defaults to "US".
-            search_lang (str, optional): 2-character language code. Defaults to "en".
-            safesearch (str, optional): Filter adult content. Defaults to "strict".
-            spellcheck (bool, optional): Whether to spellcheck query. Defaults to True.
-            
-        Returns:
-            dict: Image search results from Brave API
-        """
-        # Wait for rate limit
-        self.brave_image_limiter.wait()
-        
-        url = "https://api.search.brave.com/res/v1/images/search"
-        
-        headers = {
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-            "X-Subscription-Token": os.getenv('BRAVE_API_KEY')
-        }
-        
-        params = {
-            "q": query,
-            "count": min(count, 100),  # Ensure count doesn't exceed max
-            "country": country,
-            "search_lang": search_lang,
-            "safesearch": safesearch,
-            "spellcheck": spellcheck
-        }
-            
-        try:
-            response = requests.get(
-                url,
-                headers=headers,
-                params=params
-            )
-            response.raise_for_status()
-            results = response.json()
-            
-            # Update the results to use the direct image URL
-            if 'results' in results:
-                for result in results['results']:
-                    if 'properties' in result and 'url' in result['properties']:
-                        result['url'] = result['properties']['url']
-            
-            return results
-            
-        except requests.exceptions.RequestException as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
 
 
 class ChatGPTClient:
