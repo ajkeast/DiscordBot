@@ -74,9 +74,6 @@ class FunctionRegistry:
 
         # Search Functions
         self._register_search_functions()
-
-        # Recipe Functions
-        self._register_recipe_functions()
     
     def _register_date_functions(self):
         """Register all date and time related functions."""
@@ -222,39 +219,6 @@ class FunctionRegistry:
             }
         )
 
-    def _register_recipe_functions(self):
-        """Register all recipe related functions."""
-        self.register(
-            name="create_recipe",
-            func=self._create_recipe,
-            description="Create and store a new recipe in the database with markdown formatting for ingredients and instructions",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Name of the recipe"
-                    },
-                    "ingredients": {
-                        "type": "string",
-                        "description": "List of ingredients with quantities in markdown format. Each ingredient should be on a new line with a bullet point (-). Example: '- 2 cups flour\n- 1 tsp salt'"
-                    },
-                    "instructions": {
-                        "type": "string",
-                        "description": "Step-by-step cooking instructions in markdown format. Each step should be numbered (1., 2., etc.) and on a new line. Example: '1. Preheat oven to 350°F\n2. Mix dry ingredients'"
-                    },
-                    "cuisine": {
-                        "type": "string",
-                        "description": "Type of cuisine (e.g., Italian, Mexican, etc.)"
-                    },
-                    "dietary_preference": {
-                        "type": "string",
-                        "description": "Dietary category (e.g., vegetarian, vegan, gluten-free, etc.)"
-                    }
-                },
-                "required": ["name", "ingredients", "instructions", "cuisine", "dietary_preference"]
-            }
-        )
 
     def register(self, name, func, description, parameters):
         """Register a new function with its metadata.
@@ -546,108 +510,6 @@ class FunctionRegistry:
                 "error": str(e)
             }
 
-    def _create_recipe(self, name, ingredients, instructions, cuisine, dietary_preference, image_url=None):
-        """Create and store a new recipe in the database.
-        
-        Args:
-            name (str): Name of the recipe
-            ingredients (str): List of ingredients with quantities in markdown format
-            instructions (str): Step-by-step cooking instructions in markdown format
-            cuisine (str): Type of cuisine
-            dietary_preference (str): Dietary category
-            image_url (str, optional): URL of the recipe image. If not provided, will search for one.
-            
-        Returns:
-            dict: Status of the recipe creation
-            
-        Raises:
-            ValueError: If any required field is invalid
-            DatabaseError: If database operation fails
-        """
-        try:
-            from utils.db import db_ops
-            from utils.constants import BOT_USER_ID
-
-            # Validate required fields
-            if not name or len(name.strip()) < 3:
-                raise ValueError("Recipe name must be at least 3 characters long")
-                
-            if not ingredients or len(ingredients.strip()) < 10:
-                raise ValueError("Ingredients list must contain at least one ingredient")
-                
-            if not instructions or len(instructions.strip()) < 20:
-                raise ValueError("Instructions must contain at least one step")
-                
-            if not cuisine or len(cuisine.strip()) < 2:
-                raise ValueError("Cuisine type is required")
-                
-            if not dietary_preference or len(dietary_preference.strip()) < 2:
-                raise ValueError("Dietary preference is required")
-
-            # Format ingredients if not already in markdown
-            if not ingredients.strip().startswith('-'):
-                ingredients = '\n'.join([f'- {ing.strip()}' for ing in ingredients.split('\n') if ing.strip()])
-
-            # Format instructions if not already in markdown
-            if not any(instructions.strip().startswith(str(i) + '.') for i in range(1, 10)):
-                steps = [step.strip() for step in instructions.split('\n') if step.strip()]
-                instructions = '\n'.join([f'{i+1}. {step}' for i, step in enumerate(steps)])
-
-            # Validate image URL if provided
-            if image_url:
-                if not image_url.startswith(('http://', 'https://')):
-                    raise ValueError("Image URL must start with http:// or https://")
-                try:
-                    response = requests.head(image_url, timeout=5)
-                    if not response.headers.get('content-type', '').startswith('image/'):
-                        raise ValueError("Invalid image URL: not an image")
-                except requests.exceptions.RequestException:
-                    raise ValueError("Invalid image URL: could not verify image")
-
-            # If no image URL provided, search for one
-            if not image_url:
-                results = self._brave_image_search(
-                    f"{name} {cuisine} food recipe",
-                    count=1,
-                    safesearch="strict"  # Ensure safe content
-                )
-                if results and 'results' in results and len(results['results']) > 0:
-                    image_url = results['results'][0].get('url')
-                if not image_url:
-                    raise ValueError("Could not find a suitable image for the recipe")
-
-            try:
-                db_ops.write_recipe_entry(
-                    member_id=BOT_USER_ID,
-                    name=name,
-                    ingredients=ingredients,
-                    instructions=instructions,
-                    cuisine=cuisine,
-                    dietary_preference=dietary_preference,
-                    image_url=image_url
-                )
-                return {
-                    "status": "success",
-                    "message": f"Recipe '{name}' has been successfully created and stored!"
-                }
-            except Exception as e:
-                raise DatabaseError(f"Failed to store recipe in database: {str(e)}")
-                
-        except ValueError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except DatabaseError as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": f"Unexpected error: {str(e)}"
-            }
 
 class ChatGPTClient:
     """Client for interacting with ChatGPT API."""
@@ -686,10 +548,11 @@ class ChatGPTClient:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     temperature=0.7,
-                    max_completion_tokens=max_completion_tokens,
+                    max_tokens=max_completion_tokens,
                     messages=chat_history,
                     functions=self.function_registry.function_descriptions,
-                    function_call="auto"
+                    function_call="auto",
+                    extra_body={"max_completion_tokens": max_completion_tokens}
                 )
                 
                 message = response.choices[0].message
