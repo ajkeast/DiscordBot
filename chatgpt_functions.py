@@ -437,7 +437,6 @@ class ChatGPTClient:
             while True:
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    temperature=0.7,
                     max_completion_tokens=max_completion_tokens,
                     messages=chat_history,
                     functions=self.function_registry.function_descriptions,
