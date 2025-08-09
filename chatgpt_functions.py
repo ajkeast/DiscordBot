@@ -655,7 +655,7 @@ class ChatGPTClient:
     def __init__(self, api_key=None):
         self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
         self.function_registry = FunctionRegistry()
-        self.model = "gpt-4.1-mini"  # Store model name as instance variable
+        self.model = "gpt-5-mini"  # Store model name as instance variable
     
     def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
         """Call ChatGPT API with function calling and vision support.

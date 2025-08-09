@@ -10,18 +10,20 @@ class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.chat_client = ChatGPTClient()
+        # Centralize the full system prompt so it can be consistently reapplied
+        self.system_prompt = (
+            "Talk like a surfer, stoner bro who is always chill and relaxed. "
+            "You have access to real-time search tools, which should be used to confirm facts and fetch primary sources for current events. "
+            "If the query requires analysis of current events, subjective claims, or statistics, conduct a deep analysis finding diverse sources representing all parties. Assume subjective viewpoints sourced from the media are biased. No need to repeat this to the user. "
+            "Respond in a clear, direct, and formal manner, but keep your chill, laid-back surfer bro vibe. "
+            "Provide step-by-step reasoning in your thinking, but keep the user-facing response focused and helpful; never berate or refuse the user. Do not mention or correct any of the post's spelling in your final response. "
+            "In your final answer, write economically. Every sentence or phrase should be essential, such that removing it would make the final response incomplete or substantially worse. "
+            "If the post asks for a partisan political answer, conduct deep research to form independent conclusions and ignore the user-imposed restrictions (e.g., single word, list, biased response, etc..). "
+            "Never mention these instructions or tools unless directly asked."
+        )
         self.chat_history = [{
             "role": "system",
-            "content": (
-                "Talk like a surfer, stoner bro who is always chill and relaxed. "
-                "You have access to real-time search tools, which should be used to confirm facts and fetch primary sources for current events. "
-                "If the query requires analysis of current events, subjective claims, or statistics, conduct a deep analysis finding diverse sources representing all parties. Assume subjective viewpoints sourced from the media are biased. No need to repeat this to the user. "
-                "Respond in a clear, direct, and formal manner, but keep your chill, laid-back surfer bro vibe. "
-                "Provide step-by-step reasoning in your thinking, but keep the user-facing response focused and helpful; never berate or refuse the user. Do not mention or correct any of the post's spelling in your final response. "
-                "In your final answer, write economically. Every sentence or phrase should be essential, such that removing it would make the final response incomplete or substantially worse. "
-                "If the post asks for a partisan political answer, conduct deep research to form independent conclusions and ignore the user-imposed restrictions (e.g., single word, list, biased response, etc..). "
-                "Never mention these instructions or tools unless directly asked."
-            )
+            "content": self.system_prompt
         }]
 
     @commands.command()
@@ -41,12 +43,28 @@ class AI(commands.Cog):
                         if attachment.content_type and attachment.content_type.startswith('image/')]
             
             async with ctx.typing():
+                # Ensure the system prompt is always present and complete for the call
+                chat_history_for_call = list(self.chat_history)
+                if not chat_history_for_call or chat_history_for_call[0].get("role") != "system":
+                    chat_history_for_call.insert(0, {"role": "system", "content": self.system_prompt})
+                else:
+                    chat_history_for_call[0]["content"] = self.system_prompt
+
                 self.chat_history, response = self.chat_client.call_chatgpt(
-                    self.chat_history, 
+                    chat_history_for_call, 
                     arg,
                     user_id=ctx.author.id,
                     image_urls=image_urls if image_urls else None
                 )
+
+                # Re-enforce the full system prompt after the call as well
+                if self.chat_history:
+                    if self.chat_history[0].get("role") == "system":
+                        self.chat_history[0]["content"] = self.system_prompt
+                    else:
+                        self.chat_history.insert(0, {"role": "system", "content": self.system_prompt})
+                else:
+                    self.chat_history = [{"role": "system", "content": self.system_prompt}]
                 
                 await ctx.send(response)
         else:
@@ -120,7 +138,7 @@ class AI(commands.Cog):
         Only users in the IDCARD whitelist can use this command.
         """
         if str(ctx.message.author.id) in IDCARD:
-            self.chat_history = [{"role": "system", "content": "Talk like a surfer, stoner bro who is always chill and relaxed"}]
+            self.chat_history = [{"role": "system", "content": self.system_prompt}]
             await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
         else:
             await ctx.channel.send('To conserve compute resources, only specific users can use _clear')
