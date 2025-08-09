@@ -657,14 +657,14 @@ class ChatGPTClient:
         self.function_registry = FunctionRegistry()
         self.model = "gpt-5-mini"  # Store model name as instance variable
     
-    def call_chatgpt(self, chat_history, prompt, max_history=20, max_tokens=512, user_id=None, image_urls=None):
+    def call_chatgpt(self, chat_history, prompt, max_history=20, max_completion_tokens=512, user_id=None, image_urls=None):
         """Call ChatGPT API with function calling and vision support.
         
         Args:
             chat_history (list): List of previous messages
             prompt (str): User's prompt
             max_history (int, optional): Maximum number of messages to keep. Defaults to 20.
-            max_tokens (int, optional): Maximum tokens in response. Defaults to 512.
+            max_completion_tokens (int, optional): Maximum tokens in response. Defaults to 512.
             user_id (int, optional): Discord user ID for logging. Defaults to None.
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
@@ -686,7 +686,7 @@ class ChatGPTClient:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     temperature=0.7,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_completion_tokens,
                     messages=chat_history,
                     functions=self.function_registry.function_descriptions,
                     function_call="auto"
