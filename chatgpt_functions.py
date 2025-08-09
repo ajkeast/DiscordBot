@@ -212,6 +212,17 @@ class FunctionRegistry:
         """Get all function descriptions for ChatGPT API."""
         return [func["description"] for func in self.functions.values()]
     
+    @property
+    def tool_descriptions(self):
+        """Get tool descriptions formatted for the tools API."""
+        return [
+            {
+                "type": "function",
+                "function": func["description"]
+            }
+            for func in self.functions.values()
+        ]
+    
     def execute(self, name, arguments):
         """Execute a registered function by name with given arguments.
         
@@ -439,8 +450,8 @@ class ChatGPTClient:
                     model=self.model,
                     max_completion_tokens=max_completion_tokens,
                     messages=chat_history,
-                    functions=self.function_registry.function_descriptions,
-                    function_call="auto"
+                    tools=self.function_registry.tool_descriptions,
+                    tool_choice="auto"
                 )
                 
                 message = response.choices[0].message
@@ -449,11 +460,13 @@ class ChatGPTClient:
                 if user_id is not None:
                     from utils.db import db_ops
                     function_calls = []
-                    if message.function_call:
-                        function_calls.append({
-                            "name": message.function_call.name,
-                            "arguments": message.function_call.arguments
-                        })
+                    if getattr(message, "tool_calls", None):
+                        for tool_call in message.tool_calls:
+                            function_calls.append({
+                                "id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments
+                            })
                     
                     db_ops.log_chatgpt_interaction(
                         user_id=user_id,
@@ -466,26 +479,44 @@ class ChatGPTClient:
                         image_urls=image_urls
                     )
                 
-                # If no function call, return the response
-                if response.choices[0].finish_reason != "function_call":
+                # If no tool calls, return the response
+                if not getattr(message, "tool_calls", None):
                     self._append_and_shift(chat_history, {
                         "role": "assistant",
                         "content": message.content
                     }, max_history)
                     return chat_history, message.content[:2000]
                 
-                # Handle function call
-                function_name = message.function_call.name
-                function_response = self.function_registry.execute(
-                    function_name,
-                    message.function_call.arguments
-                )
-                
+                # Handle tool calls
+                # First, append the assistant message that contains the tool_calls
                 self._append_and_shift(chat_history, {
-                    "role": "function",
-                    "name": function_name,
-                    "content": function_response
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments
+                            }
+                        } for tool_call in message.tool_calls
+                    ]
                 }, max_history)
+                
+                # Then, append each tool response
+                for tool_call in message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_response = self.function_registry.execute(
+                        function_name,
+                        tool_call.function.arguments
+                    )
+                    
+                    self._append_and_shift(chat_history, {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": function_response
+                    }, max_history)
                 
         except Exception as e:
             return chat_history, f'Error: {str(e)}'
