@@ -44,27 +44,14 @@ class AI(commands.Cog):
             
             async with ctx.typing():
                 # Ensure the system prompt is always present and complete for the call
-                chat_history_for_call = list(self.chat_history)
-                if not chat_history_for_call or chat_history_for_call[0].get("role") != "system":
-                    chat_history_for_call.insert(0, {"role": "system", "content": self.system_prompt})
-                else:
-                    chat_history_for_call[0]["content"] = self.system_prompt
-
+                # No longer create a copy; pass self.chat_history directly
+                # The system prompt management is handled within call_chatgpt
                 self.chat_history, response = self.chat_client.call_chatgpt(
-                    chat_history_for_call, 
+                    self.chat_history, 
                     arg,
                     user_id=ctx.author.id,
                     image_urls=image_urls if image_urls else None
                 )
-
-                # Re-enforce the full system prompt after the call as well
-                if self.chat_history:
-                    if self.chat_history[0].get("role") == "system":
-                        self.chat_history[0]["content"] = self.system_prompt
-                    else:
-                        self.chat_history.insert(0, {"role": "system", "content": self.system_prompt})
-                else:
-                    self.chat_history = [{"role": "system", "content": self.system_prompt}]
                 
                 await ctx.send(response if (response and response.strip()) else "Sorry, I couldn't generate a reply this time. Please try again.")
         else:
