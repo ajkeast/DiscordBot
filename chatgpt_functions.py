@@ -532,29 +532,72 @@ class ChatGPTClient:
         if len(arr) > max_len:
             arr.pop(1)  # Keep system message, remove oldest message
 
-def call_dalle3(prompt):
-    """Generate an image using DALL-E 3.
+def call_dalle3(prompt, image_inputs=None, model="gpt-4.1-mini"):
+    """Generate an image using GPT Image (multimodal model) via Responses API.
+    
+    This function uses the new Responses API with image_generation tool, which supports
+    both text prompts and optional image inputs for multimodal image generation.
     
     Args:
         prompt (str): The image generation prompt
+        image_inputs (list, optional): List of image URLs (Discord attachments are URLs)
+        model (str, optional): Model to use. Defaults to "gpt-4.1-mini"
         
     Returns:
-        dict: A dictionary containing the image URL and any error information
+        dict: A dictionary containing:
+            - status: "success" or "error"
+            - image_url: Data URL format for the image (if success)
+            - revised_prompt: The prompt used (if available)
+            - error: Error message (if error)
     """
     try:
         client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
-        response = client.images.generate(
-            model="dall-e-3",
-            prompt=prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1
+        
+        # Prepare input content
+        input_content = [{"type": "input_text", "text": prompt}]
+        
+        # Add image inputs if provided (Discord attachments are always URLs)
+        if image_inputs:
+            for img_url in image_inputs:
+                input_content.append({
+                    "type": "input_image",
+                    "image_url": img_url
+                })
+        
+        # Create the response with image generation tool
+        response = client.responses.create(
+            model=model,
+            input=[{
+                "role": "user",
+                "content": input_content
+            }],
+            tools=[{"type": "image_generation"}]
         )
+        
+        # Extract image data from response
+        image_data = [
+            output.result
+            for output in response.output
+            if output.type == "image_generation_call"
+        ]
+        
+        if not image_data:
+            return {
+                "status": "error",
+                "error": "No image was generated in the response"
+            }
+        
+        # Get the first image (base64 encoded) and create data URL
+        image_base64 = image_data[0]
+        image_url = f"data:image/png;base64,{image_base64}"
+        
+        # Try to get revised prompt from output_text if available
+        revised_prompt = getattr(response, 'output_text', None) or prompt
         
         return {
             "status": "success",
-            "image_url": response.data[0].url,
-            "revised_prompt": response.data[0].revised_prompt
+            "image_url": image_url,
+            "revised_prompt": revised_prompt
         }
     except Exception as e:
         return {
