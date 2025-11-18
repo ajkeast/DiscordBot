@@ -59,9 +59,7 @@ class AI(commands.Cog):
 
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief='Generate AI Art'):
-        """Generate an AI image using GPT Image (multimodal model) based on the provided prompt.
-        
-        Supports image attachments for multimodal image generation (e.g., "make this image more colorful").
+        """Generate an AI image using DALL-E 3 based on the provided prompt.
         
         Args:
             ctx: The command context
@@ -73,13 +71,8 @@ class AI(commands.Cog):
         if str(ctx.message.author.id) in DALLE3_WHITELIST:
             db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
             
-            # Get image URLs from message attachments for multimodal input
-            image_inputs = [attachment.url for attachment in ctx.message.attachments 
-                          if attachment.content_type and attachment.content_type.startswith('image/')]
-            
             async with ctx.typing():
-                # Call with optional image inputs
-                response = call_dalle3(arg, image_inputs=image_inputs if image_inputs else None)
+                response = call_dalle3(arg)
                 
                 if response["status"] == "success":
                     # Create an embed for the image
@@ -88,7 +81,7 @@ class AI(commands.Cog):
                         color=EMBED_COLOR
                     )
                     
-                    # Set image URL directly
+                    # Add the image to the embed
                     embed.set_image(url=response['image_url'])
                     
                     # Add the prompts as fields
@@ -97,12 +90,11 @@ class AI(commands.Cog):
                         value=arg,
                         inline=False
                     )
-                    if response.get('revised_prompt') and response['revised_prompt'] != arg:
-                        embed.add_field(
-                            name="Revised Prompt",
-                            value=response['revised_prompt'],
-                            inline=False
-                        )
+                    embed.add_field(
+                        name="Revised Prompt",
+                        value=response['revised_prompt'],
+                        inline=False
+                    )
                     
                     # Add footer with user info
                     embed.set_footer(text=f"Requested by {ctx.author.display_name}")
@@ -111,7 +103,7 @@ class AI(commands.Cog):
                 else:
                     error_embed = discord.Embed(
                         title="❌ Error",
-                        description=f"Failed to generate image: {response.get('error', 'Unknown error')}",
+                        description=f"Failed to generate image: {response['error']}",
                         color=EMBED_COLOR
                     )
                     await ctx.send(embed=error_embed)

@@ -527,77 +527,64 @@ class ChatGPTClient:
     
     @staticmethod
     def _append_and_shift(arr, item, max_len):
-        """Append an item to array and maintain maximum length."""
+        """Append an item to array and maintain maximum length.
+        
+        Ensures that tool messages are always removed together with their
+        corresponding assistant message that contains tool_calls.
+        """
         arr.append(item)
         if len(arr) > max_len:
-            arr.pop(1)  # Keep system message, remove oldest message
+            # Start from index 1 (skip system message at index 0)
+            i = 1
+            while i < len(arr) and len(arr) > max_len:
+                message = arr[i]
+                
+                # If this is an assistant message with tool_calls, we need to remove
+                # it along with all subsequent tool messages that reference its tool_call_ids
+                if message.get("role") == "assistant" and message.get("tool_calls"):
+                    # Collect all tool_call_ids from this assistant message
+                    tool_call_ids = {tc.get("id") for tc in message.get("tool_calls", [])}
+                    
+                    # Remove the assistant message
+                    arr.pop(i)
+                    
+                    # Remove all subsequent tool messages that reference these tool_call_ids
+                    # We stay at index i because after popping, the next message is now at index i
+                    while i < len(arr):
+                        next_msg = arr[i]
+                        if (next_msg.get("role") == "tool" and 
+                            next_msg.get("tool_call_id") in tool_call_ids):
+                            arr.pop(i)
+                        else:
+                            # Once we hit a non-matching message, we're done with this group
+                            break
+                else:
+                    # For non-tool-call messages, just remove them normally
+                    arr.pop(i)
 
-def call_dalle3(prompt, image_inputs=None, model="gpt-4.1-mini"):
-    """Generate an image using GPT Image (multimodal model) via Responses API.
-    
-    This function uses the new Responses API with image_generation tool, which supports
-    both text prompts and optional image inputs for multimodal image generation.
+def call_dalle3(prompt):
+    """Generate an image using DALL-E 3.
     
     Args:
         prompt (str): The image generation prompt
-        image_inputs (list, optional): List of image URLs (Discord attachments are URLs)
-        model (str, optional): Model to use. Defaults to "gpt-4.1-mini"
         
     Returns:
-        dict: A dictionary containing:
-            - status: "success" or "error"
-            - image_url: Data URL format for the image (if success)
-            - revised_prompt: The prompt used (if available)
-            - error: Error message (if error)
+        dict: A dictionary containing the image URL and any error information
     """
     try:
         client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
-        
-        # Prepare input content
-        input_content = [{"type": "input_text", "text": prompt}]
-        
-        # Add image inputs if provided (Discord attachments are always URLs)
-        if image_inputs:
-            for img_url in image_inputs:
-                input_content.append({
-                    "type": "input_image",
-                    "image_url": img_url
-                })
-        
-        # Create the response with image generation tool
-        response = client.responses.create(
-            model=model,
-            input=[{
-                "role": "user",
-                "content": input_content
-            }],
-            tools=[{"type": "image_generation"}]
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
         )
-        
-        # Extract image data from response
-        image_data = [
-            output.result
-            for output in response.output
-            if output.type == "image_generation_call"
-        ]
-        
-        if not image_data:
-            return {
-                "status": "error",
-                "error": "No image was generated in the response"
-            }
-        
-        # Get the first image (base64 encoded) and create data URL
-        image_base64 = image_data[0]
-        image_url = f"data:image/png;base64,{image_base64}"
-        
-        # Try to get revised prompt from output_text if available
-        revised_prompt = getattr(response, 'output_text', None) or prompt
         
         return {
             "status": "success",
-            "image_url": image_url,
-            "revised_prompt": revised_prompt
+            "image_url": response.data[0].url,
+            "revised_prompt": response.data[0].revised_prompt
         }
     except Exception as e:
         return {
