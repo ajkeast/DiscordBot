@@ -432,27 +432,41 @@ class ChatGPTClient:
             image_urls (list, optional): List of image URLs to include. Defaults to None.
         """
         try:
-            # Prepare message content based on whether there are images
+            # Prepare message content for API call (with images if provided)
             if image_urls:
-                message_content = [
+                api_message_content = [
                     {"type": "text", "text": prompt},
                     *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
                 ]
             else:
-                message_content = prompt
+                api_message_content = prompt
 
-            # Append user prompt and maintain history length
-            message = {"role": "user", "content": message_content}
-            self._append_and_shift(chat_history, message, max_history)
+            # Store only text in chat history (images expire, so don't persist them)
+            history_message = {"role": "user", "content": prompt}
+            self._append_and_shift(chat_history, history_message, max_history)
+            
+            # Track if we've already included images in the first API call
+            first_call = True
             
             while True:
+                # Include images only in the first API call
+                if first_call and image_urls:
+                    # Build messages with images for the current user message
+                    messages = chat_history.copy()
+                    messages[-1] = {"role": "user", "content": api_message_content}
+                else:
+                    # Use chat_history as-is (no images)
+                    messages = chat_history
+                
                 response = self.client.chat.completions.create(
                     model=self.model,
                     max_completion_tokens=max_completion_tokens,
-                    messages=chat_history,
+                    messages=messages,
                     tools=self.function_registry.tool_descriptions,
                     tool_choice="auto"
                 )
+                
+                first_call = False  # After first call, don't include images anymore
                 
                 message = response.choices[0].message
                 
