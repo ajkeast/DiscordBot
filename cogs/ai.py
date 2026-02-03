@@ -1,12 +1,12 @@
 from discord.ext import commands
-from chatgpt_functions import GrokClient, call_dalle3
+from chatgpt_functions import GrokClient, call_grok_imagine
 from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR, MAX_GROK_SESSION_TURNS
 from utils.db import db_ops
 import discord
 
 
 class AI(commands.Cog):
-    """AI features: Grok chat (Responses API, stateful on xAI) and DALL-E image generation."""
+    """AI features: Grok chat (Responses API, stateful on xAI) and Grok Imagine image generation."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -56,12 +56,12 @@ class AI(commands.Cog):
 
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief="Generate AI Art"):
-        """Generate an AI image using DALL-E 3. Whitelist: DALLE3_WHITELIST. Logged to DB."""
+        """Generate an AI image using Grok Imagine (xAI). Whitelist: DALLE3_WHITELIST. Logged to DB."""
         if str(ctx.message.author.id) not in DALLE3_WHITELIST:
             await ctx.send(
                 embed=discord.Embed(
                     title="Access Denied",
-                    description="OpenAI charges ¢4 per image. Contact bot administrator for access.",
+                    description="Image generation is restricted. Contact bot administrator for access.",
                     color=EMBED_COLOR,
                 )
             )
@@ -70,15 +70,25 @@ class AI(commands.Cog):
         db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
 
         async with ctx.typing():
-            response = call_dalle3(arg)
+            # Use base64 so we attach the image; xAI image URLs can 404 or expire
+            response = call_grok_imagine(arg, return_base64=True)
 
             if response["status"] == "success":
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
-                embed.set_image(url=response["image_url"])
-                embed.add_field(name="Original Prompt", value=arg, inline=False)
-                embed.add_field(name="Revised Prompt", value=response["revised_prompt"], inline=False)
+                embed.add_field(name="Prompt", value=arg, inline=False)
+                if response.get("revised_prompt"):
+                    embed.add_field(name="Revised Prompt", value=response["revised_prompt"], inline=False)
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-                await ctx.send(embed=embed)
+
+                image_bytes = response.get("image_bytes")
+                if image_bytes:
+                    from io import BytesIO
+                    f = discord.File(BytesIO(image_bytes), filename="grok_image.png")
+                    embed.set_image(url="attachment://grok_image.png")
+                    await ctx.send(embed=embed, file=f)
+                else:
+                    embed.set_image(url=response["image_url"])
+                    await ctx.send(embed=embed)
             else:
                 await ctx.send(
                     embed=discord.Embed(

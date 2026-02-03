@@ -1,5 +1,5 @@
 """
-Grok Responses API client and DALL-E image generation.
+Grok Responses API client and Grok Imagine image generation.
 Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
 No tools; native search is built into Grok. Logging to DB for every interaction.
 """
@@ -143,21 +143,22 @@ class GrokClient:
 #         return {"status": "error", "error": str(e)}
 
 
-def call_dalle3(prompt: str) -> dict:
-    """Generate an image using DALL-E 3 (OpenAI)."""
+def call_grok_imagine(prompt: str) -> dict:
+    """Generate an image using xAI Grok Imagine API."""
     try:
-        client = openai.OpenAI(api_key=os.getenv("CHAT_API_KEY"))
+        client = openai.OpenAI(
+            base_url="https://api.x.ai/v1",
+            api_key=os.getenv("XAI_API_KEY"),
+        )
         response = client.images.generate(
-            model="dall-e-3",
+            model="grok-imagine-image",
             prompt=prompt,
-            size="1024x1024",
-            quality="standard",
             n=1,
         )
         return {
             "status": "success",
             "image_url": response.data[0].url,
-            "revised_prompt": response.data[0].revised_prompt,
+            "revised_prompt": None,  # Grok Imagine does not return a revised prompt
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}

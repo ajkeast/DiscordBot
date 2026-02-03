@@ -41,7 +41,7 @@ def main():
     from xai_sdk import Client
     from xai_sdk.chat import user, system
     from xai_sdk.tools import web_search, x_search
-    from chatgpt_functions import GrokClient, DEFAULT_GROK_MODEL
+    from chatgpt_functions import GrokClient, call_grok_imagine, DEFAULT_GROK_MODEL
 
     print("=" * 60)
     print("1. Raw SDK response (client.chat.create + sample)")
@@ -114,6 +114,21 @@ def main():
     server_usage = getattr(response, "server_side_tool_usage", None)
     if server_usage is not None:
         print("server_side_tool_usage =", server_usage)
+    print()
+
+    print("=" * 60)
+    print("4. Grok Imagine (image generation)")
+    print("=" * 60)
+
+    result = call_grok_imagine("A simple red circle on a white background")
+    print("status       =", result.get("status"))
+    if result.get("status") == "success":
+        url = result.get("image_url", "")
+        print("image_url (full, use this to verify in browser) =")
+        print(url)
+        print("revised_prompt =", result.get("revised_prompt"))
+    else:
+        print("error        =", result.get("error"))
     print()
     print("Done. Check output above to confirm response shape and content.")
 
