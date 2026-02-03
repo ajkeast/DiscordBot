@@ -5,7 +5,6 @@ No tools; native search is built into Grok. Logging to DB for every interaction.
 """
 import os
 from dotenv import load_dotenv
-import openai
 from xai_sdk import Client
 from xai_sdk.chat import user, system, image
 from xai_sdk.tools import web_search, x_search
@@ -144,27 +143,29 @@ class GrokClient:
 
 
 def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
-    """Generate or edit an image using xAI Grok Imagine API.
+    """Generate or edit an image using xAI Grok Imagine API (xAI SDK).
 
     - prompt: Text description for generation, or edit instructions when input_image_url is set.
     - input_image_url: Optional URL of an image to edit (e.g. Discord CDN URL). Pass as-is; no base64.
     """
     try:
-        client = openai.OpenAI(
-            base_url="https://api.x.ai/v1",
-            api_key=os.getenv("XAI_API_KEY"),
-        )
-        kwargs = {
-            "model": "grok-imagine-image",
-            "prompt": prompt,
-            "n": 1,
-        }
+        client = Client(api_key=os.getenv("XAI_API_KEY"))
         if input_image_url:
-            kwargs["image_url"] = input_image_url
-        response = client.images.generate(**kwargs)
+            response = client.image.sample(
+                model="grok-imagine-image",
+                image_url=input_image_url,
+                prompt=prompt,
+                image_format="url",
+            )
+        else:
+            response = client.image.sample(
+                model="grok-imagine-image",
+                prompt=prompt,
+                image_format="url",
+            )
         return {
             "status": "success",
-            "image_url": response.data[0].url,
+            "image_url": response.url,
             "revised_prompt": None,  # Grok Imagine does not return a revised prompt
         }
     except Exception as e:
