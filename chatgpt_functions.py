@@ -143,18 +143,25 @@ class GrokClient:
 #         return {"status": "error", "error": str(e)}
 
 
-def call_grok_imagine(prompt: str) -> dict:
-    """Generate an image using xAI Grok Imagine API."""
+def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
+    """Generate or edit an image using xAI Grok Imagine API.
+
+    - prompt: Text description for generation, or edit instructions when input_image_url is set.
+    - input_image_url: Optional URL of an image to edit (e.g. Discord CDN URL). Pass as-is; no base64.
+    """
     try:
         client = openai.OpenAI(
             base_url="https://api.x.ai/v1",
             api_key=os.getenv("XAI_API_KEY"),
         )
-        response = client.images.generate(
-            model="grok-imagine-image",
-            prompt=prompt,
-            n=1,
-        )
+        kwargs = {
+            "model": "grok-imagine-image",
+            "prompt": prompt,
+            "n": 1,
+        }
+        if input_image_url:
+            kwargs["image_url"] = input_image_url
+        response = client.images.generate(**kwargs)
         return {
             "status": "success",
             "image_url": response.data[0].url,

@@ -69,8 +69,15 @@ class AI(commands.Cog):
 
         db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
 
+        # Optional: first image attachment URL used as input for editing
+        input_image_url = None
+        for a in ctx.message.attachments:
+            if a.content_type and a.content_type.startswith("image/"):
+                input_image_url = a.url
+                break
+
         async with ctx.typing():
-            response = call_grok_imagine(arg)
+            response = call_grok_imagine(arg, input_image_url=input_image_url)
 
             if response["status"] == "success":
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
