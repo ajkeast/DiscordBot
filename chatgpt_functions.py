@@ -12,7 +12,7 @@ from xai_sdk.chat import user, system, image
 load_dotenv()
 
 # Default Grok model (has native search)
-DEFAULT_GROK_MODEL = "grok-4"
+DEFAULT_GROK_MODEL = "grok-4-1-fast-non-reasoning"
 
 
 class GrokClient:
@@ -50,6 +50,7 @@ class GrokClient:
                 model=self.model,
                 previous_response_id=previous_response_id,
                 store_messages=True,
+                tools=[web_search()],
             )
             chat.append(user(prompt))
         else:
@@ -66,6 +67,11 @@ class GrokClient:
         response_id = getattr(response, "id", None)
         content = (response.content or "").strip() or "Sorry, I couldn't generate a reply this time. Please try again."
 
+        # xAI returns usage with prompt_tokens and completion_tokens
+        usage = getattr(response, "usage", None)
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+
         if user_id is not None:
             self._log_interaction(
                 user_id=user_id,
@@ -73,6 +79,8 @@ class GrokClient:
                 response_content=content,
                 response_id=response_id,
                 image_urls=image_urls,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
 
         # When we didn't store (e.g. had images), don't return response_id so caller starts fresh next time
@@ -86,13 +94,13 @@ class GrokClient:
         response_content: str,
         response_id: str | None,
         image_urls: list[str] | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ) -> None:
         """Log this turn to the database (same shape as legacy ChatGPT logs)."""
         from utils.db import db_ops
 
         request_messages = [{"role": "user", "content": prompt}]
-        input_tokens = 0
-        output_tokens = 0
         db_ops.log_chatgpt_interaction(
             user_id=user_id,
             model=self.model,
