@@ -1,6 +1,6 @@
 from discord.ext import commands
 from chatgpt_functions import GrokClient, call_dalle3
-from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR
+from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR, MAX_GROK_SESSION_TURNS
 from utils.db import db_ops
 import discord
 
@@ -13,6 +13,7 @@ class AI(commands.Cog):
         self.grok = GrokClient()
         # Single shared session for all users (last Grok response_id, or None for new conversation)
         self.last_response_id = None
+        self._session_turns = 0  # turns in current session; reset when starting fresh or hitting limit
         self.system_prompt = (
             "Talk like a surfer, stoner bro who is always chill and relaxed. "
             "You have access to real-time search; use it to confirm facts and fetch primary sources for current events. "
@@ -38,6 +39,11 @@ class AI(commands.Cog):
         ]
 
         async with ctx.typing():
+            # Start a new session if we've hit the turn limit (keeps context/cost bounded)
+            if self._session_turns >= MAX_GROK_SESSION_TURNS:
+                self.last_response_id = None
+                self._session_turns = 0
+
             next_response_id, response_text = self.grok.send_message(
                 arg,
                 previous_response_id=self.last_response_id,
@@ -48,6 +54,7 @@ class AI(commands.Cog):
 
             if next_response_id is not None:
                 self.last_response_id = next_response_id
+                self._session_turns += 1
 
             await ctx.send(response_text or "Sorry, I couldn't generate a reply this time. Please try again.")
 
@@ -93,6 +100,7 @@ class AI(commands.Cog):
             return
 
         self.last_response_id = None
+        self._session_turns = 0
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
 
 

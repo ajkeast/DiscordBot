@@ -40,6 +40,7 @@ def main():
 
     from xai_sdk import Client
     from xai_sdk.chat import user, system
+    from xai_sdk.tools import web_search, x_search
     from chatgpt_functions import GrokClient, DEFAULT_GROK_MODEL
 
     print("=" * 60)
@@ -89,6 +90,30 @@ def main():
     )
     print("next_response_id =", next_id)
     print("response_text    =", repr(text[:300]))
+    print()
+    print("=" * 60)
+    print("3. Web search + X search (tools=[web_search(), x_search()])")
+    print("=" * 60)
+
+    chat = client.chat.create(
+        model=DEFAULT_GROK_MODEL,
+        store_messages=False,
+        tools=[web_search(), x_search()],
+    )
+    chat.append(user("What are the latest updates from xAI? Reply in 2-3 short sentences."))
+
+    response = chat.sample()
+    print("response.id     =", getattr(response, "id", "<no id>"))
+    print("response.content=", repr((response.content or "")[:400]))
+    citations = getattr(response, "citations", None)
+    if citations:
+        print("response.citations (first 5) =", (citations[:5] if citations else []))
+    usage = getattr(response, "usage", None)
+    if usage:
+        print("response.usage   =", usage)
+    server_usage = getattr(response, "server_side_tool_usage", None)
+    if server_usage is not None:
+        print("server_side_tool_usage =", server_usage)
     print()
     print("Done. Check output above to confirm response shape and content.")
 

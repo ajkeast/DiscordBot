@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import openai
 from xai_sdk import Client
 from xai_sdk.chat import user, system, image
+from xai_sdk.tools import web_search, x_search
 
 load_dotenv()
 
@@ -50,11 +51,15 @@ class GrokClient:
                 model=self.model,
                 previous_response_id=previous_response_id,
                 store_messages=True,
-                tools=[web_search()],
+                tools=[web_search(), x_search()],
             )
             chat.append(user(prompt))
         else:
-            chat = self._client.chat.create(model=self.model, store_messages=store)
+            chat = self._client.chat.create(
+                model=self.model,
+                store_messages=store,
+                tools=[web_search(), x_search()],
+            )
             if system_prompt:
                 chat.append(system(system_prompt))
             if has_images:
