@@ -70,25 +70,14 @@ class AI(commands.Cog):
         db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
 
         async with ctx.typing():
-            # Use base64 so we attach the image; xAI image URLs can 404 or expire
-            response = call_grok_imagine(arg, return_base64=True)
+            response = call_grok_imagine(arg)
 
             if response["status"] == "success":
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
+                embed.set_image(url=response["image_url"])
                 embed.add_field(name="Prompt", value=arg, inline=False)
-                if response.get("revised_prompt"):
-                    embed.add_field(name="Revised Prompt", value=response["revised_prompt"], inline=False)
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-
-                image_bytes = response.get("image_bytes")
-                if image_bytes:
-                    from io import BytesIO
-                    f = discord.File(BytesIO(image_bytes), filename="grok_image.png")
-                    embed.set_image(url="attachment://grok_image.png")
-                    await ctx.send(embed=embed, file=f)
-                else:
-                    embed.set_image(url=response["image_url"])
-                    await ctx.send(embed=embed)
+                await ctx.send(embed=embed)
             else:
                 await ctx.send(
                     embed=discord.Embed(
