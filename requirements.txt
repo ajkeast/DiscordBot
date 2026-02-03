@@ -7,8 +7,5 @@ requests
 python-dotenv
 pytz
 matplotlib
-tweepy
 openai>=1.99.5
-beautifulsoup4>=4.12.0
-trafilatura>=1.6.0
-tavily-python>=0.3.6
+xai-sdk

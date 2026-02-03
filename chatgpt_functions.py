@@ -1,607 +1,150 @@
-import datetime, json, os           # core python libraries
-import openai                       # chatGPT API
-from dotenv import load_dotenv      # load .env
-import pytz                         # timezones
-import requests                     # http queries
-import tweepy                       # twitter API
-from bs4 import BeautifulSoup      # HTML parsing
-import trafilatura                 # web content extraction
-from tavily import TavilyClient     # Tavily search API
-import time                         # for rate limiting
-from collections import deque       # for rate limiting
-from threading import Lock          # for thread safety
+"""
+Grok Responses API client and DALL-E image generation.
+Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
+No tools; native search is built into Grok. Logging to DB for every interaction.
+"""
+import os
+from dotenv import load_dotenv
+import openai
+from xai_sdk import Client
+from xai_sdk.chat import user, system, image
 
 load_dotenv()
 
-class RateLimiter:
-    """Rate limiter for API calls."""
-    
-    def __init__(self, max_calls, time_window):
-        """Initialize rate limiter.
-        
-        Args:
-            max_calls (int): Maximum number of calls allowed in time window
-            time_window (int): Time window in seconds
-        """
-        self.max_calls = max_calls
-        self.time_window = time_window
-        self.calls = deque()
-        self.lock = Lock()
-    
-    def acquire(self):
-        """Acquire permission to make an API call.
-        
-        Returns:
-            bool: True if call is allowed, False otherwise
-        """
-        with self.lock:
-            now = time.time()
-            
-            # Remove old calls
-            while self.calls and now - self.calls[0] > self.time_window:
-                self.calls.popleft()
-            
-            if len(self.calls) < self.max_calls:
-                self.calls.append(now)
-                return True
-            return False
-    
-    def wait(self):
-        """Wait until a call can be made."""
-        while not self.acquire():
-            time.sleep(0.1)
-
-class FunctionRegistry:
-    """Registry for all available functions that can be called by ChatGPT."""
-    
-    def __init__(self):
-        """Initialize the registry with all available functions."""
-        self.functions = {}
-        self._register_all_functions()
-        # Initialize rate limiters
-
-    
-    def _register_all_functions(self):
-        """Register all available functions with their metadata."""
-        # Date and Time Functions
-        self._register_date_functions()
-        
-        # Weather Functions
-        self._register_weather_functions()
-        
-        # Social Media Functions
-        self._register_social_functions()
-
-        # Search Functions
-        self._register_search_functions()
-    
-    def _register_date_functions(self):
-        """Register all date and time related functions."""
-        self.register(
-            name="get_todays_date",
-            func=self._get_todays_date,
-            description="Get the current date and time for a specific timezone",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "timezone": {
-                        "type": "string",
-                        "description": "Timezone identifier (e.g., 'US/Eastern', 'UTC', 'Europe/London')"
-                    }
-                },
-                "required": ["timezone"]
-            }
-        )
-    
-    def _register_weather_functions(self):
-        """Register all weather related functions."""
-        self.register(
-            name="get_current_weather",
-            func=self._get_current_weather,
-            description="Get current weather conditions for a specific location",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "City and state/country (e.g., 'San Francisco, CA', 'London, UK')"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "Temperature unit preference"
-                    }
-                },
-                "required": ["location"]
-            }
-        )
-    
-    def _register_social_functions(self):
-        """Register all social media related functions."""
-        self.register(
-            name="post_tweet",
-            func=self._post_tweet,
-            description="Post a message to Twitter",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Tweet content (max 280 characters)"
-                    }
-                },
-                "required": ["message"]
-            }
-        )
-
-    def _register_search_functions(self):
-        """Register all search related functions."""
-        self.register(
-            name="tavily_search",
-            func=self._tavily_search,
-            description="Search the web using Tavily API. Returns answer, results, and optional images/raw content.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query"
-                    },
-                    "search_depth": {
-                        "type": "string",
-                        "enum": ["basic", "advanced"],
-                        "description": "Search depth to use",
-                        "default": "basic"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of results to return (1-20)",
-                        "default": 10
-                    },
-                    "include_answer": {
-                        "type": "boolean",
-                        "description": "Whether to include a generated answer summary",
-                        "default": True
-                    },
-                    "include_results": {
-                        "type": "boolean",
-                        "description": "Whether to include the list of source results",
-                        "default": True
-                    },
-                    "include_raw_content": {
-                        "type": "boolean",
-                        "description": "Whether to include raw page content per result",
-                        "default": False
-                    },
-                    "include_images": {
-                        "type": "boolean",
-                        "description": "Whether to include image URLs related to the query",
-                        "default": False
-                    },
-                    "topic": {
-                        "type": "string",
-                        "description": "Topic domain to guide the search (e.g., 'general', 'news', 'finance')",
-                        "default": "general"
-                    }
-                },
-                "required": ["query"]
-            }
-        )
+# Default Grok model (has native search)
+DEFAULT_GROK_MODEL = "grok-4"
 
 
-    def register(self, name, func, description, parameters):
-        """Register a new function with its metadata.
-        
-        Args:
-            name (str): Unique identifier for the function
-            func (callable): The actual function to be called
-            description (str): Clear description of what the function does
-            parameters (dict): JSONSchema object describing the function's parameters
-        """
-        self.functions[name] = {
-            "func": func,
-            "description": {
-                "name": name,
-                "description": description,
-                "parameters": parameters
-            }
-        }
-    
-    @property
-    def function_descriptions(self):
-        """Get all function descriptions for ChatGPT API."""
-        return [func["description"] for func in self.functions.values()]
-    
-    @property
-    def tool_descriptions(self):
-        """Get tool descriptions formatted for the tools API."""
-        return [
-            {
-                "type": "function",
-                "function": func["description"]
-            }
-            for func in self.functions.values()
-        ]
-    
-    def execute(self, name, arguments):
-        """Execute a registered function by name with given arguments.
-        
-        Args:
-            name (str): Name of the function to execute
-            arguments (str or dict): Function arguments as string or dict
-            
-        Returns:
-            str: JSON string containing the function's response
-            
-        Raises:
-            ValueError: If function name is not registered
-        """
-        if name not in self.functions:
-            raise ValueError(f"Unknown function: {name}")
-        
-        try:
-            parsed_args = json.loads(arguments) if isinstance(arguments, str) else arguments
-            result = self.functions[name]["func"](**parsed_args)
-            return json.dumps(result) if not isinstance(result, str) else result
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-    
-    def _get_todays_date(self, timezone='US/Eastern'):
-        """Get the current date and time for a specific timezone.
-        
-        Args:
-            timezone (str): Timezone identifier (e.g., 'US/Eastern', 'UTC')
-            
-        Returns:
-            dict: Timezone and formatted datetime string
-        """
-        tz = pytz.timezone(timezone)
-        return {
-            "timezone": timezone,
-            "today": str(datetime.datetime.now(tz))
-        }
+class GrokClient:
+    """Client for xAI Grok Responses API. Stateful sessions stored on xAI servers."""
 
-    def _get_current_weather(self, location, unit="fahrenheit"):
-        """Get current weather conditions for a specific location.
-        
-        Args:
-            location (str): City and state/country
-            unit (str, optional): Temperature unit. Defaults to "fahrenheit"
-            
-        Returns:
-            dict: Weather information including temperature, conditions, etc.
-        """
-        url = "https://weatherapi-com.p.rapidapi.com/current.json"
-        headers = {
-            "X-RapidAPI-Key": os.getenv('RAPID_API_KEY'),
-            "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
-        }
-        
-        response = requests.get(url, headers=headers, params={"q": location}).json()
-        
-        return {
-            "location": response.get("location"),
-            "unit": unit,
-            "temperature": response.get("current").get("temp_f"),
-            "conditions": response.get("current").get("condition").get("text"),
-            "uv_level": response.get("current").get("uv"),
-            "humidity": response.get("current").get("humidity"),
-            "precip_inches": response.get("current").get("precip_in")
-        }
-    
-    def _post_tweet(self, message):
-        """Post a message to Twitter.
-        
-        Args:
-            message (str): Tweet content (max 280 characters)
-            
-        Returns:
-            dict: Tweet information including URL and status
-        """
-        try:
-            twitter = tweepy.Client(
-                consumer_key=os.getenv('TWITTER_API_KEY'),
-                consumer_secret=os.getenv('TWITTER_API_KEY_SECRET'),
-                access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
-                access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
-            )
-            
-            tweet = twitter.create_tweet(text=message)
-            tweet_id = tweet.data['id']
-            
-            return {
-                "tweet_text": message,
-                "tweet_url": f'https://twitter.com/twitter/statuses/{tweet_id}',
-                "status": "success"
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-    def _fetch_url_content(self, url):
-        """Fetch and extract meaningful content from a URL.
-        
-        Args:
-            url (str): URL to fetch content from
-            
-        Returns:
-            str: Extracted text content from the webpage
-            
-        Raises:
-            ValueError: If URL is invalid
-            requests.exceptions.RequestException: If request fails
-        """
-        # Validate URL
-        if not url or not isinstance(url, str):
-            raise ValueError("Invalid URL provided")
-            
-        if not url.startswith(('http://', 'https://')):
-            raise ValueError("URL must start with http:// or https://")
-            
-        try:
-            # First try with trafilatura
-            downloaded = trafilatura.fetch_url(url, timeout=10)
-            if downloaded:
-                content = trafilatura.extract(downloaded, include_links=False, include_images=False)
-                if content:
-                    return content.strip()
-            
-            # Fallback to requests + BeautifulSoup
-            response = requests.get(url, timeout=10, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            })
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Remove unwanted elements
-            for element in soup(['script', 'style', 'nav', 'footer', 'header']):
-                element.decompose()
-                
-            text = soup.get_text()
-            lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            text = ' '.join(chunk for chunk in chunks if chunk)
-            
-            return text.strip()
-            
-        except requests.exceptions.Timeout:
-            raise requests.exceptions.RequestException("Request timed out")
-        except requests.exceptions.HTTPError as e:
-            raise requests.exceptions.RequestException(f"HTTP error occurred: {str(e)}")
-        except requests.exceptions.ConnectionError:
-            raise requests.exceptions.RequestException("Failed to connect to the server")
-        except Exception as e:
-            raise requests.exceptions.RequestException(f"Error fetching content: {str(e)}")
-
-    def _tavily_search(self, query, search_depth="basic", max_results=10, include_answer=True, include_results=True, include_raw_content=False, include_images=False, topic="general"):
-        """Perform a web search using the Tavily API.
-        
-        Args:
-            query (str): Search query
-            search_depth (str, optional): "basic" or "advanced". Defaults to "basic".
-            max_results (int, optional): Number of results. Defaults to 10.
-            include_answer (bool, optional): Include summary answer. Defaults to True.
-            include_results (bool, optional): Include list of results. Defaults to True.
-            include_raw_content (bool, optional): Include raw page content. Defaults to False.
-            include_images (bool, optional): Include image URLs. Defaults to False.
-            topic (str, optional): Topic domain. Defaults to "general".
-        Returns:
-            dict: Search results from Tavily API
-        """
-        try:
-            tavily_client = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
-            results = tavily_client.search(
-                query=query,
-                search_depth=search_depth,
-                max_results=min(max_results, 20),
-                include_answer=include_answer,
-                include_results=include_results,
-                include_raw_content=include_raw_content,
-                include_images=include_images,
-                topic=topic
-            )
-            return results
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-
-
-class ChatGPTClient:
-    """Client for interacting with ChatGPT API."""
-    
     def __init__(self, api_key=None):
-        self.client = openai.OpenAI(api_key=api_key or os.getenv('CHAT_API_KEY'))
-        self.function_registry = FunctionRegistry()
-        self.model = "gpt-4.1-mini"  # Store model name as instance variable
-    
-    def call_chatgpt(self, chat_history, prompt, max_history=20, max_completion_tokens=512, user_id=None, image_urls=None):
-        """Call ChatGPT API with function calling and vision support.
-        
-        Args:
-            chat_history (list): List of previous messages
-            prompt (str): User's prompt
-            max_history (int, optional): Maximum number of messages to keep. Defaults to 20.
-            max_completion_tokens (int, optional): Maximum tokens in response. Defaults to 512.
-            user_id (int, optional): Discord user ID for logging. Defaults to None.
-            image_urls (list, optional): List of image URLs to include. Defaults to None.
+        self._client = Client(
+            api_key=api_key or os.getenv("XAI_API_KEY"),
+            timeout=3600,
+        )
+        self.model = DEFAULT_GROK_MODEL
+
+    def send_message(
+        self,
+        prompt: str,
+        *,
+        previous_response_id: str | None = None,
+        system_prompt: str | None = None,
+        user_id: int | None = None,
+        image_urls: list[str] | None = None,
+    ) -> tuple[str | None, str]:
         """
-        try:
-            # Prepare message content for API call (with images if provided)
-            if image_urls:
-                api_message_content = [
-                    {"type": "text", "text": prompt},
-                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
-                ]
+        Send a user message to Grok and return (next_response_id, response_text).
+
+        - If previous_response_id is set, the message is appended to that conversation.
+        - When image_urls are provided, store_messages is False (per xAI docs) and
+          the returned response_id should not be used to continue (next turn starts fresh).
+        - Logs the interaction when user_id is provided.
+        """
+        has_images = bool(image_urls)
+        store = not has_images
+
+        if previous_response_id and store:
+            chat = self._client.chat.create(
+                model=self.model,
+                previous_response_id=previous_response_id,
+                store_messages=True,
+            )
+            chat.append(user(prompt))
+        else:
+            chat = self._client.chat.create(model=self.model, store_messages=store)
+            if system_prompt:
+                chat.append(system(system_prompt))
+            if has_images:
+                image_parts = [image(image_url=url, detail="high") for url in image_urls]
+                chat.append(user(prompt, *image_parts))
             else:
-                api_message_content = prompt
+                chat.append(user(prompt))
 
-            # Store only text in chat history (images expire, so don't persist them)
-            history_message = {"role": "user", "content": prompt}
-            self._append_and_shift(chat_history, history_message, max_history)
-            
-            # Track if we've already included images in the first API call
-            first_call = True
-            
-            while True:
-                # Include images only in the first API call
-                if first_call and image_urls:
-                    # Build messages with images for the current user message
-                    messages = chat_history.copy()
-                    messages[-1] = {"role": "user", "content": api_message_content}
-                else:
-                    # Use chat_history as-is (no images)
-                    messages = chat_history
-                
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    max_completion_tokens=max_completion_tokens,
-                    messages=messages,
-                    tools=self.function_registry.tool_descriptions,
-                    tool_choice="auto"
-                )
-                
-                first_call = False  # After first call, don't include images anymore
-                
-                message = response.choices[0].message
-                
-                # Log the interaction if user_id is provided
-                if user_id is not None:
-                    from utils.db import db_ops
-                    function_calls = []
-                    if getattr(message, "tool_calls", None):
-                        for tool_call in message.tool_calls:
-                            function_calls.append({
-                                "id": tool_call.id,
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments
-                            })
-                    
-                    db_ops.log_chatgpt_interaction(
-                        user_id=user_id,
-                        model=self.model,
-                        request_messages=chat_history,
-                        response_content=(message.content or ""),
-                        input_tokens=response.usage.prompt_tokens,
-                        output_tokens=response.usage.completion_tokens,
-                        function_calls=function_calls if function_calls else None,
-                        image_urls=image_urls
-                    )
-                
-                # If no tool calls, return the response
-                if not getattr(message, "tool_calls", None):
-                    # Ensure we never return an empty response which would cause Discord 400 errors
-                    assistant_text = (message.content or "").strip()
-                    if not assistant_text:
-                        assistant_text = "Sorry, I couldn't generate a reply this time. Please try again."
-                    self._append_and_shift(chat_history, {
-                        "role": "assistant",
-                        "content": assistant_text
-                    }, max_history)
-                    return chat_history, assistant_text[:2000]
-                
-                # Handle tool calls
-                # First, append the assistant message that contains the tool_calls
-                self._append_and_shift(chat_history, {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        {
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments
-                            }
-                        } for tool_call in message.tool_calls
-                    ]
-                }, max_history)
-                
-                # Then, append each tool response
-                for tool_call in message.tool_calls:
-                    function_name = tool_call.function.name
-                    function_response = self.function_registry.execute(
-                        function_name,
-                        tool_call.function.arguments
-                    )
-                    
-                    self._append_and_shift(chat_history, {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": function_response
-                    }, max_history)
-                
-        except Exception as e:
-            return chat_history, f'Error: {str(e)}'
-    
-    @staticmethod
-    def _append_and_shift(arr, item, max_len):
-        """Append an item to array and maintain maximum length.
-        
-        Ensures that tool messages are always removed together with their
-        corresponding assistant message that contains tool_calls.
-        """
-        arr.append(item)
-        if len(arr) > max_len:
-            # Start from index 1 (skip system message at index 0)
-            i = 1
-            while i < len(arr) and len(arr) > max_len:
-                message = arr[i]
-                
-                # If this is an assistant message with tool_calls, we need to remove
-                # it along with all subsequent tool messages that reference its tool_call_ids
-                if message.get("role") == "assistant" and message.get("tool_calls"):
-                    # Collect all tool_call_ids from this assistant message
-                    tool_call_ids = {tc.get("id") for tc in message.get("tool_calls", [])}
-                    
-                    # Remove the assistant message
-                    arr.pop(i)
-                    
-                    # Remove all subsequent tool messages that reference these tool_call_ids
-                    # We stay at index i because after popping, the next message is now at index i
-                    while i < len(arr):
-                        next_msg = arr[i]
-                        if (next_msg.get("role") == "tool" and 
-                            next_msg.get("tool_call_id") in tool_call_ids):
-                            arr.pop(i)
-                        else:
-                            # Once we hit a non-matching message, we're done with this group
-                            break
-                else:
-                    # For non-tool-call messages, just remove them normally
-                    arr.pop(i)
+        response = chat.sample()
+        response_id = getattr(response, "id", None)
+        content = (response.content or "").strip() or "Sorry, I couldn't generate a reply this time. Please try again."
 
-def call_dalle3(prompt):
-    """Generate an image using DALL-E 3.
-    
-    Args:
-        prompt (str): The image generation prompt
-        
-    Returns:
-        dict: A dictionary containing the image URL and any error information
-    """
+        if user_id is not None:
+            self._log_interaction(
+                user_id=user_id,
+                prompt=prompt,
+                response_content=content,
+                response_id=response_id,
+                image_urls=image_urls,
+            )
+
+        # When we didn't store (e.g. had images), don't return response_id so caller starts fresh next time
+        next_id = response_id if store else None
+        return next_id, content[:2000]
+
+    def _log_interaction(
+        self,
+        user_id: int,
+        prompt: str,
+        response_content: str,
+        response_id: str | None,
+        image_urls: list[str] | None = None,
+    ) -> None:
+        """Log this turn to the database (same shape as legacy ChatGPT logs)."""
+        from utils.db import db_ops
+
+        request_messages = [{"role": "user", "content": prompt}]
+        input_tokens = 0
+        output_tokens = 0
+        db_ops.log_chatgpt_interaction(
+            user_id=user_id,
+            model=self.model,
+            request_messages=request_messages,
+            response_content=response_content,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            function_calls=None,
+            image_urls=image_urls,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Twitter posting tool (commented out; re-enable when adding tools back)
+# ---------------------------------------------------------------------------
+# import tweepy
+#
+# def _post_tweet(message: str) -> dict:
+#     """Post a message to Twitter. Returns tweet info including URL and status."""
+#     try:
+#         twitter = tweepy.Client(
+#             consumer_key=os.getenv("TWITTER_API_KEY"),
+#             consumer_secret=os.getenv("TWITTER_API_KEY_SECRET"),
+#             access_token=os.getenv("TWITTER_ACCESS_TOKEN"),
+#             access_token_secret=os.getenv("TWITTER_ACCESS_TOKEN_SECRET"),
+#         )
+#         tweet = twitter.create_tweet(text=message)
+#         tweet_id = tweet.data["id"]
+#         return {
+#             "tweet_text": message,
+#             "tweet_url": f"https://twitter.com/twitter/statuses/{tweet_id}",
+#             "status": "success",
+#         }
+#     except Exception as e:
+#         return {"status": "error", "error": str(e)}
+
+
+def call_dalle3(prompt: str) -> dict:
+    """Generate an image using DALL-E 3 (OpenAI)."""
     try:
-        client = openai.OpenAI(api_key=os.getenv('CHAT_API_KEY'))
+        client = openai.OpenAI(api_key=os.getenv("CHAT_API_KEY"))
         response = client.images.generate(
             model="dall-e-3",
             prompt=prompt,
             size="1024x1024",
             quality="standard",
-            n=1
+            n=1,
         )
-        
         return {
             "status": "success",
             "image_url": response.data[0].url,
-            "revised_prompt": response.data[0].revised_prompt
+            "revised_prompt": response.data[0].revised_prompt,
         }
     except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        return {"status": "error", "error": str(e)}
