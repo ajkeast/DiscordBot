@@ -87,7 +87,7 @@ class GrokClient:
                 except json.JSONDecodeError:
                     args = {}
                 result = TOOLS_MAP[name](**args) if name in TOOLS_MAP else {"status": "error", "error": f"Unknown tool: {name}"}
-                chat.append(tool_result(result, tool_call_id=getattr(tc, "id", None)))
+                chat.append(tool_result(json.dumps(result), tool_call_id=getattr(tc, "id", None)))
             response = chat.sample()
 
         response_id = getattr(response, "id", None)

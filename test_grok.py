@@ -130,6 +130,34 @@ def main():
     else:
         print("error        =", result.get("error"))
     print()
+
+    print("=" * 60)
+    print("5. post_tweet tool (GrokClient + mocked _post_tweet, no real tweet)")
+    print("=" * 60)
+
+    from unittest.mock import patch
+
+    call_log = []  # record what Grok asked to post
+
+    def fake_post_tweet(text: str, image_urls=None):
+        call_log.append({"text": text, "image_urls": image_urls or []})
+        return {"status": "success", "tweet_text": text, "tweet_id": "999", "tweet_url": "https://twitter.com/i/status/999", "image_count": len(image_urls or [])}
+
+    # Patch TOOLS_MAP so the real _post_tweet is never called (send_message uses TOOLS_MAP[name])
+    with patch.dict("chatgpt_functions.TOOLS_MAP", {"post_tweet": fake_post_tweet}):
+        grok = GrokClient()
+        next_id, response_text = grok.send_message(
+            "Post this to Twitter: test_grok.py check.",
+            system_prompt="When the user asks to post to Twitter, use the post_tweet tool with the exact text they give. Then reply in one short sentence.",
+            user_id=None,
+        )
+    print("next_response_id =", next_id)
+    print("response_text    =", repr(response_text[:400]))
+    if call_log:
+        print("post_tweet was called:", call_log[-1])
+    else:
+        print("post_tweet was not called (Grok may have replied without using the tool).")
+    print()
     print("Done. Check output above to confirm response shape and content.")
 
 if __name__ == "__main__":
