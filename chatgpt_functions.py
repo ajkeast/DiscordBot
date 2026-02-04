@@ -160,10 +160,23 @@ def _post_tweet(text: str, image_urls: list[str] | None = None) -> dict:
             api_v1 = tweepy.API(tweepy.OAuth1UserHandler(*tw.values()))
             for url in urls:
                 try:
-                    r = requests.get(url, timeout=15)
+                    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
+                    r = requests.get(url, timeout=15, headers=headers)
                     r.raise_for_status()
-                    if r.content:
-                        media_ids.append(api_v1.media_upload(filename="image.png", file=BytesIO(r.content)).media_id)
+                    if not r.content:
+                        continue
+                    buf = BytesIO(r.content)
+                    buf.seek(0)
+                    ext = "png"
+                    ct = (r.headers.get("Content-Type") or "").lower()
+                    if "jpeg" in ct or "jpg" in ct:
+                        ext = "jpg"
+                    elif "gif" in ct:
+                        ext = "gif"
+                    elif "webp" in ct:
+                        ext = "webp"
+                    media = api_v1.media_upload(filename=f"image.{ext}", file=buf)
+                    media_ids.append(media.media_id)
                 except Exception as e:
                     return {"status": "error", "error": f"Image upload failed: {e}"}
         kwargs = {"text": text}

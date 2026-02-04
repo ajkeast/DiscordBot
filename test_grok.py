@@ -158,6 +158,75 @@ def main():
     else:
         print("post_tweet was not called (Grok may have replied without using the tool).")
     print()
+
+    print("=" * 60)
+    print("6. Tweet with image: _post_tweet with real image URL")
+    print("=" * 60)
+
+    from chatgpt_functions import _post_tweet
+
+    # Get a real image URL (Grok Imagine) so we test the same path as "generate then post"
+    print("Generating image via Grok Imagine...")
+    img_result = call_grok_imagine("A single red circle on white background, minimal")
+    if img_result.get("status") != "success":
+        print("Grok Imagine failed, using a public placeholder image URL for download/upload test.")
+        image_url = "https://picsum.photos/400/300"
+    else:
+        image_url = img_result.get("image_url", "")
+        print("Got image URL (first 80 chars):", (image_url[:80] + "..." if len(image_url) > 80 else image_url))
+
+    if not image_url:
+        print("No image URL available, skipping tweet-with-image test.")
+    else:
+        print("Calling _post_tweet(text=..., image_urls=[image_url])...")
+        result = _post_tweet("test_grok image upload check", image_urls=[image_url])
+        print("Result:", result)
+        if result.get("status") == "success":
+            print("image_count =", result.get("image_count", 0))
+            if result.get("image_count", 0) == 0:
+                print("(Tweet posted but image_count is 0 – image upload path may still be failing.)")
+        else:
+            print("Error:", result.get("error"))
+    print()
+
+    print("=" * 60)
+    print("7. Does Grok pass image_urls? Post with explicit image URL (mocked post)")
+    print("=" * 60)
+
+    call_log2 = []
+
+    def fake_post_with_log(text: str, image_urls=None):
+        call_log2.append({"text": text, "image_urls": image_urls or []})
+        n = len(image_urls or [])
+        return {
+            "status": "success",
+            "tweet_text": text,
+            "tweet_id": "888",
+            "tweet_url": "https://twitter.com/i/status/888",
+            "image_count": n,
+        }
+
+    with patch.dict("chatgpt_functions.TOOLS_MAP", {"post_tweet": fake_post_with_log}):
+        grok = GrokClient()
+        next_id, response_text = grok.send_message(
+            "Post this to Twitter: 'Photo test' and attach this image: https://picsum.photos/200",
+            system_prompt=(
+                "When the user asks to post to Twitter and provides an image URL, use the post_tweet tool "
+                "with both 'text' and 'image_urls' (array containing that URL). Always include image_urls when the user gives a URL."
+            ),
+            user_id=None,
+        )
+    print("response_text (excerpt):", repr(response_text[:350]))
+    if call_log2:
+        last = call_log2[-1]
+        print("post_tweet was called with:", last)
+        if last.get("image_urls"):
+            print("  -> image_urls were passed to the tool.")
+        else:
+            print("  -> image_urls were NOT passed (model may be omitting them).")
+    else:
+        print("post_tweet was not called.")
+    print()
     print("Done. Check output above to confirm response shape and content.")
 
 if __name__ == "__main__":
