@@ -1,14 +1,12 @@
 """
 Grok Responses API client and Grok Imagine image generation.
 Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
-Includes native search (web_search, x_search) and optional post_tweet tool.
+Includes native search (web_search, x_search) and optional text-only post_tweet tool (Twitter v2).
 Logging to DB for every interaction.
 """
 import json
 import os
-from io import BytesIO
 
-import requests
 import tweepy
 from dotenv import load_dotenv
 from xai_sdk import Client
@@ -139,15 +137,14 @@ class GrokClient:
         )
 
 
-def _post_tweet(text: str, image_urls: list[str] | None = None) -> dict:
-    """Post a tweet (text + optional image URLs). Uses tweepy v2 for create_tweet, v1.1 for media upload."""
+def _post_tweet(text: str) -> dict:
+    """Post a text-only tweet using Twitter API v2 (tweepy Client)."""
     text = (text or "").strip()[:280]
     if not text:
         return {"status": "error", "error": "Tweet text is required and cannot be empty."}
     tw = {k: os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_KEY_SECRET", "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN_SECRET")}
     if not all(tw.values()):
         return {"status": "error", "error": "Twitter API credentials not configured."}
-    urls = (image_urls or [])[:4]
     try:
         client = tweepy.Client(
             consumer_key=tw["TWITTER_API_KEY"],
@@ -155,48 +152,20 @@ def _post_tweet(text: str, image_urls: list[str] | None = None) -> dict:
             access_token=tw["TWITTER_ACCESS_TOKEN"],
             access_token_secret=tw["TWITTER_ACCESS_TOKEN_SECRET"],
         )
-        media_ids = []
-        if urls:
-            api_v1 = tweepy.API(tweepy.OAuth1UserHandler(*tw.values()))
-            for url in urls:
-                try:
-                    headers = {"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"}
-                    r = requests.get(url, timeout=15, headers=headers)
-                    r.raise_for_status()
-                    if not r.content:
-                        continue
-                    buf = BytesIO(r.content)
-                    buf.seek(0)
-                    ext = "png"
-                    ct = (r.headers.get("Content-Type") or "").lower()
-                    if "jpeg" in ct or "jpg" in ct:
-                        ext = "jpg"
-                    elif "gif" in ct:
-                        ext = "gif"
-                    elif "webp" in ct:
-                        ext = "webp"
-                    media = api_v1.media_upload(filename=f"image.{ext}", file=buf)
-                    media_ids.append(media.media_id)
-                except Exception as e:
-                    return {"status": "error", "error": f"Image upload failed: {e}"}
-        kwargs = {"text": text}
-        if media_ids:
-            kwargs["media_ids"] = media_ids
-        tweet = client.create_tweet(**kwargs)
+        tweet = client.create_tweet(text=text)
         tid = tweet.data["id"]
-        return {"status": "success", "tweet_text": text, "tweet_id": tid, "tweet_url": f"https://twitter.com/i/status/{tid}", "image_count": len(media_ids)}
+        return {"status": "success", "tweet_text": text, "tweet_id": tid, "tweet_url": f"https://x.com/i/status/{tid}"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
 
 POST_TWEET_TOOL = tool(
     name="post_tweet",
-    description="Post a tweet to Twitter/X when the user asks to post or share there. Can attach images via URLs (e.g. from image generation).",
+    description="Post a text tweet to Twitter/X when the user asks to post or share there. Text only (max 280 chars).",
     parameters={
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "Tweet text (max 280 chars)."},
-            "image_urls": {"type": "array", "items": {"type": "string"}, "description": "Optional image URLs (max 4)."},
         },
         "required": ["text"],
     },
