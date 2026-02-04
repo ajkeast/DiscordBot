@@ -2,10 +2,10 @@ discord
 pymysql
 aiocron
 pandas
-asyncio
 requests
 python-dotenv
 pytz
 matplotlib
 openai>=1.99.5
 xai-sdk
+tweepy

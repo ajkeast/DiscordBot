@@ -1,17 +1,22 @@
 """
 Grok Responses API client and Grok Imagine image generation.
 Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
-No tools; native search is built into Grok. Logging to DB for every interaction.
+Includes native search (web_search, x_search) and optional post_tweet tool.
+Logging to DB for every interaction.
 """
+import json
 import os
+from io import BytesIO
+
+import requests
+import tweepy
 from dotenv import load_dotenv
 from xai_sdk import Client
-from xai_sdk.chat import user, system, image
+from xai_sdk.chat import user, system, image, tool, tool_result
 from xai_sdk.tools import web_search, x_search
 
 load_dotenv()
 
-# Default Grok model (has native search)
 DEFAULT_GROK_MODEL = "grok-4-1-fast-non-reasoning"
 
 
@@ -45,19 +50,22 @@ class GrokClient:
         has_images = bool(image_urls)
         store = not has_images
 
+        tools_list = [web_search(), x_search(), POST_TWEET_TOOL]
         if previous_response_id and store:
             chat = self._client.chat.create(
                 model=self.model,
                 previous_response_id=previous_response_id,
                 store_messages=True,
-                tools=[web_search(), x_search()],
+                tools=tools_list,
+                tool_choice="auto",
             )
             chat.append(user(prompt))
         else:
             chat = self._client.chat.create(
                 model=self.model,
                 store_messages=store,
-                tools=[web_search(), x_search()],
+                tools=tools_list,
+                tool_choice="auto",
             )
             if system_prompt:
                 chat.append(system(system_prompt))
@@ -68,10 +76,24 @@ class GrokClient:
                 chat.append(user(prompt))
 
         response = chat.sample()
+        while getattr(response, "tool_calls", None):
+            chat.append(response)
+            for tc in response.tool_calls:
+                fn = getattr(tc, "function", None)
+                name = getattr(fn, "name", None)
+                raw = getattr(fn, "arguments", None) or "{}"
+                try:
+                    args = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except json.JSONDecodeError:
+                    args = {}
+                result = TOOLS_MAP[name](**args) if name in TOOLS_MAP else {"status": "error", "error": f"Unknown tool: {name}"}
+                chat.append(tool_result(result, tool_call_id=getattr(tc, "id", None)))
+            response = chat.sample()
+
         response_id = getattr(response, "id", None)
         content = (response.content or "").strip() or "Sorry, I couldn't generate a reply this time. Please try again."
 
-        # xAI returns usage with prompt_tokens and completion_tokens
+        # xAI returns usage with prompt_tokens and completion_tokens (use final response)
         usage = getattr(response, "usage", None)
         input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
@@ -117,29 +139,56 @@ class GrokClient:
         )
 
 
-# ---------------------------------------------------------------------------
-# Twitter posting tool (commented out; re-enable when adding tools back)
-# ---------------------------------------------------------------------------
-# import tweepy
-#
-# def _post_tweet(message: str) -> dict:
-#     """Post a message to Twitter. Returns tweet info including URL and status."""
-#     try:
-#         twitter = tweepy.Client(
-#             consumer_key=os.getenv("TWITTER_API_KEY"),
-#             consumer_secret=os.getenv("TWITTER_API_KEY_SECRET"),
-#             access_token=os.getenv("TWITTER_ACCESS_TOKEN"),
-#             access_token_secret=os.getenv("TWITTER_ACCESS_TOKEN_SECRET"),
-#         )
-#         tweet = twitter.create_tweet(text=message)
-#         tweet_id = tweet.data["id"]
-#         return {
-#             "tweet_text": message,
-#             "tweet_url": f"https://twitter.com/twitter/statuses/{tweet_id}",
-#             "status": "success",
-#         }
-#     except Exception as e:
-#         return {"status": "error", "error": str(e)}
+def _post_tweet(text: str, image_urls: list[str] | None = None) -> dict:
+    """Post a tweet (text + optional image URLs). Uses tweepy v2 for create_tweet, v1.1 for media upload."""
+    text = (text or "").strip()[:280]
+    if not text:
+        return {"status": "error", "error": "Tweet text is required and cannot be empty."}
+    tw = {k: os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_KEY_SECRET", "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN_SECRET")}
+    if not all(tw.values()):
+        return {"status": "error", "error": "Twitter API credentials not configured."}
+    urls = (image_urls or [])[:4]
+    try:
+        client = tweepy.Client(
+            consumer_key=tw["TWITTER_API_KEY"],
+            consumer_secret=tw["TWITTER_API_KEY_SECRET"],
+            access_token=tw["TWITTER_ACCESS_TOKEN"],
+            access_token_secret=tw["TWITTER_ACCESS_TOKEN_SECRET"],
+        )
+        media_ids = []
+        if urls:
+            api_v1 = tweepy.API(tweepy.OAuth1UserHandler(*tw.values()))
+            for url in urls:
+                try:
+                    r = requests.get(url, timeout=15)
+                    r.raise_for_status()
+                    if r.content:
+                        media_ids.append(api_v1.media_upload(filename="image.png", file=BytesIO(r.content)).media_id)
+                except Exception as e:
+                    return {"status": "error", "error": f"Image upload failed: {e}"}
+        kwargs = {"text": text}
+        if media_ids:
+            kwargs["media_ids"] = media_ids
+        tweet = client.create_tweet(**kwargs)
+        tid = tweet.data["id"]
+        return {"status": "success", "tweet_text": text, "tweet_id": tid, "tweet_url": f"https://twitter.com/i/status/{tid}", "image_count": len(media_ids)}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+POST_TWEET_TOOL = tool(
+    name="post_tweet",
+    description="Post a tweet to Twitter/X when the user asks to post or share there. Can attach images via URLs (e.g. from image generation).",
+    parameters={
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Tweet text (max 280 chars)."},
+            "image_urls": {"type": "array", "items": {"type": "string"}, "description": "Optional image URLs (max 4)."},
+        },
+        "required": ["text"],
+    },
+)
+TOOLS_MAP = {"post_tweet": _post_tweet}
 
 
 def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
