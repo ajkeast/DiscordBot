@@ -67,7 +67,7 @@ class First(commands.Cog):
         embed=discord.Embed(title='First Leaderboard',description="Count of daily 1st wins",color=EMBED_COLOR)
         for i in range(5):  # display top 5
             embed.add_field(name=self.bot.get_user(int(counts.index[i])),
-                            value=counts[i],
+                            value=counts.iloc[i],
                             inline=False)
         txt = f'Most recent: {self.bot.get_user(int(df.user_id.iloc[-1]))} 🔥 {streak} days'
         embed.set_footer(text=txt)
