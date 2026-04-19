@@ -96,7 +96,7 @@ class AI(commands.Cog):
 
     @commands.command()
     async def voice(self, ctx, *, text, pass_context=True, brief="Text to Speech"):
-        """Convert text to speech using xAI TTS API."""
+        """Generate a Grok response to the prompt, then convert that reply to speech."""
 
         if not text:
             await ctx.send("Please provide text to convert to speech.")
@@ -113,27 +113,45 @@ class AI(commands.Cog):
 
         async with ctx.typing():
             try:
-                response = requests.post(
+                if self._session_turns >= MAX_GROK_SESSION_TURNS:
+                    self.last_response_id = None
+                    self._session_turns = 0
+
+                next_response_id, response_text = self.grok.send_message(
+                    text,
+                    previous_response_id=self.last_response_id,
+                    system_prompt=self.system_prompt,
+                    user_id=ctx.author.id,
+                )
+
+                if next_response_id is not None:
+                    self.last_response_id = next_response_id
+                    self._session_turns += 1
+
+                if not response_text:
+                    await ctx.send("Sorry, I couldn't generate a spoken response. Please try again.")
+                    return
+
+                tts_response = requests.post(
                     "https://api.x.ai/v1/tts",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "text": text,
+                        "text": response_text,
                         "voice_id": "eve",
                         "language": "en",
                     },
                 )
-                response.raise_for_status()
+                tts_response.raise_for_status()
 
-                # Create file from bytes
                 audio_file = discord.File(
-                    io.BytesIO(response.content),
+                    io.BytesIO(tts_response.content),
                     filename="voice.mp3"
                 )
 
-                await ctx.send(file=audio_file)
+                await ctx.send(content=response_text, file=audio_file)
 
             except requests.exceptions.RequestException as e:
                 await ctx.send(f"Error generating speech: {str(e)}")
