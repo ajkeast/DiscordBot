@@ -151,7 +151,7 @@ class AI(commands.Cog):
                     filename="voice.mp3"
                 )
 
-                await ctx.send(content=response_text, file=audio_file)
+                await ctx.send(file=audio_file)
 
             except requests.exceptions.RequestException as e:
                 await ctx.send(f"Error generating speech: {str(e)}")
