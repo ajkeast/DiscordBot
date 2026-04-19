@@ -140,7 +140,7 @@ class AI(commands.Cog):
                     },
                     json={
                         "text": response_text,
-                        "voice_id": "eve",
+                        "voice_id": "rex",
                         "language": "en",
                     },
                 )
