@@ -37,6 +37,11 @@ The bot is also connected to the DALL·E 3 API. It can take any prompt as descri
 
 ![image](https://github.com/ajkeast/DiscordBot/assets/94143736/52c1b75e-b2c3-48da-9d13-0e295ab8f224)
 
+### Database
+
+<img width="1181" height="995" alt="db" src="https://github.com/user-attachments/assets/f8b828ae-a123-4331-b8dc-7a5d6282539a" />
+
+
 ### Server Dashboard
 
 In addition to answering questions, the bot also writes events with usernames and timestamps to a MySQL database hosted on Amazon Web Services (AWS). This means that you can keep track of when users are interacting with your bot, and what commands they are sending. This information can be used to improve the performance and effectiveness of the bot over time, by analyzing the data to identify trends and patterns in user behavior.
