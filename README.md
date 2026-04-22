@@ -79,7 +79,7 @@ The core Discord functionality of this project is contained in the `bot.py` file
 3. Set up environment variables (e.g., Discord token, OpenAI API key) in a `.env` file.
 4. Run the bot: `python bot.py`.
 
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Set up environment variables (e.g., Discord token, OpenAI API key) in a `.env` file.
-4. Run the bot: `python bot.py`
+5. Clone the repository.
+6. Install dependencies: `pip install -r requirements.txt`
+7. Set up environment variables (e.g., Discord token, OpenAI API key) in a `.env` file.
+8. Run the bot: `python bot.py`
