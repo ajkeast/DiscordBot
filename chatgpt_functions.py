@@ -35,6 +35,7 @@ class GrokClient:
         previous_response_id: str | None = None,
         system_prompt: str | None = None,
         user_id: int | None = None,
+        message_id: int | None = None,
         image_urls: list[str] | None = None,
     ) -> tuple[str | None, str]:
         """
@@ -43,7 +44,7 @@ class GrokClient:
         - If previous_response_id is set, the message is appended to that conversation.
         - When image_urls are provided, store_messages is False (per xAI docs) and
           the returned response_id should not be used to continue (next turn starts fresh).
-        - Logs the interaction when user_id is provided.
+        - Logs the interaction when user_id and message_id are provided.
         """
         has_images = bool(image_urls)
         store = not has_images
@@ -96,12 +97,13 @@ class GrokClient:
         input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
 
-        if user_id is not None:
+        if user_id is not None and message_id is not None:
             self._log_interaction(
                 user_id=user_id,
                 prompt=prompt,
                 response_content=content,
                 response_id=response_id,
+                message_id=message_id,
                 image_urls=image_urls,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -117,6 +119,7 @@ class GrokClient:
         prompt: str,
         response_content: str,
         response_id: str | None,
+        message_id: int,
         image_urls: list[str] | None = None,
         input_tokens: int = 0,
         output_tokens: int = 0,
@@ -132,6 +135,7 @@ class GrokClient:
             response_content=response_content,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            message_id=message_id,
             function_calls=None,
             image_urls=image_urls,
         )

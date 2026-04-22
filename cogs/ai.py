@@ -46,6 +46,7 @@ class AI(commands.Cog):
                 previous_response_id=self.last_response_id,
                 system_prompt=self.system_prompt,
                 user_id=ctx.author.id,
+                message_id=ctx.message.id,
                 image_urls=image_urls if image_urls else None,
             )
 
@@ -59,7 +60,7 @@ class AI(commands.Cog):
     async def imagine(self, ctx, *, arg, pass_context=True, brief="Generate AI Art"):
         """Generate an AI image using Grok Imagine (xAI). Logged to DB."""
 
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
+        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg, message_id=ctx.message.id)
 
         # Optional: first image attachment URL used as input for editing
         input_image_url = None
@@ -122,6 +123,7 @@ class AI(commands.Cog):
                     previous_response_id=self.last_response_id,
                     system_prompt=self.system_prompt,
                     user_id=ctx.author.id,
+                    message_id=ctx.message.id,
                 )
 
                 if next_response_id is not None:
