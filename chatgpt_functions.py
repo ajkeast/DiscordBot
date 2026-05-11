@@ -15,7 +15,7 @@ from xai_sdk.tools import web_search, x_search
 
 load_dotenv()
 
-DEFAULT_GROK_MODEL = "grok-4-1-fast-non-reasoning"
+DEFAULT_GROK_MODEL = "grok-4.3"
 
 
 class GrokClient:
