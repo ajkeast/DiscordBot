@@ -87,6 +87,7 @@ def main():
         "What is 2 + 2? One sentence only.",
         system_prompt="You are a helpful assistant. Be very brief.",
         user_id=None,
+        message_id=None,
     )
     print("next_response_id =", next_id)
     print("response_text    =", repr(text[:300]))
@@ -150,6 +151,7 @@ def main():
             "Post this to Twitter: test_grok.py check.",
             system_prompt="When the user asks to post to Twitter, use the post_tweet tool with the exact text they give. Then reply in one short sentence.",
             user_id=None,
+            message_id=None,
         )
     print("next_response_id =", next_id)
     print("response_text    =", repr(response_text[:400]))
@@ -215,6 +217,7 @@ def main():
                 "with both 'text' and 'image_urls' (array containing that URL). Always include image_urls when the user gives a URL."
             ),
             user_id=None,
+            message_id=None,
         )
     print("response_text (excerpt):", repr(response_text[:350]))
     if call_log2:

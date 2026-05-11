@@ -78,10 +78,10 @@ class DataOperations:
         query = "INSERT INTO firstlist_id (user_id) VALUES (%s);"
         self.db.execute(query, (user_id,))
 
-    def write_dalle_entry(self, user_id: int, prompt: str) -> None:
+    def write_dalle_entry(self, user_id: int, prompt: str, message_id: int) -> None:
         """Record a DALL-E prompt entry"""
-        query = "INSERT INTO dalle_3_prompts (user_id, prompt) VALUES (%s, %s);"
-        self.db.execute(query, (user_id, prompt))
+        query = "INSERT INTO dalle_3_prompts (user_id, prompt, message_id) VALUES (%s, %s, %s);"
+        self.db.execute(query, (user_id, prompt, message_id))
 
     def write_recipe_entry(self, member_id: int, name: str, ingredients: str, 
                           instructions: str, cuisine: str, dietary_preference: str, 
@@ -161,7 +161,7 @@ class DataOperations:
 
     def log_chatgpt_interaction(self, user_id: int, model: str, request_messages: list, 
                               response_content: str, input_tokens: int, output_tokens: int,
-                              function_calls: list = None, image_urls: list = None) -> None:
+                              message_id: int, function_calls: list = None, image_urls: list = None) -> None:
         """Log a ChatGPT interaction to the database
         
         Args:
@@ -171,14 +171,15 @@ class DataOperations:
             response_content (str): Assistant's response
             input_tokens (int): Number of input tokens
             output_tokens (int): Number of output tokens
+            message_id (int): Discord message ID that triggered this interaction
             function_calls (list, optional): List of function calls made
             image_urls (list, optional): List of image URLs attached to the request
         """
         query = """
             INSERT INTO chatgpt_logs 
             (user_id, model, request_messages, response_content, input_tokens, 
-             output_tokens, total_tokens, function_calls, image_urls)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+             output_tokens, total_tokens, message_id, function_calls, image_urls)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         total_tokens = input_tokens + output_tokens
         self.db.execute(query, (
@@ -189,6 +190,7 @@ class DataOperations:
             input_tokens,
             output_tokens,
             total_tokens,
+            message_id,
             json.dumps(function_calls) if function_calls else None,
             json.dumps(image_urls) if image_urls else None
         ))

@@ -1,8 +1,11 @@
 from discord.ext import commands
 from chatgpt_functions import GrokClient, call_grok_imagine
-from utils.constants import IDCARD, DALLE3_WHITELIST, EMBED_COLOR, MAX_GROK_SESSION_TURNS
+from utils.constants import EMBED_COLOR, MAX_GROK_SESSION_TURNS
 from utils.db import db_ops
 import discord
+import requests
+import os
+import io
 
 
 class AI(commands.Cog):
@@ -24,10 +27,7 @@ class AI(commands.Cog):
 
     @commands.command()
     async def ask(self, ctx, *, arg, pass_context=True, brief="Ask Grok"):
-        """Ask Grok (stateful conversation, native search). Whitelist: IDCARD. Supports image attachments."""
-        if str(ctx.message.author.id) not in IDCARD:
-            await ctx.channel.send("To conserve compute resources, only specific users can use _ask")
-            return
+        """Ask Grok (stateful conversation, native search). Supports image attachments."""
 
         image_urls = [
             a.url
@@ -46,6 +46,7 @@ class AI(commands.Cog):
                 previous_response_id=self.last_response_id,
                 system_prompt=self.system_prompt,
                 user_id=ctx.author.id,
+                message_id=ctx.message.id,
                 image_urls=image_urls if image_urls else None,
             )
 
@@ -57,18 +58,9 @@ class AI(commands.Cog):
 
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief="Generate AI Art"):
-        """Generate an AI image using Grok Imagine (xAI). Whitelist: DALLE3_WHITELIST. Logged to DB."""
-        if str(ctx.message.author.id) not in DALLE3_WHITELIST:
-            await ctx.send(
-                embed=discord.Embed(
-                    title="Access Denied",
-                    description="Image generation is restricted. Contact bot administrator for access.",
-                    color=EMBED_COLOR,
-                )
-            )
-            return
+        """Generate an AI image using Grok Imagine (xAI). Logged to DB."""
 
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg)
+        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg, message_id=ctx.message.id)
 
         # Optional: first image attachment URL used as input for editing
         input_image_url = None
@@ -97,14 +89,76 @@ class AI(commands.Cog):
 
     @commands.command()
     async def clear(self, ctx, pass_context=True, brief="Clear chat session"):
-        """Clear the shared Grok conversation session so the next _ask starts fresh. Whitelist: IDCARD."""
-        if str(ctx.message.author.id) not in IDCARD:
-            await ctx.channel.send("To conserve compute resources, only specific users can use _clear")
-            return
+        """Clear the shared Grok conversation session so the next _ask starts fresh."""
 
         self.last_response_id = None
         self._session_turns = 0
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
+
+    @commands.command()
+    async def voice(self, ctx, *, text, pass_context=True, brief="Text to Speech"):
+        """Generate a Grok response to the prompt, then convert that reply to speech."""
+
+        if not text:
+            await ctx.send("Please provide text to convert to speech.")
+            return
+
+        if len(text) > 15000:
+            await ctx.send("Text is too long. Maximum 15,000 characters.")
+            return
+
+        api_key = os.getenv('XAI_API_KEY')
+        if not api_key:
+            await ctx.send("XAI API key not configured.")
+            return
+
+        async with ctx.typing():
+            try:
+                if self._session_turns >= MAX_GROK_SESSION_TURNS:
+                    self.last_response_id = None
+                    self._session_turns = 0
+
+                next_response_id, response_text = self.grok.send_message(
+                    text,
+                    previous_response_id=self.last_response_id,
+                    system_prompt=self.system_prompt,
+                    user_id=ctx.author.id,
+                    message_id=ctx.message.id,
+                )
+
+                if next_response_id is not None:
+                    self.last_response_id = next_response_id
+                    self._session_turns += 1
+
+                if not response_text:
+                    await ctx.send("Sorry, I couldn't generate a spoken response. Please try again.")
+                    return
+
+                tts_response = requests.post(
+                    "https://api.x.ai/v1/tts",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "text": response_text,
+                        "voice_id": "leo",
+                        "language": "en",
+                    },
+                )
+                tts_response.raise_for_status()
+
+                audio_file = discord.File(
+                    io.BytesIO(tts_response.content),
+                    filename="voice.mp3"
+                )
+
+                await ctx.send(file=audio_file)
+
+            except requests.exceptions.RequestException as e:
+                await ctx.send(f"Error generating speech: {str(e)}")
+            except Exception as e:
+                await ctx.send(f"An error occurred: {str(e)}")
 
 
 async def setup(bot):
