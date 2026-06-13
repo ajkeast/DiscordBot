@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   test:
@@ -37,14 +35,6 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short --junitxml=junit.xml
-
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: junit.xml
-          check_name: Test Results
-          comment_mode: off
 
       - name: Test details summary
         if: always()
