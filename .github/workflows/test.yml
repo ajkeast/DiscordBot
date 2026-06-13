@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -15,6 +19,7 @@ jobs:
       SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
       SQL_DATABASE: ${{ secrets.SQL_DATABASE }}
       MPLBACKEND: Agg
+      CI_TEST_REPORT: ci-test-report.md
     steps:
       - uses: actions/checkout@v4
 
@@ -29,4 +34,27 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --junitxml=junit.xml
+
+      - name: Test details summary
+        if: always()
+        run: |
+          {
+            echo "# Test run"
+            echo ""
+            if [ -f ci-test-report.md ]; then
+              cat ci-test-report.md
+            else
+              echo "No detailed report was generated."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            junit.xml
+            ci-test-report.md
+          if-no-files-found: ignore

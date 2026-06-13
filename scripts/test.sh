@@ -11,4 +11,10 @@ source .venv/bin/activate
 .venv/bin/pip install -q -r requirements.txt -r requirements-dev.txt
 
 export MPLBACKEND=Agg
-.venv/bin/pytest tests/ -v --tb=short "$@"
+export CI_TEST_REPORT=ci-test-report.md
+.venv/bin/pytest tests/ -v --tb=short --junitxml=junit.xml "$@"
+
+if [ -f ci-test-report.md ]; then
+  echo ""
+  echo "Detailed report: ci-test-report.md"
+fi

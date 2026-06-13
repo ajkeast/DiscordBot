@@ -9,6 +9,7 @@ import pytest
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
+from tests.reporting import get_collector, reset_collector, write_report  # noqa: E402
 from utils.constants import GENERAL_CHANNEL_ID  # noqa: E402
 
 EXPECTED_COMMANDS = frozenset({
@@ -18,6 +19,31 @@ EXPECTED_COMMANDS = frozenset({
     "hello", "ping", "simonsays",
     "donation",
 })
+
+
+@pytest.fixture
+def report(request):
+    """Record expected/actual pairs for the CI job summary."""
+
+    class Reporter:
+        def record(self, field, expected, actual, section="General"):
+            get_collector().add(
+                test=request.node.name,
+                section=section,
+                field=field,
+                expected=expected,
+                actual=actual,
+            )
+
+    return Reporter()
+
+
+def pytest_configure(config):
+    reset_collector()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    write_report()
 
 
 @pytest.fixture
