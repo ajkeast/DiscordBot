@@ -198,6 +198,8 @@ class DataOperations:
     def get_table_data(self, table_name: str) -> pd.DataFrame:
         """Get entire table as DataFrame"""
         query = f"SELECT * FROM {table_name}"
+        if table_name == 'firstlist_id':
+            query += " ORDER BY timesent ASC"
         return self.db.fetch_df(query)
 
     def get_monthly_message_counts(self, year: int, month: int) -> pd.DataFrame:
@@ -224,6 +226,7 @@ class StreakCalculator:
     @staticmethod
     def calculate_streak(df: pd.DataFrame) -> int:
         """Calculate current streak"""
+        df = df.sort_values('timesent').reset_index(drop=True)
         df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
         df['streak_id'] = df['start_of_streak'].cumsum()
         df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
@@ -240,12 +243,11 @@ class StreakCalculator:
         Returns:
             int: The longest streak for the user
         """
-        # Calculate streaks for all users
+        df = df.sort_values('timesent').reset_index(drop=True)
         df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
         df['streak_id'] = df['start_of_streak'].cumsum()
         df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
-        
-        # Filter for the specific user and get their max streak
+
         user_df = df[df['user_id'] == user_id]
         if user_df.empty:
             return 0

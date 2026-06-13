@@ -175,7 +175,7 @@ class First(commands.Cog):
                 color=colors[i % len(colors)], linewidth=2.5,
             )
 
-        ax.set(xlabel='Date', ylabel='Cumulative firsts', title='Firsts to Date')
+        ax.set(ylabel='Cumulative Firsts', title='Firsts to Date')
         ax.grid(True, linestyle='--')
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
         fig.autofmt_xdate(rotation=30, ha='right')
@@ -211,10 +211,10 @@ class First(commands.Cog):
         fig, ax = plt.subplots(figsize=(12, 7))
         ax.plot(
             df_juice['timesent'], df_juice['juice'],
-            color=plt.cm.tab10.colors[0], linewidth=2.5,
+            color=f'#{EMBED_COLOR:06x}', linewidth=2.5,
         )
 
-        ax.set(xlabel='Date', ylabel='Juice (minutes)', title='Daily Juice')
+        ax.set(ylabel='Juice', title='Daily Juice')
         ax.grid(True, linestyle='--')
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
         fig.autofmt_xdate(rotation=30, ha='right')
