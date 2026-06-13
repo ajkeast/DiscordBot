@@ -279,6 +279,12 @@ class JuiceCalculator:
         return df
 
     @staticmethod
+    def daily_juice_series(df: pd.DataFrame) -> pd.DataFrame:
+        """Return sorted timesent + juice columns for each claim day."""
+        df = JuiceCalculator._add_juice_column(df)
+        return df[['timesent', 'juice']]
+
+    @staticmethod
     def calculate_juice(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, float]:
         """Calculate juice scores for all users"""
         df = JuiceCalculator._add_juice_column(df)

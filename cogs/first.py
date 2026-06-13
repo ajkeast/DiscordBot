@@ -190,5 +190,46 @@ class First(commands.Cog):
         embed.set_image(url="attachment://first_graph.png")
         await ctx.send(embed=embed, file=discord.File(data_stream, filename="first_graph.png"))
 
+    @commands.command()
+    async def juicegraph(self, ctx, brief='Get a graph of daily juice over time'):
+        """Generate and send a graph showing daily juice scores over time."""
+        df_first = db_ops.get_table_data('firstlist_id')
+        if df_first.empty:
+            await ctx.send("No firsts recorded yet — claim one with `_1st`!")
+            return
+
+        df_juice = juice_calc.daily_juice_series(df_first)
+        _, highscore_user_id, highscore_value = juice_calc.calculate_juice(df_first)
+
+        bg, grid, text = '#2b2d31', '#404249', '#dcddde'
+        plt.rcParams.update({
+            'figure.facecolor': bg, 'axes.facecolor': bg, 'axes.edgecolor': grid,
+            'axes.labelcolor': text, 'text.color': text, 'xtick.color': text,
+            'ytick.color': text, 'grid.color': grid, 'grid.alpha': 0.45,
+        })
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+        ax.plot(
+            df_juice['timesent'], df_juice['juice'],
+            color=plt.cm.tab10.colors[0], linewidth=2.5,
+        )
+
+        ax.set(xlabel='Date', ylabel='Juice (minutes)', title='Daily Juice')
+        ax.grid(True, linestyle='--')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+        fig.autofmt_xdate(rotation=30, ha='right')
+
+        data_stream = io.BytesIO()
+        fig.savefig(data_stream, format='png', bbox_inches='tight', dpi=150, facecolor=bg)
+        plt.close(fig)
+
+        data_stream.seek(0)
+        highscore_user = self.bot.get_user(int(highscore_user_id))
+        highscore_name = highscore_user.display_name if highscore_user else f"User {highscore_user_id}"
+        embed = discord.Embed(title='Daily Juice', color=EMBED_COLOR)
+        embed.set_footer(text=f'1-Day Highscore: {highscore_name} 🧃{int(highscore_value)} mins')
+        embed.set_image(url="attachment://juice_graph.png")
+        await ctx.send(embed=embed, file=discord.File(data_stream, filename="juice_graph.png"))
+
 async def setup(bot):
     await bot.add_cog(First(bot)) 
