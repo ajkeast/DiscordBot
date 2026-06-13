@@ -1,0 +1,37 @@
+"""Verify bot wiring: all cogs load and expected commands register."""
+
+from unittest.mock import MagicMock, patch
+
+from cogs.ai import AI
+from cogs.first import First
+from cogs.misc import Misc
+from cogs.server import Server
+from cogs.utility import Utility
+from tests.conftest import EXPECTED_COMMANDS
+
+COG_CLASSES = (First, Server, AI, Utility, Misc)
+
+
+def _server_init_without_tasks(self, bot):
+    self.bot = bot
+
+
+def test_all_cogs_have_expected_names():
+    assert {cls.__name__ for cls in COG_CLASSES} == {
+        "First", "Server", "AI", "Utility", "Misc",
+    }
+
+
+def test_all_commands_registered():
+    mock_bot = MagicMock()
+    registered = set()
+
+    with patch("cogs.ai.GrokClient"):
+        with patch.object(Server, "__init__", _server_init_without_tasks):
+            for cls in COG_CLASSES:
+                cog = cls(mock_bot)
+                for cmd in cog.get_commands():
+                    registered.add(cmd.name)
+
+    assert EXPECTED_COMMANDS <= registered
+    assert len(EXPECTED_COMMANDS) == 17

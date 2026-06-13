@@ -25,6 +25,7 @@ class Database:
     @contextmanager
     def connection(self):
         """Context manager for database connections"""
+        conn = None
         try:
             conn = pymysql.connect(
                 host=self.host,

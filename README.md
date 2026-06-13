@@ -74,7 +74,10 @@ The core Discord functionality of this project is contained in the `bot.py` file
   - `constants.py`: Constants and configuration values.
   - `db.py`: Database operations for logging messages and events.
 - `requirements.txt`: Python dependencies required for the project.
-- `test_grok.py`: Test file for validating bot functionality.
+- `requirements-dev.txt`: Test dependencies (pytest, pytest-asyncio).
+- `tests/`: Pytest suite — mocked command tests, unit tests, and live smoke tests.
+- `scripts/test.sh`: Run the full test suite locally (mirrors CI).
+- `test_grok.py`: Thin wrapper around live xAI smoke tests.
 - `README.md`: This documentation file.
 
 ## Installation
@@ -95,9 +98,53 @@ Local runs use the same credentials as production (Discord token, MySQL, xAI). O
 4. Test commands on your Discord server (prefix is `_`).
 5. Press Ctrl+C to stop, then restart the hosted bot.
 
-To test Grok/xAI without starting Discord or the database:
+## Testing before deploy
+
+Because pushes to `main` are picked up on the next server reboot, run tests locally **before** pushing.
+
+### Full test suite
+
+```bash
+./scripts/test.sh
+```
+
+This installs dependencies, sets a headless matplotlib backend, and runs all tests (mocked + live).
+
+Fast iteration (skip live API/DB calls):
+
+```bash
+./scripts/test.sh -m "not live"
+```
+
+### Live smoke tests only
+
+xAI (no Discord or DB):
 
 ```bash
 source .venv/bin/activate
 python test_grok.py
 ```
+
+### Optional pre-push hook
+
+To block pushes when tests fail, add a local git hook (not committed to the repo):
+
+```bash
+cat > .git/hooks/pre-push <<'EOF'
+#!/usr/bin/env bash
+./scripts/test.sh || exit 1
+EOF
+chmod +x .git/hooks/pre-push
+```
+
+### CI (GitHub Actions)
+
+Tests run automatically on push to `main` using GitHub-hosted runners (no self-hosted runner needed). Add these repository secrets under **Settings → Secrets and variables → Actions**:
+
+- `XAI_API_KEY`
+- `SQL_HOST`
+- `SQL_USER`
+- `SQL_PASSWORD`
+- `SQL_DATABASE`
+
+Live MySQL smoke tests require your database to accept remote connections from GitHub Actions. If PebbleHost blocks external access, run `./scripts/test.sh -m "not live"` locally and rely on mocked DB tests in CI until remote access is configured.

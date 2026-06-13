@@ -59,11 +59,14 @@ class DinkBot(commands.Bot):
         logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)
         await ctx.send("Something went wrong running that command.")
 
+    async def _store_message(self, message_data):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, db_ops.update_messages, message_data)
+
     async def on_message(self, message):
         if message.author.bot:
             return
         
-        # Store message in database
         message_data = (
             message.id,
             message.author.id,
@@ -71,7 +74,7 @@ class DinkBot(commands.Bot):
             message.content,
             message.created_at
         )
-        db_ops.update_messages(message_data)
+        await self._store_message(message_data)
         
         await self.process_commands(message)
 
@@ -79,7 +82,6 @@ class DinkBot(commands.Bot):
         if after.author.bot:
             return
             
-        # Update edited message in database
         message_data = (
             after.id,
             after.author.id,
@@ -87,7 +89,7 @@ class DinkBot(commands.Bot):
             after.content,
             after.created_at
         )
-        db_ops.update_messages(message_data)
+        await self._store_message(message_data)
 
 def main():
     bot = DinkBot()
