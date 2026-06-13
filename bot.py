@@ -1,10 +1,12 @@
 # Import dependencies
+import asyncio
 import discord                          # Discord API
 from discord.ext import commands
 import os                              # For environment variables
 import logging
 import sys
 from dotenv import load_dotenv         # Load .env
+from utils.constants import GENERAL_CHANNEL_ID
 from utils.db import db_ops            # Database operations
 
 # Load environment variables
@@ -32,6 +34,21 @@ class DinkBot(commands.Bot):
         await self.load_extension('cogs.ai')
         await self.load_extension('cogs.utility')
         await self.load_extension('cogs.misc')
+
+        if sys.stdin.isatty():
+            self.loop.create_task(self._console_post_loop())
+
+    async def _console_post_loop(self):
+        await self.wait_until_ready()
+        channel = self.get_channel(GENERAL_CHANNEL_ID)
+        loop = asyncio.get_running_loop()
+        while not self.is_closed():
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            if not line:
+                break
+            text = line.strip()
+            if text:
+                await channel.send(text)
 
     async def on_ready(self):
         print(f"Live: {self.user.name}", flush=True)
