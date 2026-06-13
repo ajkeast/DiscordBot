@@ -261,33 +261,41 @@ class JuiceCalculator:
         return df
 
     @staticmethod
-    def calculate_juice(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, float]:
-        """Calculate juice scores for all users"""
+    def _add_juice_column(df: pd.DataFrame) -> pd.DataFrame:
+        """Minutes since midnight Eastern on the claim day, plus rollover for missed days.
+
+        Same as the original within-day juice, except when one or more Eastern
+        calendar days had no first claim — each missed day adds 1440 minutes.
+        """
         df = JuiceCalculator._convert_to_est(df)
-        
-        # Calculate minutes
-        df['juice'] = (df['timesent'].dt.hour * 60 + 
+        df = df.sort_values('timesent').reset_index(drop=True)
+        within_day = (df['timesent'].dt.hour * 60 +
                       df['timesent'].dt.minute +
                       df['timesent'].dt.second / 60)
-        
-        # Get highscore
+        day_gap = (df['timesent'].dt.normalize() -
+                   df['timesent'].shift(1).dt.normalize()).dt.days
+        missed_days = day_gap.sub(1).clip(lower=0).fillna(0)
+        df['juice'] = within_day + missed_days * 1440
+        return df
+
+    @staticmethod
+    def calculate_juice(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, float]:
+        """Calculate juice scores for all users"""
+        df = JuiceCalculator._add_juice_column(df)
+
         highscore_idx = df['juice'].idxmax()
         highscore_user = df.iloc[highscore_idx]['user_id']
         highscore_value = df.iloc[highscore_idx]['juice']
-        
-        # Calculate total juice per user
+
         juice_df = df.groupby('user_id')['juice'].sum().reset_index()
         juice_df = juice_df.sort_values('juice', ascending=False)
-        
+
         return juice_df, highscore_user, highscore_value
 
     @staticmethod
     def calculate_user_juice(df: pd.DataFrame, user_id: str) -> float:
         """Calculate juice score for specific user"""
-        df = JuiceCalculator._convert_to_est(df)
-        df['juice'] = (df['timesent'].dt.hour * 60 + 
-                      df['timesent'].dt.minute +
-                      df['timesent'].dt.second / 60)
+        df = JuiceCalculator._add_juice_column(df)
         return df[df.user_id == user_id]['juice'].sum()
 
 # Create global instances

@@ -84,7 +84,7 @@ class First(commands.Cog):
             
         Shows:
         - Total first place claims (Score)
-        - Juice score (minutes saved from midnight)
+        - Juice score (minutes since midnight, rolling over missed days)
         - Longest streak of consecutive first places
         """
         # reads SQL database and generates an embed with list of names and scores
@@ -133,13 +133,12 @@ class First(commands.Cog):
         - Top 5 users by total juice score
         - The highest single-day juice score and its holder
         
-        Juice score is calculated as minutes between claim time and midnight.
+        Juice score is minutes since midnight Eastern, with missed days rolling over.
         """
-        # reads SQL database and send embed of total minutes between each "1st" timestamp and midnight
         df = db_ops.get_table_data('firstlist_id')
         juice_df, highscore_user_id, highscore_value = juice_calc.calculate_juice(df)
         
-        embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight',color=EMBED_COLOR)
+        embed=discord.Embed(title='Juice Board 🧃',description='Total minutes between _1st and midnight 🧃',color=EMBED_COLOR)
         for i in range(5):
             embed.add_field(name=self.bot.get_user(int(juice_df.iloc[i]['user_id'])),
                           value=int(juice_df.iloc[i]['juice']),
@@ -180,7 +179,7 @@ class First(commands.Cog):
         ax.grid(True, linestyle='--')
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
         fig.autofmt_xdate(rotation=30, ha='right')
-        ax.legend(title='Players', loc='upper left', frameon=False)
+        ax.legend(loc='upper left', frameon=False)
 
         data_stream = io.BytesIO()
         fig.savefig(data_stream, format='png', bbox_inches='tight', dpi=150, facecolor=bg)
