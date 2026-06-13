@@ -1,5 +1,5 @@
 from discord.ext import commands
-from chatgpt_functions import GrokClient, call_grok_imagine
+from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
 from utils.constants import EMBED_COLOR, MAX_GROK_SESSION_TURNS
 from utils.db import db_ops
 import discord
@@ -81,11 +81,15 @@ class AI(commands.Cog):
             response = call_grok_imagine(arg, input_image_url=input_image_url)
 
             if response["status"] == "success":
+                image_file = discord.File(
+                    io.BytesIO(response["image_bytes"]),
+                    filename=GROK_IMAGINE_FILENAME,
+                )
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
-                embed.set_image(url=response["image_url"])
+                embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
                 embed.add_field(name="Prompt", value=arg, inline=False)
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-                await ctx.send(embed=embed)
+                await ctx.send(embed=embed, file=image_file)
             else:
                 await ctx.send(
                     embed=discord.Embed(

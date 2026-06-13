@@ -17,6 +17,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DEFAULT_GROK_MODEL = "grok-4.3"
+GROK_IMAGINE_FILENAME = "grok-imagine.jpg"  # xAI base64 responses are JPEG
 
 
 class GrokClient:
@@ -135,25 +136,23 @@ def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
 
     - prompt: Text description for generation, or edit instructions when input_image_url is set.
     - input_image_url: Optional URL of an image to edit (e.g. Discord CDN URL). Pass as-is; no base64.
+    - Returns JPEG bytes (base64 from API) so callers can upload to Discord CDN instead of hotlinking.
     """
     try:
         client = Client(api_key=os.getenv("XAI_API_KEY"))
+        sample_kwargs = {
+            "model": "grok-imagine-image",
+            "prompt": prompt,
+            "image_format": "base64",
+        }
         if input_image_url:
-            response = client.image.sample(
-                model="grok-imagine-image",
-                image_url=input_image_url,
-                prompt=prompt,
-                image_format="url",
-            )
-        else:
-            response = client.image.sample(
-                model="grok-imagine-image",
-                prompt=prompt,
-                image_format="url",
-            )
+            sample_kwargs["image_url"] = input_image_url
+        response = client.image.sample(**sample_kwargs)
+        if not response.image:
+            raise ValueError("Grok Imagine response did not include image data")
         return {
             "status": "success",
-            "image_url": response.url,
+            "image_bytes": response.image,
             "revised_prompt": None,
         }
     except Exception as e:
