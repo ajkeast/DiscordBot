@@ -139,12 +139,20 @@ chmod +x .git/hooks/pre-push
 
 ### CI (GitHub Actions)
 
-Tests run automatically on push to `main` using GitHub-hosted runners (no self-hosted runner needed). Add these repository secrets under **Settings → Secrets and variables → Actions**:
+Tests run on **pull requests** (open, update, reopen) and on **push to `main`**. Results appear in three places:
+
+1. **Checks tab** — pass/fail status via JUnit (`Test Results` check)
+2. **Job summary** — expected vs actual tables (prompts, Grok responses, command outputs, etc.)
+3. **Artifacts** — downloadable `junit.xml` and `ci-test-report.md` from the workflow run
+
+Add these **repository secrets** under **Settings → Secrets and variables → Actions**:
 
 - `XAI_API_KEY`
 - `SQL_HOST`
 - `SQL_USER`
 - `SQL_PASSWORD`
 - `SQL_DATABASE`
+
+Locally, `./scripts/test.sh` writes the same `ci-test-report.md` in the project root after each run.
 
 Live MySQL smoke tests require your database to accept remote connections from GitHub Actions. If PebbleHost blocks external access, run `./scripts/test.sh -m "not live"` locally and rely on mocked DB tests in CI until remote access is configured.
