@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import io
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from datetime import datetime
 import pytz
@@ -149,52 +150,46 @@ class First(commands.Cog):
 
     @commands.command()
     async def graph(self, ctx, brief='Get a graph of the firsts to date'):
-        """Generate and send a graph showing the progression of first claims over time.
-        
-        Args:
-            ctx: The command context
-            
-        Creates a line chart where:
-        - X-axis represents dates
-        - Y-axis shows cumulative number of firsts
-        - Each user has their own line
-        """
-        # Initialize IO
-        data_stream = io.BytesIO()
-
+        """Generate and send a graph showing the progression of first claims over time."""
         df_first = db_ops.get_table_data('firstlist_id')
-        df_first['_1st to date'] = df_first.groupby('user_id').cumcount()+1
+        if df_first.empty:
+            await ctx.send("No firsts recorded yet — claim one with `!1st`!")
+            return
 
-        # Initiate plot
-        fig, ax = plt.subplots(figsize=(8, 6))
+        df_first['_1st to date'] = df_first.groupby('user_id').cumcount() + 1
+        bg, grid, text = '#2b2d31', '#404249', '#dcddde'
+        plt.rcParams.update({
+            'figure.facecolor': bg, 'axes.facecolor': bg, 'axes.edgecolor': grid,
+            'axes.labelcolor': text, 'text.color': text, 'xtick.color': text,
+            'ytick.color': text, 'grid.color': grid, 'grid.alpha': 0.45,
+        })
 
-        # Group the DataFrame by 'user_id'
-        grouped_data = df_first.groupby('user_id')
+        fig, ax = plt.subplots(figsize=(12, 7))
+        colors = plt.cm.tab10.colors
 
-        # Iterate over each unique 'user_id' and plot the corresponding data
-        for user_id, data in grouped_data:
-            # Extract x-axis and y-axis values for the current 'user_id'
-            x_values = data['timesent']
-            y_values = data['_1st to date']
+        for i, user_id in enumerate(df_first.groupby('user_id').size().sort_values(ascending=False).index):
+            data = df_first[df_first['user_id'] == user_id]
+            user = self.bot.get_user(int(user_id))
+            ax.plot(
+                data['timesent'], data['_1st to date'],
+                label=user.display_name if user else f"User {user_id}",
+                color=colors[i % len(colors)], linewidth=2.5,
+            )
 
-            # Plot the line chart for the current 'user_id'
-            ax.plot(x_values, y_values, label=f'User ID: {user_id}')
+        ax.set(xlabel='Date', ylabel='Cumulative firsts', title='Firsts to Date')
+        ax.grid(True, linestyle='--')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+        fig.autofmt_xdate(rotation=30, ha='right')
+        ax.legend(title='Players', loc='upper left', frameon=False)
 
-        # Customize the plot as needed
-        ax.set_xlabel('Date')
-        ax.set_ylabel('# of firsts')
-        ax.set_title('Firsts to Date')
+        data_stream = io.BytesIO()
+        fig.savefig(data_stream, format='png', bbox_inches='tight', dpi=150, facecolor=bg)
+        plt.close(fig)
 
-        plt.savefig(data_stream, format='png', bbox_inches="tight", dpi = 80)
-
-        ## Create file
-        # Reset point back to beginning of stream
         data_stream.seek(0)
-        chart = discord.File(data_stream,filename="first_graph.png")
-        embed = discord.Embed(title='Firsts to Date',color=EMBED_COLOR)
+        embed = discord.Embed(title='Firsts to Date', color=EMBED_COLOR)
         embed.set_image(url="attachment://first_graph.png")
-
-        await ctx.send(embed=embed, file=chart)
+        await ctx.send(embed=embed, file=discord.File(data_stream, filename="first_graph.png"))
 
 async def setup(bot):
     await bot.add_cog(First(bot)) 
