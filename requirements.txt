@@ -1,11 +1,8 @@
 discord
 pymysql
-aiocron
 pandas
+matplotlib
+pytz
 requests
 python-dotenv
-pytz
-matplotlib
-openai>=1.99.5
 xai-sdk
-tweepy

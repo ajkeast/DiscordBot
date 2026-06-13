@@ -6,6 +6,9 @@ import discord
 import requests
 import os
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AI(commands.Cog):
@@ -41,14 +44,19 @@ class AI(commands.Cog):
                 self.last_response_id = None
                 self._session_turns = 0
 
-            next_response_id, response_text = self.grok.send_message(
-                arg,
-                previous_response_id=self.last_response_id,
-                system_prompt=self.system_prompt,
-                user_id=ctx.author.id,
-                message_id=ctx.message.id,
-                image_urls=image_urls if image_urls else None,
-            )
+            try:
+                next_response_id, response_text = self.grok.send_message(
+                    arg,
+                    previous_response_id=self.last_response_id,
+                    system_prompt=self.system_prompt,
+                    user_id=ctx.author.id,
+                    message_id=ctx.message.id,
+                    image_urls=image_urls if image_urls else None,
+                )
+            except Exception:
+                logger.exception("_ask failed for user %s", ctx.author.id)
+                await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
+                return
 
             if next_response_id is not None:
                 self.last_response_id = next_response_id

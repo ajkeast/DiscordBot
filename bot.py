@@ -2,11 +2,21 @@
 import discord                          # Discord API
 from discord.ext import commands
 import os                              # For environment variables
+import logging
+import sys
 from dotenv import load_dotenv         # Load .env
 from utils.db import db_ops            # Database operations
 
 # Load environment variables
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+    force=True,
+)
 
 # Setup bot
 class DinkBot(commands.Bot):
@@ -24,7 +34,14 @@ class DinkBot(commands.Bot):
         await self.load_extension('cogs.misc')
 
     async def on_ready(self):
-        print(f"Live: {self.user.name}")
+        print(f"Live: {self.user.name}", flush=True)
+
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, commands.CommandNotFound):
+            return
+        logger = logging.getLogger(__name__)
+        logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)
+        await ctx.send("Something went wrong running that command.")
 
     async def on_message(self, message):
         if message.author.bot:

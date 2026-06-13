@@ -1,19 +1,20 @@
 """
 Grok Responses API client and Grok Imagine image generation.
 Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
-Includes native search (web_search, x_search) and optional text-only post_tweet tool (Twitter v2).
+Includes native search (web_search, x_search).
 Logging to DB for every interaction.
 """
-import json
+import logging
 import os
 
-import tweepy
 from dotenv import load_dotenv
 from xai_sdk import Client
-from xai_sdk.chat import user, system, image, tool, tool_result
+from xai_sdk.chat import user, system, image
 from xai_sdk.tools import web_search, x_search
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_GROK_MODEL = "grok-4.3"
 
@@ -49,7 +50,7 @@ class GrokClient:
         has_images = bool(image_urls)
         store = not has_images
 
-        tools_list = [web_search(), x_search(), POST_TWEET_TOOL]
+        tools_list = [web_search(), x_search()]
         if previous_response_id and store:
             chat = self._client.chat.create(
                 model=self.model,
@@ -75,24 +76,13 @@ class GrokClient:
                 chat.append(user(prompt))
 
         response = chat.sample()
-        while getattr(response, "tool_calls", None):
-            chat.append(response)
-            for tc in response.tool_calls:
-                fn = getattr(tc, "function", None)
-                name = getattr(fn, "name", None)
-                raw = getattr(fn, "arguments", None) or "{}"
-                try:
-                    args = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                except json.JSONDecodeError:
-                    args = {}
-                result = TOOLS_MAP[name](**args) if name in TOOLS_MAP else {"status": "error", "error": f"Unknown tool: {name}"}
-                chat.append(tool_result(json.dumps(result), tool_call_id=getattr(tc, "id", None)))
-            response = chat.sample()
+        server_usage = getattr(response, "server_side_tool_usage", None)
+        if server_usage:
+            logger.info("Grok server-side tools used: %s", server_usage)
 
         response_id = getattr(response, "id", None)
         content = (response.content or "").strip() or "Sorry, I couldn't generate a reply this time. Please try again."
 
-        # xAI returns usage with prompt_tokens and completion_tokens (use final response)
         usage = getattr(response, "usage", None)
         input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
@@ -109,7 +99,6 @@ class GrokClient:
                 output_tokens=output_tokens,
             )
 
-        # When we didn't store (e.g. had images), don't return response_id so caller starts fresh next time
         next_id = response_id if store else None
         return next_id, content[:2000]
 
@@ -141,42 +130,6 @@ class GrokClient:
         )
 
 
-def _post_tweet(text: str) -> dict:
-    """Post a text-only tweet using Twitter API v2 (tweepy Client)."""
-    text = (text or "").strip()[:280]
-    if not text:
-        return {"status": "error", "error": "Tweet text is required and cannot be empty."}
-    tw = {k: os.getenv(k) for k in ("TWITTER_API_KEY", "TWITTER_API_KEY_SECRET", "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN_SECRET")}
-    if not all(tw.values()):
-        return {"status": "error", "error": "Twitter API credentials not configured."}
-    try:
-        client = tweepy.Client(
-            consumer_key=tw["TWITTER_API_KEY"],
-            consumer_secret=tw["TWITTER_API_KEY_SECRET"],
-            access_token=tw["TWITTER_ACCESS_TOKEN"],
-            access_token_secret=tw["TWITTER_ACCESS_TOKEN_SECRET"],
-        )
-        tweet = client.create_tweet(text=text)
-        tid = tweet.data["id"]
-        return {"status": "success", "tweet_text": text, "tweet_id": tid, "tweet_url": f"https://x.com/i/status/{tid}"}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-
-POST_TWEET_TOOL = tool(
-    name="post_tweet",
-    description="Post a text tweet to Twitter/X when the user asks to post or share there. Text only (max 280 chars).",
-    parameters={
-        "type": "object",
-        "properties": {
-            "text": {"type": "string", "description": "Tweet text (max 280 chars)."},
-        },
-        "required": ["text"],
-    },
-)
-TOOLS_MAP = {"post_tweet": _post_tweet}
-
-
 def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
     """Generate or edit an image using xAI Grok Imagine API (xAI SDK).
 
@@ -201,7 +154,7 @@ def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
         return {
             "status": "success",
             "image_url": response.url,
-            "revised_prompt": None,  # Grok Imagine does not return a revised prompt
+            "revised_prompt": None,
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}

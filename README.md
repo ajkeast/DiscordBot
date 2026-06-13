@@ -80,11 +80,24 @@ The core Discord functionality of this project is contained in the `bot.py` file
 ## Installation
 
 1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Set up environment variables (e.g., Discord token, OpenAI API key) in a `.env` file.
-4. Run the bot: `python bot.py`.
+2. Copy `.env.example` to `.env` and fill in values from your hosting dashboard.
+3. Run locally: `./scripts/dev.sh`
 
-5. Clone the repository.
-6. Install dependencies: `pip install -r requirements.txt`
-7. Set up environment variables (e.g., Discord token, OpenAI API key) in a `.env` file.
-8. Run the bot: `python bot.py`
+The dev script creates a virtual environment, installs dependencies, and starts the bot.
+
+## Running locally
+
+Local runs use the same credentials as production (Discord token, MySQL, xAI). Only one bot session can be active per token, so **stop the hosted bot first**.
+
+1. Stop the bot on your hosting site.
+2. Ensure `.env` is populated (see `.env.example`).
+3. Run `./scripts/dev.sh`
+4. Test commands on your Discord server (prefix is `_`).
+5. Press Ctrl+C to stop, then restart the hosted bot.
+
+To test Grok/xAI without starting Discord or the database:
+
+```bash
+source .venv/bin/activate
+python test_grok.py
+```
