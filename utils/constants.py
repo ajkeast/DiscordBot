@@ -2,6 +2,8 @@
 Constants used throughout the Discord bot.
 """
 
+import os
+
 # Channel ID for #general
 GENERAL_CHANNEL_ID = 94235299445493760
 
@@ -14,3 +16,6 @@ BOT_USER_ID = 908765514753531934
 # Max turns (user + assistant pairs) per Grok session before starting a new conversation.
 # Limits context growth and cost; each turn adds more tokens to the stored session.
 MAX_GROK_SESSION_TURNS = 20
+
+# DINK awarded for each successful _1st claim (MySQL ledger only)
+DINK_MINT_AMOUNT = float(os.getenv("DINK_MINT_AMOUNT", "1"))

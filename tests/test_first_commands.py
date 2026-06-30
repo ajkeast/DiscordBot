@@ -1,7 +1,7 @@
 """Mocked tests for first cog commands."""
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytz
@@ -34,12 +34,12 @@ async def test_first_wrong_channel(report, mock_bot, mock_ctx):
     mock_ctx.channel.send.assert_awaited_once_with(expected)
 
 
-@patch("cogs.first.time.sleep")
+@patch("cogs.first.asyncio.sleep", new_callable=AsyncMock)
 @patch("cogs.first.datetime")
 async def test_first_successful_claim(
     mock_datetime, _mock_sleep, report, mock_db_ops, mock_bot, mock_ctx,
 ):
-    expected = f"{mock_ctx.author.mention} is first today! 🥳"
+    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 DINK"
     est = pytz.timezone("US/Eastern")
     today = est.localize(datetime(2024, 6, 11, 8, 0, 0))
 
@@ -54,6 +54,7 @@ async def test_first_successful_claim(
     report.record("db write", mock_ctx.author.id, mock_db_ops.write_first_entry.call_args.args[0], section=SECTION_COMMANDS)
 
     mock_db_ops.write_first_entry.assert_called_once_with(mock_ctx.author.id)
+    mock_db_ops.record_dink_mint.assert_called_once_with(mock_ctx.author.id, 1.0)
     mock_ctx.channel.send.assert_awaited_once_with(expected)
 
 
