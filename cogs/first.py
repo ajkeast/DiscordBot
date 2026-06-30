@@ -1,13 +1,13 @@
 import discord
 from discord.ext import commands
+import asyncio
 import io
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from datetime import datetime
 import pytz
-import time
 from utils.db import db_ops, streak_calc, juice_calc
-from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR
+from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR, DINK_MINT_AMOUNT
 
 class First(commands.Cog):
     """A cog that manages the daily 'first' claiming game and related statistics."""
@@ -45,9 +45,10 @@ class First(commands.Cog):
                 await ctx.channel.send(msg)
             else:
                 db_ops.write_first_entry(ctx.author.id)
-                time.sleep(0.5)
+                db_ops.record_dink_mint(ctx.author.id, DINK_MINT_AMOUNT)
+                await asyncio.sleep(0.5)
                 Author = ctx.author.mention
-                msg = f'{Author} is first today! 🥳'
+                msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} DINK"
                 await ctx.channel.send(msg)
 
     @commands.command()

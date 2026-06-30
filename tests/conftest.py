@@ -14,6 +14,7 @@ from utils.constants import GENERAL_CHANNEL_ID  # noqa: E402
 
 EXPECTED_COMMANDS = frozenset({
     "1st", "score", "stats", "juice", "graph", "juicegraph",
+    "balance", "ledger", "pay",
     "ask", "imagine", "clear", "voice",
     "members", "emojis", "channels",
     "hello", "ping", "simonsays",
@@ -151,6 +152,11 @@ def mock_db_ops(request):
         patch.object(db_ops, "update_emojis", MagicMock()),
         patch.object(db_ops, "update_channels", MagicMock()),
         patch.object(db_ops, "log_chatgpt_interaction", MagicMock()),
+        patch.object(db_ops, "get_dink_balance", MagicMock(return_value=0.0)),
+        patch.object(db_ops, "get_dink_ledger", MagicMock()),
+        patch.object(db_ops, "get_total_dink_circulation", MagicMock(return_value=0.0)),
+        patch.object(db_ops, "record_dink_mint", MagicMock()),
+        patch.object(db_ops, "record_dink_transfer", MagicMock()),
     ]
     for patcher in patchers:
         patcher.start()

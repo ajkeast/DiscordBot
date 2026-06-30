@@ -203,6 +203,102 @@ class DataOperations:
             query += " ORDER BY timesent ASC"
         return self.db.fetch_df(query)
 
+    def upsert_dink_balance(self, user_id, delta: float) -> None:
+        """Add delta to a user's DINK balance."""
+        query = """
+            INSERT INTO dinkcoin_balances (user_id, balance)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)
+        """
+        self.db.execute(query, (str(user_id), delta))
+
+    def get_dink_balance(self, user_id) -> float:
+        """Get a user's DINK balance from the MySQL ledger."""
+        query = "SELECT balance FROM dinkcoin_balances WHERE user_id = %s"
+        df = self.db.fetch_df(query, (str(user_id),))
+        if df.empty:
+            return 0.0
+        return float(df.iloc[0]["balance"])
+
+    def get_dink_ledger(self, limit: int = 20) -> pd.DataFrame:
+        """Return top DINK holders for the ledger command."""
+        query = """
+            SELECT user_id, balance
+            FROM dinkcoin_balances
+            WHERE balance > 0
+            ORDER BY balance DESC
+            LIMIT %s
+        """
+        return self.db.fetch_df(query, (limit,))
+
+    def get_total_dink_circulation(self) -> float:
+        """Return total DINK tracked in the MySQL ledger."""
+        query = "SELECT COALESCE(SUM(balance), 0) AS total FROM dinkcoin_balances"
+        df = self.db.fetch_df(query)
+        return float(df.iloc[0]["total"])
+
+    def log_dink_transaction(
+        self,
+        from_user_id,
+        to_user_id,
+        amount: float,
+        tx_type: str,
+        tx_hash: str = None,
+    ) -> None:
+        """Record a mint or transfer in the audit log."""
+        query = """
+            INSERT INTO dinkcoin_transactions
+            (from_user_id, to_user_id, amount, tx_type, tx_hash)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        self.db.execute(query, (
+            str(from_user_id) if from_user_id is not None else None,
+            str(to_user_id),
+            amount,
+            tx_type,
+            tx_hash,
+        ))
+
+    def apply_dink_transfer(self, from_user_id, to_user_id, amount: float) -> None:
+        """Atomically move DINK between two users in the MySQL ledger."""
+        from_user_id = str(from_user_id)
+        to_user_id = str(to_user_id)
+        with self.db.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE dinkcoin_balances
+                SET balance = balance - %s
+                WHERE user_id = %s AND balance >= %s
+                """,
+                (amount, from_user_id, amount),
+            )
+            if cursor.rowcount == 0:
+                raise DatabaseError("Insufficient DINK balance")
+            cursor.execute(
+                """
+                INSERT INTO dinkcoin_balances (user_id, balance)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)
+                """,
+                (to_user_id, amount),
+            )
+
+    def record_dink_mint(self, user_id, amount: float, tx_hash: str = None) -> None:
+        """Credit DINK to a user after a successful _1st claim."""
+        self.upsert_dink_balance(user_id, amount)
+        self.log_dink_transaction(None, user_id, amount, "mint", tx_hash)
+
+    def record_dink_transfer(
+        self,
+        from_user_id,
+        to_user_id,
+        amount: float,
+        tx_hash: str = None,
+    ) -> None:
+        """Move DINK between two users in the MySQL ledger."""
+        self.apply_dink_transfer(from_user_id, to_user_id, amount)
+        self.log_dink_transaction(from_user_id, to_user_id, amount, "transfer", tx_hash)
+
     def get_monthly_message_counts(self, year: int, month: int) -> pd.DataFrame:
         """Get message counts for all members in a specific month
         

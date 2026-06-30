@@ -60,6 +60,18 @@ Here it's being used to log and record who sends the first message of the day. U
 
 The core Discord functionality of this project is contained in the `bot.py` file. The logic for the ChatGPT API request and intelligent function calling are contained in the `chatgpt_functions.py` file.
 
+### DinkCoin
+
+Successful `_1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`). Balances, the server ledger, and peer-to-peer trades all live in MySQL — no blockchain or crypto wallet required.
+
+| Command | Description |
+|---------|-------------|
+| `_balance` | Show your DINK balance |
+| `_ledger` | Top holders leaderboard |
+| `_pay @user <amount>` | Send DINK to another user |
+
+Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
+
 ## Project Structure
 
 - `bot.py`: Main bot file that initializes the Discord bot and loads command cogs.
@@ -67,17 +79,18 @@ The core Discord functionality of this project is contained in the `bot.py` file
 - `cogs/`: Directory containing modular command extensions:
   - `ai.py`: AI-related commands including ChatGPT integration and DALL·E 3 image generation.
   - `first.py`: Commands for tracking and managing first messages of the day.
+  - `dinkcoin.py`: DinkCoin balance, ledger, and peer-to-peer transfers.
   - `misc.py`: Miscellaneous utility commands.
   - `server.py`: Server management and dashboard-related commands.
   - `utility.py`: General utility commands.
 - `utils/`: Utility modules:
   - `constants.py`: Constants and configuration values.
   - `db.py`: Database operations for logging messages and events.
+- `scripts/dinkcoin_schema.sql`: MySQL tables for the DINK ledger.
 - `requirements.txt`: Python dependencies required for the project.
 - `requirements-dev.txt`: Test dependencies (pytest, pytest-asyncio).
-- `tests/`: Pytest suite — mocked command tests, unit tests, and live smoke tests.
+- `tests/`: Pytest suite (mocked command tests, unit tests, and live smoke tests).
 - `scripts/test.sh`: Run the full test suite locally (mirrors CI).
-- `test_grok.py`: Thin wrapper around live xAI smoke tests.
 - `README.md`: This documentation file.
 
 ## Installation
@@ -98,19 +111,17 @@ Local runs use the same credentials as production (Discord token, MySQL, xAI). O
 4. Test commands on your Discord server (prefix is `_`).
 5. Press Ctrl+C to stop, then restart the hosted bot.
 
-## Testing before deploy
+## Testing
 
-Because pushes to `main` are picked up on the next server reboot, run tests locally **before** pushing.
+You can't push directly to `main`. Open a pull request and the tests will run automatically in GitHub Actions. They need to pass before you can merge.
 
-### Full test suite
+Run tests locally first:
 
 ```bash
 ./scripts/test.sh
 ```
 
-This installs dependencies, sets a headless matplotlib backend, and runs all tests (mocked + live).
-
-Fast iteration (skip live API/DB calls):
+To skip live API and database calls:
 
 ```bash
 ./scripts/test.sh -m "not live"

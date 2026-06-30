@@ -30,6 +30,7 @@ class DinkBot(commands.Bot):
     async def setup_hook(self):
         # Load all cogs
         await self.load_extension('cogs.first')
+        await self.load_extension('cogs.dinkcoin')
         await self.load_extension('cogs.server')
         await self.load_extension('cogs.ai')
         await self.load_extension('cogs.utility')
