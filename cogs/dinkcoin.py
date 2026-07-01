@@ -9,7 +9,7 @@ from utils.db import DatabaseError, db_ops
 logger = logging.getLogger(__name__)
 
 
-class DinkCoinCog(commands.Cog):
+class DinkCoin(commands.Cog):
     """DinkCoin balance, ledger, and peer-to-peer transfers (MySQL ledger)."""
 
     def __init__(self, bot):
@@ -55,7 +55,7 @@ class DinkCoinCog(commands.Cog):
 
     @commands.command(brief="Send DINK to another user")
     async def pay(self, ctx, member: discord.Member, amount: float):
-        """Transfer DINK to another user. Usage: `_pay @user <amount>`"""
+        """Transfer whole DINK coins to another user. Usage: `_pay @user <amount>`"""
         if member.bot:
             await ctx.send("You cannot pay bots.")
             return
@@ -65,6 +65,11 @@ class DinkCoinCog(commands.Cog):
         if amount <= 0:
             await ctx.send("Amount must be greater than zero.")
             return
+        if not amount.is_integer():
+            await ctx.send("Only whole DINK coins can be transferred.")
+            return
+
+        amount = int(amount)
 
         sender_balance = db_ops.get_dink_balance(ctx.author.id)
         if amount > sender_balance:
@@ -88,4 +93,4 @@ class DinkCoinCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(DinkCoinCog(bot))
+    await bot.add_cog(DinkCoin(bot))

@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from cogs.ai import AI
-from cogs.dinkcoin import DinkCoinCog
+from cogs.dinkcoin import DinkCoin
 from cogs.first import First
 from cogs.misc import Misc
 from cogs.server import Server
@@ -11,7 +11,7 @@ from cogs.utility import Utility
 from tests.conftest import EXPECTED_COMMANDS
 from tests.reporting import SECTION_WIRING
 
-COG_CLASSES = (First, DinkCoinCog, Server, AI, Utility, Misc)
+COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc)
 
 
 def _server_init_without_tasks(self, bot):
@@ -19,7 +19,7 @@ def _server_init_without_tasks(self, bot):
 
 
 def test_all_cogs_have_expected_names(report):
-    expected = {"First", "DinkCoinCog", "Server", "AI", "Utility", "Misc"}
+    expected = {"First", "DinkCoin", "Server", "AI", "Utility", "Misc"}
     actual = {cls.__name__ for cls in COG_CLASSES}
     report.record("cog class names", sorted(expected), sorted(actual), section=SECTION_WIRING)
     assert actual == expected
