@@ -65,7 +65,7 @@ class DinkCoin(commands.Cog):
         if amount <= 0:
             await ctx.send("Amount must be greater than zero.")
             return
-        if not amount.is_integer():
+        if amount != int(amount):
             await ctx.send("Only whole DINK coins can be transferred.")
             return
 
