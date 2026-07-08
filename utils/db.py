@@ -1,6 +1,7 @@
 import pymysql
 import os
 import pandas as pd
+import warnings
 from dotenv import load_dotenv
 from datetime import datetime
 from contextlib import contextmanager
@@ -68,7 +69,13 @@ class Database:
     def fetch_df(self, query: str, params: Optional[tuple] = None) -> pd.DataFrame:
         """Fetch query results as pandas DataFrame"""
         with self.connection() as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="pandas only supports SQLAlchemy connectable",
+                    category=UserWarning,
+                )
+                return pd.read_sql_query(query, conn, params=params)
 
 class DataOperations:
     def __init__(self):
