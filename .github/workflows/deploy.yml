@@ -1,0 +1,24 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart PebbleHost server
+        run: |
+          curl -sf -X POST \
+            "https://panel.pebblehost.com/api/client/servers/${{ secrets.PEBBLEHOST_SERVER_ID }}/power" \
+            -H "Authorization: Bearer ${{ secrets.PEBBLEHOST_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d '{"signal":"restart"}'
