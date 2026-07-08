@@ -46,7 +46,7 @@ class DinkCoin(commands.Cog):
                 name = user.display_name if user else f"User {row['user_id']}"
                 rank = len(embed.fields) + 1
                 embed.add_field(
-                    name=f"#{rank} {name}",
+                    name=f"{name}",
                     value=f"{float(row['balance']):g} DINK",
                     inline=False,
                 )

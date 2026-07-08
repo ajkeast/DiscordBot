@@ -48,7 +48,7 @@ class First(commands.Cog):
                 db_ops.record_dink_mint(ctx.author.id, DINK_MINT_AMOUNT)
                 await asyncio.sleep(0.5)
                 Author = ctx.author.mention
-                msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} DINK"
+                msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} **DINK**"
                 await ctx.channel.send(msg)
 
     @commands.command()
