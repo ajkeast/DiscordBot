@@ -19,7 +19,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.PEBBLEHOST_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0" \
+            -H "User-Agent: ajkeast-DiscordBot-Deploy/1.0 (GitHub Actions; contact: alexander.keast@gmail.com)" \
             -H "Referer: https://panel.pebblehost.com/" \
             -d '{"signal":"restart"}')
 
