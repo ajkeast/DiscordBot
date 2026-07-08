@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 
 SECTION_UNIT = "Unit tests"
+SECTION_SELF_KNOWLEDGE = "Self-knowledge"
 SECTION_COMMANDS = "Command handlers"
 SECTION_LIVE_XAI = "Live API (xAI)"
 SECTION_LIVE_DB = "Live database"
@@ -60,6 +61,7 @@ class TestReportCollector:
         for section in (
             SECTION_WIRING,
             SECTION_UNIT,
+            SECTION_SELF_KNOWLEDGE,
             SECTION_COMMANDS,
             SECTION_LIVE_XAI,
             SECTION_LIVE_DB,

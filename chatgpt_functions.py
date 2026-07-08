@@ -5,7 +5,7 @@ Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
 Tools available to Grok on every request:
 - Server-side (run on xAI): web_search, x_search.
 - Client-side (run here): self-knowledge tools from utils/self_knowledge.py,
-  so Grok can look up the bot's own docs, command list, and live game/ledger
+  so Grok can look up the bot's own docs, command list, and live first/juice/DINK
   data when users ask about the bot itself.
 
 Logging to DB for every interaction.

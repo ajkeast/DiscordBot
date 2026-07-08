@@ -91,6 +91,32 @@ def get_first_game_stats(bot=None) -> str:
     })
 
 
+def get_juice_stats(bot=None) -> str:
+    """Live juice data: total-juice leaderboard and single-day high score."""
+    from utils.db import db_ops, juice_calc
+
+    df = db_ops.get_table_data("firstlist_id")
+    if df.empty:
+        return json.dumps({"message": "No firsts have been claimed yet."})
+
+    juice_df, highscore_user_id, highscore_value = juice_calc.calculate_juice(df)
+    leaderboard = [
+        {
+            "name": _resolve_name(bot, row["user_id"]),
+            "total_juice": int(row["juice"]),
+        }
+        for _, row in juice_df.head(10).iterrows()
+    ]
+    return json.dumps({
+        "leaderboard_top10_total_juice": leaderboard,
+        "most_total_juice": leaderboard[0] if leaderboard else None,
+        "single_day_high": {
+            "name": _resolve_name(bot, highscore_user_id),
+            "juice": int(highscore_value),
+        },
+    })
+
+
 def get_dink_ledger_stats(bot=None) -> str:
     """Live DinkCoin data: top holders and total circulation."""
     from utils.db import db_ops
@@ -142,8 +168,19 @@ TOOL_SCHEMAS = [
         "name": "get_first_game_stats",
         "description": (
             "Fetch live data for the daily first game: top-10 win leaderboard, "
-            "most recent winner, and the current streak. Use for questions like "
-            "'who is winning firsts' or 'who got first today'."
+            "most recent winner, and the current streak. Use for questions about "
+            "who has the most first wins or who got first today — not juice."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_juice_stats",
+        "description": (
+            "Fetch live juice leaderboard data: top-10 players by total juice, "
+            "who has the most juice overall, and the single-day high score. "
+            "Use for any question about who has the most juice, juice rankings, "
+            "or juice records. Higher juice is better — it rewards claiming _1st "
+            "as late in the day as possible."
         ),
         "parameters": {"type": "object", "properties": {}},
     },
@@ -165,5 +202,6 @@ def build_tool_handlers(bot=None) -> dict:
         "get_bot_documentation": lambda args: get_topic(args.get("topic", "")),
         "list_bot_commands": lambda args: build_command_reference(bot),
         "get_first_game_stats": lambda args: get_first_game_stats(bot),
+        "get_juice_stats": lambda args: get_juice_stats(bot),
         "get_dink_ledger": lambda args: get_dink_ledger_stats(bot),
     }
