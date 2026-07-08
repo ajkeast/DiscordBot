@@ -39,7 +39,7 @@ async def test_first_wrong_channel(report, mock_bot, mock_ctx):
 async def test_first_successful_claim(
     mock_datetime, _mock_sleep, report, mock_db_ops, mock_bot, mock_ctx,
 ):
-    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 DINK"
+    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 **DINK**"
     est = pytz.timezone("US/Eastern")
     today = est.localize(datetime(2024, 6, 11, 8, 0, 0))
 
