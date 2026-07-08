@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,9 +14,20 @@ jobs:
     steps:
       - name: Restart PebbleHost server
         run: |
-          curl -sf -X POST \
+          http_code=$(curl -sS -o /tmp/pebblehost-response.txt -w "%{http_code}" -X POST \
             "https://panel.pebblehost.com/api/client/servers/${{ secrets.PEBBLEHOST_SERVER_ID }}/power" \
             -H "Authorization: Bearer ${{ secrets.PEBBLEHOST_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
-            -d '{"signal":"restart"}'
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0" \
+            -H "Referer: https://panel.pebblehost.com/" \
+            -d '{"signal":"restart"}')
+
+          echo "PebbleHost HTTP status: ${http_code}"
+          if [ -s /tmp/pebblehost-response.txt ]; then
+            cat /tmp/pebblehost-response.txt
+          fi
+
+          if [ "${http_code}" != "204" ]; then
+            exit 1
+          fi
