@@ -1,16 +1,25 @@
 """
 Grok Responses API client and Grok Imagine image generation.
 Uses xAI's stateful Responses API: sessions are stored on xAI servers (30 days).
-Includes native search (web_search, x_search).
+
+Tools available to Grok on every request:
+- Server-side (run on xAI): web_search, x_search.
+- Client-side (run here): self-knowledge tools from utils/self_knowledge.py,
+  so Grok can look up the bot's own docs, command list, and live game/ledger
+  data when users ask about the bot itself.
+
 Logging to DB for every interaction.
 """
+import json
 import logging
 import os
 
 from dotenv import load_dotenv
 from xai_sdk import Client
-from xai_sdk.chat import user, system, image
+from xai_sdk.chat import user, system, image, tool, tool_result
 from xai_sdk.tools import web_search, x_search
+
+from utils import self_knowledge
 
 load_dotenv()
 
@@ -19,16 +28,68 @@ logger = logging.getLogger(__name__)
 DEFAULT_GROK_MODEL = "grok-4.3"
 GROK_IMAGINE_FILENAME = "grok-imagine.jpg"  # xAI base64 responses are JPEG
 
+# Safety cap on client-side tool round-trips per user message
+MAX_TOOL_ROUNDS = 5
+
 
 class GrokClient:
-    """Client for xAI Grok Responses API. Stateful sessions stored on xAI servers."""
+    """Client for xAI Grok Responses API. Stateful sessions stored on xAI servers.
 
-    def __init__(self, api_key=None):
+    Pass a Discord bot instance to enable live self-knowledge tools (command
+    list, first-game stats, DINK ledger). Without it, documentation lookups
+    still work but live data tools degrade gracefully.
+    """
+
+    def __init__(self, api_key=None, bot=None):
         self._client = Client(
             api_key=api_key or os.getenv("XAI_API_KEY"),
             timeout=3600,
         )
         self.model = DEFAULT_GROK_MODEL
+        self._tool_handlers = self_knowledge.build_tool_handlers(bot)
+        self._client_tools = [
+            tool(
+                name=schema["name"],
+                description=schema["description"],
+                parameters=schema["parameters"],
+            )
+            for schema in self_knowledge.TOOL_SCHEMAS
+        ]
+
+    def _build_tools(self) -> list:
+        return [web_search(), x_search(), *self._client_tools]
+
+    def _execute_tool_call(self, tool_call) -> str:
+        """Run one client-side tool call and return its string result."""
+        name = tool_call.function.name
+        handler = self._tool_handlers.get(name)
+        if handler is None:
+            logger.warning("Grok requested unknown tool: %s", name)
+            return f"Error: tool '{name}' is not available."
+        try:
+            args = json.loads(tool_call.function.arguments or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        try:
+            result = handler(args)
+            logger.info("Grok self-knowledge tool used: %s(%s)", name, args)
+            return result
+        except Exception:
+            logger.exception("Self-knowledge tool %s failed", name)
+            return f"Error: tool '{name}' failed to execute."
+
+    def _sample_with_tools(self, chat):
+        """Sample a response, executing client-side tool calls until Grok answers."""
+        response = chat.sample()
+        rounds = 0
+        while getattr(response, "tool_calls", None) and rounds < MAX_TOOL_ROUNDS:
+            chat.append(response)
+            for tool_call in response.tool_calls:
+                output = self._execute_tool_call(tool_call)
+                chat.append(tool_result(output, tool_call_id=tool_call.id))
+            response = chat.sample()
+            rounds += 1
+        return response
 
     def send_message(
         self,
@@ -46,12 +107,14 @@ class GrokClient:
         - If previous_response_id is set, the message is appended to that conversation.
         - When image_urls are provided, store_messages is False (per xAI docs) and
           the returned response_id should not be used to continue (next turn starts fresh).
+        - Client-side self-knowledge tool calls are executed transparently before
+          the final text is returned.
         - Logs the interaction when user_id and message_id are provided.
         """
         has_images = bool(image_urls)
         store = not has_images
 
-        tools_list = [web_search(), x_search()]
+        tools_list = self._build_tools()
         if previous_response_id and store:
             chat = self._client.chat.create(
                 model=self.model,
@@ -76,7 +139,7 @@ class GrokClient:
             else:
                 chat.append(user(prompt))
 
-        response = chat.sample()
+        response = self._sample_with_tools(chat)
         server_usage = getattr(response, "server_side_tool_usage", None)
         if server_usage:
             logger.info("Grok server-side tools used: %s", server_usage)
