@@ -18,11 +18,16 @@ The most popular game on the server: be the first person to claim the day.
 - **Streak** — how many days in a row the same person has won first. `_stats`
   (optionally `@someone`) shows a player's total wins, juice, and their longest
   ever streak.
-- **Juice 🧃** — a lateness score. Each win earns the number of **minutes past
-  midnight Eastern** when you claimed (e.g. 12:07am = 7 juice; 11:30pm = 1410).
-  If nobody claims for a full day, the next winner also picks up 1440 juice per
-  missed day. Higher juice means you won *late* — it rewards patience and stealth.
-  `_juice` shows the top 5 total juice and the single-day record.
+- **Juice 🧃** — a lateness score where **more juice is better**. Each win earns
+  the number of **minutes past midnight Eastern** when you claimed (e.g. 12:07am
+  = 7 juice; 11:30pm = 1410). The strategy is to **wait as long as possible**
+  before typing `_1st` — claim late in the day to maximize your juice. Early
+  claims earn less; late claims earn more.
+- If nobody claims for a full day, the next winner also picks up 1440 juice per
+  missed day on top of their within-day minutes.
+- **Total juice** (sum across all your wins) is what `_juice` ranks — the
+  leaderboard goes to whoever has accumulated the most juice over time.
+- `_juice` also shows the single-day high score (most juice earned in one claim).
 
 ## Commands
 

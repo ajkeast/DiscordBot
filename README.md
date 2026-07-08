@@ -39,7 +39,8 @@ The Grok integration (`_ask` / `_voice`) is self-aware: alongside xAI's server-s
 |------|-----------------|
 | `get_bot_documentation` | Curated member-facing docs (`docs/self_knowledge/`) on the bot overview, the `_1st` game, DinkCoin, AI features, and server stats |
 | `list_bot_commands` | The live command list, generated from the registered cogs at runtime |
-| `get_first_game_stats` | Live first-game leaderboard, most recent winner, and current streak |
+| `get_first_game_stats` | Live first-win leaderboard, most recent winner, and current streak |
+| `get_juice_stats` | Live juice leaderboard (total juice), single-day high score |
 | `get_dink_ledger` | Live top DINK holders and total circulation |
 
 Ask the bot "how does juice work?" or "who has the most DINK?" and it pulls the answer from these tools. To extend its knowledge, add a markdown file to `docs/self_knowledge/` and register it in `utils/self_knowledge.py` (`TOPICS`).
