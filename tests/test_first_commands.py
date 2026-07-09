@@ -138,17 +138,93 @@ async def test_juice(report, mock_db_ops, mock_bot, mock_ctx, leaderboard_first_
     assert embed.title == "Juice Board 🧃"
 
 
+@patch("cogs.first.asyncio.sleep", new_callable=AsyncMock)
+@patch("cogs.first.datetime")
+async def test_first_empty_table_allows_claim(
+    mock_datetime, _mock_sleep, report, mock_db_ops, mock_bot, mock_ctx, empty_first_df,
+):
+    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 **DINK**"
+    est = pytz.timezone("US/Eastern")
+    today = est.localize(datetime(2024, 6, 11, 8, 0, 0))
+
+    mock_datetime.utcnow.return_value = today.astimezone(pytz.UTC).replace(tzinfo=None)
+    mock_db_ops.get_table_data.return_value = empty_first_df
+
+    cog = First(mock_bot)
+    await cog.first.callback(cog, mock_ctx)
+
+    actual = mock_ctx.channel.send.call_args.args[0]
+    report.record("channel.send", expected, actual, section=SECTION_COMMANDS)
+    report.record("db write", mock_ctx.author.id, mock_db_ops.write_first_entry.call_args.args[0], section=SECTION_COMMANDS)
+
+    mock_db_ops.write_first_entry.assert_called_once_with(mock_ctx.author.id)
+    mock_db_ops.record_dink_mint.assert_called_once_with(mock_ctx.author.id, 1.0)
+    mock_ctx.channel.send.assert_awaited_once_with(expected)
+
+
+async def test_score_empty(report, mock_db_ops, mock_bot, mock_ctx, empty_first_df):
+    expected = "No firsts recorded yet — claim one with `_1st`!"
+    mock_db_ops.get_table_data.return_value = empty_first_df
+    cog = First(mock_bot)
+
+    await cog.score.callback(cog, mock_ctx)
+
+    actual = mock_ctx.channel.send.call_args.args[0]
+    report.record("channel.send", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.channel.send.assert_awaited_once_with(expected)
+
+
+async def test_score_fewer_than_five_winners(report, mock_db_ops, mock_bot, mock_ctx, sample_first_df):
+    mock_db_ops.get_table_data.return_value = sample_first_df
+    cog = First(mock_bot)
+
+    await cog.score.callback(cog, mock_ctx)
+
+    embed = mock_ctx.channel.send.call_args.kwargs["embed"]
+    # sample_first_df has 2 distinct users
+    report.record("embed field count", 2, len(embed.fields), section=SECTION_COMMANDS)
+    mock_ctx.channel.send.assert_awaited_once()
+    assert embed.title == "First Leaderboard"
+    assert len(embed.fields) == 2
+
+
+async def test_juice_empty(report, mock_db_ops, mock_bot, mock_ctx, empty_first_df):
+    expected = "No firsts recorded yet — claim one with `_1st`!"
+    mock_db_ops.get_table_data.return_value = empty_first_df
+    cog = First(mock_bot)
+
+    await cog.juice.callback(cog, mock_ctx)
+
+    actual = mock_ctx.channel.send.call_args.args[0]
+    report.record("channel.send", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.channel.send.assert_awaited_once_with(expected)
+
+
+async def test_juice_fewer_than_five_winners(report, mock_db_ops, mock_bot, mock_ctx, sample_first_df):
+    mock_db_ops.get_table_data.return_value = sample_first_df
+    cog = First(mock_bot)
+
+    await cog.juice.callback(cog, mock_ctx)
+
+    embed = mock_ctx.channel.send.call_args.kwargs["embed"]
+    report.record("embed field count", 2, len(embed.fields), section=SECTION_COMMANDS)
+    mock_ctx.channel.send.assert_awaited_once()
+    assert embed.title == "Juice Board 🧃"
+    assert len(embed.fields) == 2
+
+
 async def test_graph_empty(report, mock_db_ops, mock_bot, mock_ctx, empty_first_df):
+    expected = "No firsts recorded yet — claim one with `_1st`!"
     mock_db_ops.get_table_data.return_value = empty_first_df
     cog = First(mock_bot)
 
     await cog.graph.callback(cog, mock_ctx)
 
     message = mock_ctx.send.call_args.args[0]
-    report.record("message", "contains 'No firsts recorded yet'", message, section=SECTION_COMMANDS)
+    report.record("message", expected, message, section=SECTION_COMMANDS)
 
-    mock_ctx.send.assert_awaited_once()
-    assert "No firsts recorded yet" in message
+    mock_ctx.send.assert_awaited_once_with(expected)
+    assert message == expected
 
 
 async def test_graph_with_data(report, mock_db_ops, mock_bot, mock_ctx, sample_first_df):

@@ -2,6 +2,7 @@
 import asyncio
 import discord                          # Discord API
 from discord.ext import commands
+import math
 import os                              # For environment variables
 import logging
 import sys
@@ -55,6 +56,13 @@ class DinkBot(commands.Bot):
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CommandNotFound):
+            return
+        if isinstance(error, commands.CommandOnCooldown):
+            minutes = max(1, math.ceil(error.retry_after / 60))
+            await ctx.send(
+                f"You've hit the `_imagine` limit (30 per hour). "
+                f"Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
+            )
             return
         logger = logging.getLogger(__name__)
         logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)

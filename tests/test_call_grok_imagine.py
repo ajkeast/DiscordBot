@@ -59,3 +59,18 @@ def test_call_grok_imagine_multiple_images_uses_image_urls(mock_client_cls, repo
     assert kwargs["image_urls"] == urls
     assert "image_url" not in kwargs
     assert result["status"] == "success"
+
+
+@patch("chatgpt_functions.logger")
+@patch("chatgpt_functions.Client")
+def test_call_grok_imagine_logs_exceptions(mock_client_cls, mock_logger, report):
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.image.sample.side_effect = RuntimeError("api down")
+
+    result = call_grok_imagine("a cat")
+
+    report.record("status", "error", result["status"], section=SECTION_COMMANDS)
+    report.record("error", "api down", result["error"], section=SECTION_COMMANDS)
+    assert result == {"status": "error", "error": "api down"}
+    mock_logger.exception.assert_called_once_with("Grok Imagine failed")

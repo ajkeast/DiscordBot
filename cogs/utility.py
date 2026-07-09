@@ -1,44 +1,26 @@
 from discord.ext import commands
 
 class Utility(commands.Cog):
-    """A cog containing basic utility commands for user interaction."""
+    """Simple utility commands."""
     
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(pass_context=True)
+    @commands.command(brief='Say hello')
     async def hello(self, ctx):
-        """Send a friendly greeting mentioning the user.
-        
-        Args:
-            ctx: The command context
-        """
-        # response with name of the message author
+        """Say hello."""
         Author = ctx.author.mention
         msg = f'Hello {Author}!'
         await ctx.channel.send(msg)
 
-    @commands.command()
-    async def ping(self, ctx, brief='Ping the bot'):
-        """Check if the bot is responsive.
-        
-        Args:
-            ctx: The command context
-            
-        Responds with 'pong' to indicate the bot is active.
-        """
-        # response with pong
+    @commands.command(brief='Check if the bot is online')
+    async def ping(self, ctx):
+        """Check if the bot is online."""
         await ctx.channel.send('pong')
 
-    @commands.command()
-    async def simonsays(self, ctx, *, arg, pass_context=True, brief='I will repeat after you'):
-        """Repeat the message sent by the user.
-        
-        Args:
-            ctx: The command context
-            arg: The message to repeat
-        """
-        # repeats string back
+    @commands.command(brief='Make the bot repeat your message')
+    async def simonsays(self, ctx, *, arg):
+        """Make the bot repeat your message."""
         await ctx.channel.send(arg)
 
 async def setup(bot):

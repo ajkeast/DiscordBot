@@ -2,24 +2,14 @@ import discord
 from discord.ext import commands
 
 class Misc(commands.Cog):
-    """A cog containing miscellaneous utility commands."""
+    """Miscellaneous commands."""
     
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    async def donation(self, ctx, brief='Get a list of all donations'):
-        """Display a list of all donations made to support the bot.
-        
-        Args:
-            ctx: The command context
-            
-        Shows an embed containing:
-        - Names of donors
-        - Amount donated by each person
-        - Total contribution from each donor
-        """
-        # provides embed of all donations
+    @commands.command(brief='Show the donation board')
+    async def donation(self, ctx):
+        """Show the donation board."""
         embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x4d4170)
         embed.add_field(name='Matt',value=f'${(6.00+8.91+6.96+6.00):.2f}',inline=False)
         embed.add_field(name='Sammy T',value=f'${(6.90+14.20+6.00):.2f}',inline=False)

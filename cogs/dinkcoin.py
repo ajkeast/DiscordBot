@@ -10,20 +10,20 @@ logger = logging.getLogger(__name__)
 
 
 class DinkCoin(commands.Cog):
-    """DinkCoin balance, ledger, and peer-to-peer transfers (MySQL ledger)."""
+    """DinkCoin balances and transfers."""
 
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(brief="Check your DINK balance")
     async def balance(self, ctx):
-        """Show the caller's DINK balance."""
+        """Show your DINK balance."""
         balance = db_ops.get_dink_balance(ctx.author.id)
         await ctx.send(f"{ctx.author.mention} has **{balance:g} DINK**")
 
-    @commands.command(brief="View the DINK leaderboard")
+    @commands.command(brief="Show the DINK leaderboard")
     async def ledger(self, ctx, limit: int = 10):
-        """Show top DINK holders in the server."""
+        """Show the DINK leaderboard."""
         limit = min(max(limit, 1), 20)
         df = db_ops.get_dink_ledger(limit)
         total = db_ops.get_total_dink_circulation()
@@ -55,7 +55,7 @@ class DinkCoin(commands.Cog):
 
     @commands.command(brief="Send DINK to another user")
     async def pay(self, ctx, member: discord.Member, amount: float):
-        """Transfer whole DINK coins to another user. Usage: `_pay @user <amount>`"""
+        """Send DINK to another user. Usage: `_pay @user <amount>`"""
         if member.bot:
             await ctx.send("You cannot pay bots.")
             return

@@ -3,11 +3,14 @@ from discord.ext import commands, tasks
 from utils.db import db_ops
 from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR
 from datetime import datetime, timedelta
+import logging
 import pytz
 import asyncio
 
+logger = logging.getLogger(__name__)
+
 class Server(commands.Cog):
-    """A cog for managing and tracking server-related information and updates."""
+    """Server info sync and monthly activity report."""
     
     def __init__(self, bot):
         self.bot = bot
@@ -61,7 +64,10 @@ class Server(commands.Cog):
                 try:
                     await channel.send(embed=embed)
                 except discord.Forbidden:
-                    print(f"Bot doesn't have permission to send messages in channel {GENERAL_CHANNEL_ID}")
+                    logger.warning(
+                        "Bot doesn't have permission to send messages in channel %s",
+                        GENERAL_CHANNEL_ID,
+                    )
 
     @monthly_stats.before_loop
     async def before_monthly_stats(self):
@@ -74,21 +80,9 @@ class Server(commands.Cog):
         seconds_until_next_hour = (next_hour - now).total_seconds()
         await asyncio.sleep(seconds_until_next_hour)
 
-    @commands.command()
+    @commands.command(brief='Refresh member info for the dashboard')
     async def members(self, ctx):
-        """Update the database with current server member information.
-        
-        Args:
-            ctx: The command context
-            
-        Stores for each member:
-        - User ID
-        - Username
-        - Display name (nickname)
-        - Avatar URL
-        - Account creation date
-        """
-        # updates database with all current members of the server and their info
+        """Refresh member info for the dashboard."""
         members = ctx.guild.members
         member_data = []
         for member in members:
@@ -103,21 +97,9 @@ class Server(commands.Cog):
         db_ops.update_members(member_data)
         await ctx.channel.send("Member info successfully updated.")
 
-    @commands.command()
+    @commands.command(brief='Refresh emoji info for the dashboard')
     async def emojis(self, ctx):
-        """Update the database with current server emoji information.
-        
-        Args:
-            ctx: The command context
-            
-        Stores for each emoji:
-        - Emoji ID
-        - Name
-        - Guild ID
-        - Image URL
-        - Creation date
-        """
-        # updates database with all current emojis in the server
+        """Refresh emoji info for the dashboard."""
         emoji_data = []
         for emoji in ctx.guild.emojis:
             id = emoji.id
@@ -130,19 +112,9 @@ class Server(commands.Cog):
         db_ops.update_emojis(emoji_data)
         await ctx.channel.send("Emoji info successfully updated.")
 
-    @commands.command()
+    @commands.command(brief='Refresh channel info for the dashboard')
     async def channels(self, ctx):
-        """Update the database with current server channel information.
-        
-        Args:
-            ctx: The command context
-            
-        Stores for each channel:
-        - Channel ID
-        - Channel name
-        - Creation date
-        """
-        # updates database with all current channels on the server
+        """Refresh channel info for the dashboard."""
         channel_data = []
         for channel in ctx.guild.channels:
             id = channel.id
