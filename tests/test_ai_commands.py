@@ -4,6 +4,14 @@ from unittest.mock import MagicMock, patch
 
 from cogs.ai import AI
 from tests.reporting import SECTION_COMMANDS
+from utils.constants import MAX_IMAGINE_INPUT_IMAGES
+
+
+def _image_attachment(url: str) -> MagicMock:
+    attachment = MagicMock()
+    attachment.url = url
+    attachment.content_type = "image/png"
+    return attachment
 
 
 async def test_ask_success(report, ai_cog, mock_ctx):
@@ -67,8 +75,51 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
     report.record("db write", "write_dalle_entry called", mock_db_ops.write_dalle_entry.called, section=SECTION_COMMANDS)
 
     mock_db_ops.write_dalle_entry.assert_called_once()
+    mock_imagine.assert_called_once_with("a red circle", input_image_urls=None)
     mock_ctx.send.assert_awaited_once()
     assert sent_file is not None
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_with_multiple_input_images(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
+    urls = [
+        "https://cdn.discordapp.com/attachments/1/a.png",
+        "https://cdn.discordapp.com/attachments/1/b.png",
+    ]
+    mock_ctx.message.attachments = [_image_attachment(u) for u in urls]
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+
+    prompt = "Put the person from <IMAGE_0> into the scene from <IMAGE_1>"
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg=prompt)
+
+    mock_imagine.assert_called_once_with(prompt, input_image_urls=urls)
+    embed = mock_ctx.send.call_args.kwargs["embed"]
+    input_field = next(f for f in embed.fields if f.name == "Input images")
+    report.record("input image count", "2 attached", input_field.value, section=SECTION_COMMANDS)
+    assert "2 attached" in input_field.value
+    assert "<IMAGE_0>" in input_field.value
+    assert "<IMAGE_1>" in input_field.value
+    mock_ctx.send.assert_awaited_once()
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_rejects_too_many_images(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
+    mock_ctx.message.attachments = [
+        _image_attachment(f"https://cdn.discordapp.com/attachments/1/{i}.png")
+        for i in range(MAX_IMAGINE_INPUT_IMAGES + 1)
+    ]
+
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg="combine these")
+
+    expected = f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `_imagine`."
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("too many images message", expected, actual, section=SECTION_COMMANDS)
+    mock_imagine.assert_not_called()
+    mock_ctx.send.assert_awaited_once_with(expected)
 
 
 @patch("cogs.ai.call_grok_imagine")
