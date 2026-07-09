@@ -1,4 +1,4 @@
-from discord.ext import commands
+from discord.ext import commands, tasks
 from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
 from utils.constants import (
     EMBED_COLOR,
@@ -8,13 +8,19 @@ from utils.constants import (
     MAX_IMAGINE_INPUT_IMAGES,
 )
 from utils.db import db_ops
+from datetime import datetime, timedelta
+import asyncio
 import discord
+import pytz
 import requests
 import os
 import io
 import logging
 
 logger = logging.getLogger(__name__)
+
+EASTERN = pytz.timezone("US/Eastern")
+DAILY_CLEAR_HOUR = 3  # 3am US/Eastern
 
 
 class AI(commands.Cog):
@@ -38,13 +44,54 @@ class AI(commands.Cog):
             "(list_bot_commands), and live data (get_first_game_stats, get_juice_stats, get_dink_ledger). "
             "Whenever someone asks about you, your commands, your capabilities, the first game, juice, streaks, "
             "DINK, or how any of your features work, call those tools and answer from their output instead of guessing. "
-            "For juice: higher is better — it is minutes past midnight Eastern when someone claims _1st, and the "
-            "goal is to wait as late as possible to maximize juice. Use get_juice_stats for who has the most juice. "
             "You also have real-time web and X search; use them to confirm facts and fetch primary sources for current events. "
             "In your final answer, write economically. A single sentence should often be enough. "
             "Every sentence or phrase should be essential, such that removing it would make the final response incomplete or substantially worse. "
             "Do not use markdown bold (**text**) for whole responses or multiple sentences—especially after web search. "
         )
+
+    async def cog_load(self):
+        self.daily_chat_clear.start()
+
+    def cog_unload(self):
+        self.daily_chat_clear.cancel()
+
+    def _reset_session(self):
+        self.last_response_id = None
+        self._session_turns = 0
+
+    def _build_system_prompt(self) -> str:
+        """Base prompt plus today's US/Eastern date (no clock time)."""
+        today = datetime.now(EASTERN).strftime("%A, %B %d, %Y")
+        return (
+            f"{self.system_prompt}"
+            f"Today's date is {today} (US/Eastern). "
+            "Use this for any date-sensitive answers."
+        )
+
+    def _clear_session_if_new_day(self) -> bool:
+        """Clear the shared chat at the configured daily hour (US/Eastern). Returns True if cleared."""
+        now = datetime.now(EASTERN)
+        if now.hour == DAILY_CLEAR_HOUR:
+            self._reset_session()
+            logger.info(
+                "Auto-cleared shared Grok chat at %sam US/Eastern",
+                DAILY_CLEAR_HOUR,
+            )
+            return True
+        return False
+
+    @tasks.loop(hours=1)
+    async def daily_chat_clear(self):
+        """Clear the shared chat daily so the next session gets a fresh Eastern date."""
+        self._clear_session_if_new_day()
+
+    @daily_chat_clear.before_loop
+    async def before_daily_chat_clear(self):
+        await self.bot.wait_until_ready()
+        now = datetime.now(EASTERN)
+        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        await asyncio.sleep((next_hour - now).total_seconds())
 
     @commands.command(brief="Ask a question")
     async def ask(self, ctx, *, arg):
@@ -59,14 +106,13 @@ class AI(commands.Cog):
         async with ctx.typing():
             # Start a new session if we've hit the turn limit (keeps context/cost bounded)
             if self._session_turns >= MAX_GROK_SESSION_TURNS:
-                self.last_response_id = None
-                self._session_turns = 0
+                self._reset_session()
 
             try:
                 next_response_id, response_text = self.grok.send_message(
                     arg,
                     previous_response_id=self.last_response_id,
-                    system_prompt=self.system_prompt,
+                    system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
                     message_id=ctx.message.id,
                     image_urls=image_urls if image_urls else None,
@@ -141,8 +187,7 @@ class AI(commands.Cog):
     async def clear(self, ctx):
         """Clear the shared chat so the next _ask starts fresh."""
 
-        self.last_response_id = None
-        self._session_turns = 0
+        self._reset_session()
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
 
     @commands.command(brief="Answer a prompt out loud")
@@ -165,13 +210,12 @@ class AI(commands.Cog):
         async with ctx.typing():
             try:
                 if self._session_turns >= MAX_GROK_SESSION_TURNS:
-                    self.last_response_id = None
-                    self._session_turns = 0
+                    self._reset_session()
 
                 next_response_id, response_text = self.grok.send_message(
                     text,
                     previous_response_id=self.last_response_id,
-                    system_prompt=self.system_prompt,
+                    system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
                     message_id=ctx.message.id,
                 )

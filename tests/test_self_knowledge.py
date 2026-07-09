@@ -125,6 +125,62 @@ def test_ai_system_prompt_uses_self_knowledge_tools(report, mock_bot):
     assert_eq(report, SECTION_SELF_KNOWLEDGE, "AI prompt tools", "juice + dink", "juice + dink")
 
 
+def test_ai_system_prompt_includes_eastern_date(report, mock_bot):
+    from cogs.ai import AI, EASTERN
+    from datetime import datetime
+
+    with patch("cogs.ai.GrokClient"):
+        cog = AI(mock_bot)
+
+    prompt = cog._build_system_prompt()
+    today = datetime.now(EASTERN).strftime("%B %d, %Y")
+    assert "US/Eastern" in prompt
+    assert today in prompt
+    date_clause = prompt.split("Today's date is", 1)[1]
+    assert ":" not in date_clause  # date only, no clock time
+    assert_eq(report, SECTION_SELF_KNOWLEDGE, "AI prompt date", today, today)
+
+
+def test_daily_chat_clear_resets_session_at_clear_hour(report, mock_bot):
+    from cogs.ai import AI, DAILY_CLEAR_HOUR, EASTERN
+    from datetime import datetime
+
+    with patch("cogs.ai.GrokClient"):
+        cog = AI(mock_bot)
+
+    cog.last_response_id = "stale-id"
+    cog._session_turns = 7
+    clear_time = EASTERN.localize(datetime(2026, 7, 10, DAILY_CLEAR_HOUR, 0, 0))
+    with patch("cogs.ai.datetime") as mock_dt:
+        mock_dt.now.return_value = clear_time
+        cleared = cog._clear_session_if_new_day()
+
+    assert cleared is True
+    assert cog.last_response_id is None
+    assert cog._session_turns == 0
+    assert_eq(report, SECTION_SELF_KNOWLEDGE, "daily clear", "reset", "reset")
+
+
+def test_daily_chat_clear_skips_other_hours(report, mock_bot):
+    from cogs.ai import AI, EASTERN
+    from datetime import datetime
+
+    with patch("cogs.ai.GrokClient"):
+        cog = AI(mock_bot)
+
+    cog.last_response_id = "keep-me"
+    cog._session_turns = 3
+    noon = EASTERN.localize(datetime(2026, 7, 10, 12, 0, 0))
+    with patch("cogs.ai.datetime") as mock_dt:
+        mock_dt.now.return_value = noon
+        cleared = cog._clear_session_if_new_day()
+
+    assert cleared is False
+    assert cog.last_response_id == "keep-me"
+    assert cog._session_turns == 3
+    assert_eq(report, SECTION_SELF_KNOWLEDGE, "non-clear-hour", "kept", "kept")
+
+
 def _make_tool_call(name: str, arguments: dict, call_id: str = "call-1"):
     tool_call = MagicMock()
     tool_call.id = call_id
