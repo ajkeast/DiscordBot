@@ -10,12 +10,10 @@ Tools available to Grok on every request:
 
 Logging to DB for every interaction.
 """
-import base64
 import json
 import logging
 import os
 
-import requests
 from dotenv import load_dotenv
 from xai_sdk import Client
 from xai_sdk.chat import user, system, image, tool, tool_result
@@ -30,7 +28,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_GROK_MODEL = "grok-4.3"
 GROK_IMAGINE_MODEL = "grok-imagine-image"
 GROK_IMAGINE_FILENAME = "grok-imagine.jpg"  # xAI base64 responses are JPEG
-XAI_IMAGES_EDITS_URL = "https://api.x.ai/v1/images/edits"
 
 # Safety cap on client-side tool round-trips per user message
 MAX_TOOL_ROUNDS = 5
@@ -198,71 +195,34 @@ class GrokClient:
         )
 
 
-def _call_grok_imagine_multi_edit(prompt: str, image_urls: list[str], api_key: str) -> bytes:
-    """Multi-reference edit via REST /v1/images/edits.
-
-    Used instead of the SDK's image_urls kwarg so hosts on older xai-sdk still work.
-    """
-    payload = {
-        "model": GROK_IMAGINE_MODEL,
-        "prompt": prompt,
-        "response_format": "b64_json",
-        "images": [{"url": url, "type": "image_url"} for url in image_urls],
-    }
-    response = requests.post(
-        XAI_IMAGES_EDITS_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=120,
-    )
-    if not response.ok:
-        detail = response.text.strip() or response.reason
-        raise RuntimeError(f"xAI images/edits HTTP {response.status_code}: {detail}")
-
-    data = response.json().get("data") or []
-    if not data or not data[0].get("b64_json"):
-        raise ValueError("Grok Imagine multi-edit response did not include image data")
-    return base64.b64decode(data[0]["b64_json"])
-
-
 def call_grok_imagine(prompt: str, input_image_urls: list[str] | None = None) -> dict:
-    """Generate or edit an image using xAI Grok Imagine API.
+    """Generate or edit an image using xAI Grok Imagine API (xAI SDK).
 
     - prompt: Text description for generation, or edit instructions when input images are set.
     - input_image_urls: Optional list of image URLs to edit/combine (e.g. Discord CDN URLs).
       Up to 3 supported by the API. With multiple images, refer to them in the prompt as
       <IMAGE_0>, <IMAGE_1>, <IMAGE_2>. Pass URLs as-is; no base64.
-    - 0–1 images use the xAI SDK; 2+ images use REST /v1/images/edits (works on older SDKs).
+    - Requires xai-sdk >= 1.17 for multi-image `image_urls` support.
     - Returns JPEG bytes (base64 from API) so callers can upload to Discord CDN instead of hotlinking.
     """
     try:
-        api_key = os.getenv("XAI_API_KEY")
-        if not api_key:
-            raise ValueError("XAI_API_KEY is not set")
-
+        client = Client(api_key=os.getenv("XAI_API_KEY"))
+        sample_kwargs = {
+            "model": GROK_IMAGINE_MODEL,
+            "prompt": prompt,
+            "image_format": "base64",
+        }
         urls = [u for u in (input_image_urls or []) if u]
-        if len(urls) > 1:
-            image_bytes = _call_grok_imagine_multi_edit(prompt, urls, api_key)
-        else:
-            client = Client(api_key=api_key)
-            sample_kwargs = {
-                "model": GROK_IMAGINE_MODEL,
-                "prompt": prompt,
-                "image_format": "base64",
-            }
-            if len(urls) == 1:
-                sample_kwargs["image_url"] = urls[0]
-            response = client.image.sample(**sample_kwargs)
-            if not response.image:
-                raise ValueError("Grok Imagine response did not include image data")
-            image_bytes = response.image
-
+        if len(urls) == 1:
+            sample_kwargs["image_url"] = urls[0]
+        elif len(urls) > 1:
+            sample_kwargs["image_urls"] = urls
+        response = client.image.sample(**sample_kwargs)
+        if not response.image:
+            raise ValueError("Grok Imagine response did not include image data")
         return {
             "status": "success",
-            "image_bytes": image_bytes,
+            "image_bytes": response.image,
             "revised_prompt": None,
         }
     except Exception as e:
