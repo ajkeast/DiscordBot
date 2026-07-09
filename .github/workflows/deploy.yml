@@ -20,7 +20,6 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -H "User-Agent: ajkeast-DiscordBot-Deploy/1.0 (GitHub Actions; contact: alexander.keast@gmail.com)" \
-            -H "Referer: https://panel.pebblehost.com/" \
             -d '{"signal":"restart"}')
 
           echo "PebbleHost HTTP status: ${http_code}"
