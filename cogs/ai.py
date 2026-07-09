@@ -112,10 +112,10 @@ class AI(commands.Cog):
                 embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
                 embed.add_field(name="Prompt", value=arg, inline=False)
                 if input_image_urls:
-                    refs = ", ".join(f"<IMAGE_{i}>" for i in range(len(input_image_urls)))
+                    count = len(input_image_urls)
                     embed.add_field(
                         name="Input images",
-                        value=f"{len(input_image_urls)} attached ({refs})",
+                        value=f"{count} attached",
                         inline=False,
                     )
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")

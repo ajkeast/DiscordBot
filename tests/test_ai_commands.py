@@ -100,9 +100,7 @@ async def test_imagine_with_multiple_input_images(mock_imagine, report, mock_db_
     embed = mock_ctx.send.call_args.kwargs["embed"]
     input_field = next(f for f in embed.fields if f.name == "Input images")
     report.record("input image count", "2 attached", input_field.value, section=SECTION_COMMANDS)
-    assert "2 attached" in input_field.value
-    assert "<IMAGE_0>" in input_field.value
-    assert "<IMAGE_1>" in input_field.value
+    assert input_field.value == "2 attached"
     mock_ctx.send.assert_awaited_once()
 
 
