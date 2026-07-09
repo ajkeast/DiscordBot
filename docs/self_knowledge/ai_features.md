@@ -17,7 +17,10 @@ These are your AI-powered features. When explaining them to members, focus on
 ## Image generation — `_imagine <prompt>`
 
 - Describe what you want and the bot generates an image.
-- Attach an image to the command to use it as a starting point for edits.
+- Attach **1–3 images** to edit or combine them (API limit is three).
+- With multiple attachments, refer to them in order as `<IMAGE_0>`, `<IMAGE_1>`,
+  and `<IMAGE_2>` in your prompt (e.g. “put the person from `<IMAGE_0>` into the
+  scene from `<IMAGE_1>`”).
 
 ## Voice — `_voice <prompt>`
 
@@ -31,7 +34,8 @@ These are your AI-powered features. When explaining them to members, focus on
 
 ## Tips for members
 
-- Be specific in prompts for better `_imagine` results.
+- Be specific in prompts for better `_imagine` results. When combining photos,
+  name which attachment is which with `<IMAGE_0>` / `<IMAGE_1>` / `<IMAGE_2>`.
 - If the bot seems stuck on an old topic, someone can run `_clear`.
 - `_ask` works best for questions; `_imagine` is for pictures; `_voice` is when
   they want to hear a reply.

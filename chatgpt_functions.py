@@ -194,11 +194,13 @@ class GrokClient:
         )
 
 
-def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
+def call_grok_imagine(prompt: str, input_image_urls: list[str] | None = None) -> dict:
     """Generate or edit an image using xAI Grok Imagine API (xAI SDK).
 
-    - prompt: Text description for generation, or edit instructions when input_image_url is set.
-    - input_image_url: Optional URL of an image to edit (e.g. Discord CDN URL). Pass as-is; no base64.
+    - prompt: Text description for generation, or edit instructions when input images are set.
+    - input_image_urls: Optional list of image URLs to edit/combine (e.g. Discord CDN URLs).
+      Up to 3 supported by the API. With multiple images, refer to them in the prompt as
+      <IMAGE_0>, <IMAGE_1>, <IMAGE_2>. Pass URLs as-is; no base64.
     - Returns JPEG bytes (base64 from API) so callers can upload to Discord CDN instead of hotlinking.
     """
     try:
@@ -208,8 +210,11 @@ def call_grok_imagine(prompt: str, input_image_url: str | None = None) -> dict:
             "prompt": prompt,
             "image_format": "base64",
         }
-        if input_image_url:
-            sample_kwargs["image_url"] = input_image_url
+        urls = [u for u in (input_image_urls or []) if u]
+        if len(urls) == 1:
+            sample_kwargs["image_url"] = urls[0]
+        elif len(urls) > 1:
+            sample_kwargs["image_urls"] = urls
         response = client.image.sample(**sample_kwargs)
         if not response.image:
             raise ValueError("Grok Imagine response did not include image data")

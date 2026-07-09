@@ -1,6 +1,6 @@
 from discord.ext import commands
 from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
-from utils.constants import EMBED_COLOR, MAX_GROK_SESSION_TURNS
+from utils.constants import EMBED_COLOR, MAX_GROK_SESSION_TURNS, MAX_IMAGINE_INPUT_IMAGES
 from utils.db import db_ops
 import discord
 import requests
@@ -78,19 +78,30 @@ class AI(commands.Cog):
 
     @commands.command()
     async def imagine(self, ctx, *, arg, pass_context=True, brief="Generate AI Art"):
-        """Generate an AI image using Grok Imagine (xAI). Logged to DB."""
+        """Generate an AI image using Grok Imagine (xAI). Logged to DB.
+
+        Attach up to 3 images to edit or combine them; refer to attachments in the
+        prompt as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
+        """
 
         db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg, message_id=ctx.message.id)
 
-        # Optional: first image attachment URL used as input for editing
-        input_image_url = None
-        for a in ctx.message.attachments:
-            if a.content_type and a.content_type.startswith("image/"):
-                input_image_url = a.url
-                break
+        input_image_urls = [
+            a.url
+            for a in ctx.message.attachments
+            if a.content_type and a.content_type.startswith("image/")
+        ]
+        if len(input_image_urls) > MAX_IMAGINE_INPUT_IMAGES:
+            await ctx.send(
+                f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `_imagine`."
+            )
+            return
 
         async with ctx.typing():
-            response = call_grok_imagine(arg, input_image_url=input_image_url)
+            response = call_grok_imagine(
+                arg,
+                input_image_urls=input_image_urls or None,
+            )
 
             if response["status"] == "success":
                 image_file = discord.File(
@@ -100,6 +111,13 @@ class AI(commands.Cog):
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
                 embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
                 embed.add_field(name="Prompt", value=arg, inline=False)
+                if input_image_urls:
+                    refs = ", ".join(f"<IMAGE_{i}>" for i in range(len(input_image_urls)))
+                    embed.add_field(
+                        name="Input images",
+                        value=f"{len(input_image_urls)} attached ({refs})",
+                        inline=False,
+                    )
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
                 await ctx.send(embed=embed, file=image_file)
             else:
