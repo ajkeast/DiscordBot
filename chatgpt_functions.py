@@ -26,6 +26,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DEFAULT_GROK_MODEL = "grok-4.3"
+GROK_IMAGINE_MODEL = "grok-imagine-image"
 GROK_IMAGINE_FILENAME = "grok-imagine.jpg"  # xAI base64 responses are JPEG
 
 # Safety cap on client-side tool round-trips per user message
@@ -201,12 +202,13 @@ def call_grok_imagine(prompt: str, input_image_urls: list[str] | None = None) ->
     - input_image_urls: Optional list of image URLs to edit/combine (e.g. Discord CDN URLs).
       Up to 3 supported by the API. With multiple images, refer to them in the prompt as
       <IMAGE_0>, <IMAGE_1>, <IMAGE_2>. Pass URLs as-is; no base64.
+    - Requires xai-sdk >= 1.17 for multi-image `image_urls` support.
     - Returns JPEG bytes (base64 from API) so callers can upload to Discord CDN instead of hotlinking.
     """
     try:
         client = Client(api_key=os.getenv("XAI_API_KEY"))
         sample_kwargs = {
-            "model": "grok-imagine-image",
+            "model": GROK_IMAGINE_MODEL,
             "prompt": prompt,
             "image_format": "base64",
         }
