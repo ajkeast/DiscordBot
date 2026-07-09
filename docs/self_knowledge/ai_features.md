@@ -17,7 +17,7 @@ These are your AI-powered features. When explaining them to members, focus on
 ## Image generation — `_imagine <prompt>`
 
 - Describe what you want and the bot generates an image.
-- Attach **1–3 images** to edit or combine them (API limit is three).
+- Attach **1–3 images** to edit or combine them.
 - With multiple attachments, refer to them in order as `<IMAGE_0>`, `<IMAGE_1>`,
   and `<IMAGE_2>` in your prompt (e.g. “put the person from `<IMAGE_0>` into the
   scene from `<IMAGE_1>`”).

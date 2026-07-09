@@ -1,11 +1,17 @@
 """Mocked tests for AI cog commands."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from discord.ext import commands
+
+from bot import DinkBot
 from cogs.ai import AI
 from tests.reporting import SECTION_COMMANDS
-from utils.constants import MAX_IMAGINE_INPUT_IMAGES
-
+from utils.constants import (
+    IMAGINE_RATE_LIMIT,
+    IMAGINE_RATE_PERIOD_SECONDS,
+    MAX_IMAGINE_INPUT_IMAGES,
+)
 
 def _image_attachment(url: str) -> MagicMock:
     attachment = MagicMock()
@@ -127,11 +133,45 @@ async def test_imagine_failure(mock_imagine, report, ai_cog, mock_ctx):
     await ai_cog.imagine.callback(ai_cog, mock_ctx, arg="a red circle")
 
     embed = mock_ctx.send.call_args.kwargs["embed"]
+    expected_desc = "Failed to generate image. Check the bot logs and try again."
     report.record("embed title", "Error", embed.title, section=SECTION_COMMANDS)
-    report.record("error detail", "rate limited", mock_imagine.return_value["error"], section=SECTION_COMMANDS)
+    report.record("embed description", expected_desc, embed.description, section=SECTION_COMMANDS)
 
     mock_ctx.send.assert_awaited_once()
     assert embed.title == "❌ Error"
+    assert embed.description == expected_desc
+    assert "rate limited" not in (embed.description or "")
+
+
+def test_imagine_has_hourly_rate_limit(report, ai_cog):
+    buckets = ai_cog.imagine._buckets
+    cooldown = buckets._cooldown
+    report.record("rate", IMAGINE_RATE_LIMIT, cooldown.rate, section=SECTION_COMMANDS)
+    report.record("per seconds", IMAGINE_RATE_PERIOD_SECONDS, cooldown.per, section=SECTION_COMMANDS)
+    report.record("bucket type", commands.BucketType.user, buckets.type, section=SECTION_COMMANDS)
+    assert cooldown.rate == IMAGINE_RATE_LIMIT
+    assert cooldown.per == IMAGINE_RATE_PERIOD_SECONDS
+    assert buckets.type == commands.BucketType.user
+
+
+async def test_imagine_cooldown_error_message(report, mock_ctx):
+    expected = (
+        "You've hit the `_imagine` limit (30 per hour). "
+        "Try again in about 4 minutes."
+    )
+    bot = DinkBot.__new__(DinkBot)
+    error = commands.CommandOnCooldown(
+        cooldown=commands.Cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS),
+        retry_after=240.0,
+        type=commands.BucketType.user,
+    )
+    mock_ctx.send = AsyncMock()
+
+    await DinkBot.on_command_error(bot, mock_ctx, error)
+
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("cooldown message", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.send.assert_awaited_once_with(expected)
 
 
 @patch("cogs.ai.requests.post")
@@ -163,3 +203,20 @@ async def test_voice_missing_api_key(_mock_getenv, report, ai_cog, mock_ctx):
     actual = mock_ctx.send.call_args.args[0]
     report.record("error message", expected, actual, section=SECTION_COMMANDS)
     mock_ctx.send.assert_awaited_once_with(expected)
+
+
+@patch("cogs.ai.requests.post")
+@patch("cogs.ai.os.getenv", return_value="test-key")
+async def test_voice_tts_failure_hides_exception(mock_getenv, mock_post, report, ai_cog, mock_ctx):
+    import requests
+
+    expected = "Something broke generating speech. Check the bot logs and try again."
+    ai_cog.grok.send_message.return_value = ("tts-id", "spoken text")
+    mock_post.side_effect = requests.exceptions.RequestException("connection reset")
+
+    await ai_cog.voice.callback(ai_cog, mock_ctx, text="say hello")
+
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("error message", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.send.assert_awaited_once_with(expected)
+    assert "connection reset" not in actual

@@ -1,6 +1,12 @@
 from discord.ext import commands
 from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
-from utils.constants import EMBED_COLOR, MAX_GROK_SESSION_TURNS, MAX_IMAGINE_INPUT_IMAGES
+from utils.constants import (
+    EMBED_COLOR,
+    IMAGINE_RATE_LIMIT,
+    IMAGINE_RATE_PERIOD_SECONDS,
+    MAX_GROK_SESSION_TURNS,
+    MAX_IMAGINE_INPUT_IMAGES,
+)
 from utils.db import db_ops
 import discord
 import requests
@@ -12,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class AI(commands.Cog):
-    """AI features: Grok chat (Responses API, stateful on xAI) and Grok Imagine image generation."""
+    """Chat, image generation, and voice."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -40,9 +46,9 @@ class AI(commands.Cog):
             "Do not use markdown bold (**text**) for whole responses or multiple sentences—especially after web search. "
         )
 
-    @commands.command()
-    async def ask(self, ctx, *, arg, pass_context=True, brief="Ask Grok"):
-        """Ask Grok (stateful conversation, native search). Supports image attachments."""
+    @commands.command(brief="Ask a question")
+    async def ask(self, ctx, *, arg):
+        """Ask a question. You can also attach images."""
 
         image_urls = [
             a.url
@@ -76,12 +82,13 @@ class AI(commands.Cog):
 
             await ctx.send(response_text or "Sorry, I couldn't generate a reply this time. Please try again.")
 
-    @commands.command()
-    async def imagine(self, ctx, *, arg, pass_context=True, brief="Generate AI Art"):
-        """Generate an AI image using Grok Imagine (xAI). Logged to DB.
+    @commands.command(brief="Generate an AI image")
+    @commands.cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS, commands.BucketType.user)
+    async def imagine(self, ctx, *, arg):
+        """Generate an AI image based on a prompt and optional input images.
 
-        Attach up to 3 images to edit or combine them; refer to attachments in the
-        prompt as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
+        Attach up to 3 images to edit or combine them; refer to them in the prompt
+        as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
         """
 
         db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg, message_id=ctx.message.id)
@@ -121,25 +128,26 @@ class AI(commands.Cog):
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
                 await ctx.send(embed=embed, file=image_file)
             else:
+                logger.error("_imagine failed: %s", response.get("error"))
                 await ctx.send(
                     embed=discord.Embed(
                         title="❌ Error",
-                        description=f"Failed to generate image: {response['error']}",
+                        description="Failed to generate image. Check the bot logs and try again.",
                         color=EMBED_COLOR,
                     )
                 )
 
-    @commands.command()
-    async def clear(self, ctx, pass_context=True, brief="Clear chat session"):
-        """Clear the shared Grok conversation session so the next _ask starts fresh."""
+    @commands.command(brief="Clear the shared chat")
+    async def clear(self, ctx):
+        """Clear the shared chat so the next _ask starts fresh."""
 
         self.last_response_id = None
         self._session_turns = 0
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
 
-    @commands.command()
-    async def voice(self, ctx, *, text, pass_context=True, brief="Text to Speech"):
-        """Generate a Grok response to the prompt, then convert that reply to speech."""
+    @commands.command(brief="Answer a prompt out loud")
+    async def voice(self, ctx, *, text):
+        """Answer a prompt and read the reply aloud."""
 
         if not text:
             await ctx.send("Please provide text to convert to speech.")
@@ -197,10 +205,12 @@ class AI(commands.Cog):
 
                 await ctx.send(file=audio_file)
 
-            except requests.exceptions.RequestException as e:
-                await ctx.send(f"Error generating speech: {str(e)}")
-            except Exception as e:
-                await ctx.send(f"An error occurred: {str(e)}")
+            except requests.exceptions.RequestException:
+                logger.exception("_voice TTS request failed for user %s", ctx.author.id)
+                await ctx.send("Something broke generating speech. Check the bot logs and try again.")
+            except Exception:
+                logger.exception("_voice failed for user %s", ctx.author.id)
+                await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
 
 
 async def setup(bot):

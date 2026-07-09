@@ -226,4 +226,5 @@ def call_grok_imagine(prompt: str, input_image_urls: list[str] | None = None) ->
             "revised_prompt": None,
         }
     except Exception as e:
+        logger.exception("Grok Imagine failed")
         return {"status": "error", "error": str(e)}
