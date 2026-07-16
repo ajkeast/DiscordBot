@@ -59,9 +59,9 @@ def test_build_command_reference_lists_real_commands(report, mock_bot):
     fake_bot.cogs = {"Utility": Utility(mock_bot)}
     reference = self_knowledge.build_command_reference(fake_bot)
 
-    assert "_ping" in reference
-    assert "_hello" in reference
-    assert_eq(report, SECTION_SELF_KNOWLEDGE, "command reference", "lists _ping", "lists _ping")
+    assert "/ping" in reference
+    assert "/hello" in reference
+    assert_eq(report, SECTION_SELF_KNOWLEDGE, "command reference", "lists /ping", "lists /ping")
 
 
 def test_get_first_game_stats(report, mock_db_ops, sample_first_df):

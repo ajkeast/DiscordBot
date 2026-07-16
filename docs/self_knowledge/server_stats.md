@@ -6,10 +6,10 @@ leaderboards, graphs, and the monthly report — not through raw data.
 ## What gets tracked
 
 - **Messages** — activity in channels (used for monthly rankings and the dashboard).
-- **First game** — every daily `_1st` win, which powers `_score`, `_stats`, `_juice`,
+- **First game** — every daily `/1st` win, which powers `/score`, `/stats`, `/juice`,
   and the graphs.
-- **DINK** — balances and transfers from `_pay` and `_1st` wins.
-- **AI usage** — `_ask`, `_imagine`, and related commands (for server records).
+- **DINK** — balances and transfers from `/pay` and `/1st` wins.
+- **AI usage** — `/ask`, `/imagine`, and related commands (for server records).
 
 ## What members see
 

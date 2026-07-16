@@ -33,11 +33,11 @@ ChatGPT intelligently recognizes when to invoke this function and uses the infor
 
 #### Self-Knowledge Tools
 
-The Grok integration (`_ask` / `_voice`) is self-aware: alongside xAI's server-side web/X search, every request exposes client-side tools that let Grok look up how the bot itself works instead of guessing:
+The Grok integration (`/ask` / `/voice`) is self-aware: alongside xAI's server-side web/X search, every request exposes client-side tools that let Grok look up how the bot itself works instead of guessing:
 
 | Tool | What it returns |
 |------|-----------------|
-| `get_bot_documentation` | Curated member-facing docs (`docs/self_knowledge/`) on the bot overview, the `_1st` game, DinkCoin, AI features, and server stats |
+| `get_bot_documentation` | Curated member-facing docs (`docs/self_knowledge/`) on the bot overview, the `/1st` game, DinkCoin, AI features, and server stats |
 | `list_bot_commands` | The live command list, generated from the registered cogs at runtime |
 | `get_first_game_stats` | Live first-win leaderboard, most recent winner, and current streak |
 | `get_juice_stats` | Live juice leaderboard (total juice), single-day high score |
@@ -76,13 +76,13 @@ The core Discord functionality of this project is contained in the `bot.py` file
 
 ### DinkCoin
 
-Successful `_1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`). Balances, the server ledger, and peer-to-peer trades all live in MySQL — no blockchain or crypto wallet required.
+Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`). Balances, the server ledger, and peer-to-peer trades all live in MySQL — no blockchain or crypto wallet required.
 
 | Command | Description |
 |---------|-------------|
-| `_balance` | Show your DINK balance |
-| `_ledger` | Top holders leaderboard |
-| `_pay @user <amount>` | Send DINK to another user |
+| `/balance` | Show your DINK balance |
+| `/ledger` | Top holders leaderboard |
+| `/pay` | Send DINK to another user |
 
 Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
 
@@ -111,7 +111,9 @@ Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
 
 1. Clone the repository.
 2. Copy `.env.example` to `.env` and fill in values from your hosting dashboard.
-3. Run locally: `./scripts/dev.sh`
+3. Invite (or re-invite) the bot with OAuth2 scopes **`bot`** and **`applications.commands`**. Without `applications.commands`, slash commands will not appear in the server.
+4. Optionally set `DISCORD_GUILD_ID` for instant slash-command sync on startup (otherwise Discord may take up to ~1 hour for global sync).
+5. Run locally: `./scripts/dev.sh`
 
 The dev script creates a virtual environment, installs dependencies, and starts the bot.
 
@@ -122,7 +124,7 @@ Local runs use the same credentials as production (Discord token, MySQL, xAI). O
 1. Stop the bot on your hosting site.
 2. Ensure `.env` is populated (see `.env.example`).
 3. Run `./scripts/dev.sh`
-4. Test commands on your Discord server (prefix is `_`).
+4. Test commands on your Discord server (type `/` for slash commands; `_` prefix still works).
 5. Press Ctrl+C to stop, then restart the hosted bot.
 
 ## Testing

@@ -18,9 +18,9 @@ DOCS_DIR = Path(__file__).resolve().parent.parent / "docs" / "self_knowledge"
 # topic name -> one-line description surfaced in the tool schema
 TOPICS = {
     "overview": "What the bot is and what it can do for server members",
-    "first_game": "Rules of the daily _1st game: claiming, score, streaks, and juice",
+    "first_game": "Rules of the daily /1st game: claiming, score, streaks, and juice",
     "dinkcoin": "How DINK works: earning it, spending it, and the leaderboard",
-    "ai_features": "How _ask, _imagine, _voice, and _clear work for members",
+    "ai_features": "How /ask, /imagine, /voice, and /clear work for members",
     "server_stats": "Activity tracking, the monthly report, and the public dashboard",
 }
 
@@ -45,7 +45,7 @@ def build_command_reference(bot) -> str:
             "Live command registry unavailable. Use get_bot_documentation "
             "(topics: overview, first_game, dinkcoin, ai_features) for command lists."
         )
-    lines = ["Commands (prefix '_', case-insensitive):"]
+    lines = ["Commands (slash /name; underscore _name also works, case-insensitive):"]
     for cog_name, cog in bot.cogs.items():
         cog_doc = (cog.__doc__ or "").strip().splitlines()
         lines.append(f"\n{cog_name}: {cog_doc[0] if cog_doc else ''}".rstrip())
@@ -55,7 +55,7 @@ def build_command_reference(bot) -> str:
             params = " ".join(
                 f"<{p}>" for p in cmd.clean_params
             )
-            usage = f"_{cmd.name} {params}".strip()
+            usage = f"/{cmd.name} {params}".strip()
             lines.append(f"  {usage} — {summary}")
     return "\n".join(lines)
 
@@ -138,7 +138,7 @@ TOOL_SCHEMAS = [
         "name": "get_bot_documentation",
         "description": (
             "Look up member-facing documentation about the bot. Use when someone "
-            "asks what you can do, how commands work, the _1st game, juice, DINK, "
+            "asks what you can do, how commands work, the /1st game, juice, DINK, "
             "chat/imagine/voice, or server stats. Answer in plain language for "
             "Discord users — never expose internal implementation details. "
             "Topics: " + "; ".join(f"'{k}' = {v}" for k, v in TOPICS.items())
@@ -179,7 +179,7 @@ TOOL_SCHEMAS = [
             "Fetch live juice leaderboard data: top-10 players by total juice, "
             "who has the most juice overall, and the single-day high score. "
             "Use for any question about who has the most juice, juice rankings, "
-            "or juice records. Higher juice is better — it rewards claiming _1st "
+            "or juice records. Higher juice is better — it rewards claiming /1st "
             "as late in the day as possible."
         ),
         "parameters": {"type": "object", "properties": {}},

@@ -80,7 +80,7 @@ class Server(commands.Cog):
         seconds_until_next_hour = (next_hour - now).total_seconds()
         await asyncio.sleep(seconds_until_next_hour)
 
-    @commands.command(brief='Refresh member info for the dashboard')
+    @commands.hybrid_command(brief='Refresh member info for the dashboard')
     async def members(self, ctx):
         """Refresh member info for the dashboard."""
         members = ctx.guild.members
@@ -95,9 +95,9 @@ class Server(commands.Cog):
             member_data.append([id, user_name, display_name, avatar, created_at])
             
         db_ops.update_members(member_data)
-        await ctx.channel.send("Member info successfully updated.")
+        await ctx.send("Member info successfully updated.")
 
-    @commands.command(brief='Refresh emoji info for the dashboard')
+    @commands.hybrid_command(brief='Refresh emoji info for the dashboard')
     async def emojis(self, ctx):
         """Refresh emoji info for the dashboard."""
         emoji_data = []
@@ -110,9 +110,9 @@ class Server(commands.Cog):
             emoji_data.append([id, emoji_name, guild_id, url, created_at])
         
         db_ops.update_emojis(emoji_data)
-        await ctx.channel.send("Emoji info successfully updated.")
+        await ctx.send("Emoji info successfully updated.")
 
-    @commands.command(brief='Refresh channel info for the dashboard')
+    @commands.hybrid_command(brief='Refresh channel info for the dashboard')
     async def channels(self, ctx):
         """Refresh channel info for the dashboard."""
         channel_data = []
@@ -123,7 +123,7 @@ class Server(commands.Cog):
             channel_data.append([id, name, created_at])
         
         db_ops.update_channels(channel_data)
-        await ctx.channel.send("Channel info successfully updated.")
+        await ctx.send("Channel info successfully updated.")
 
 async def setup(bot):
-    await bot.add_cog(Server(bot)) 
+    await bot.add_cog(Server(bot))

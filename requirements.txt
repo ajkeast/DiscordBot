@@ -1,8 +1,9 @@
-discord
+discord.py>=2.3.0
 pymysql
 pandas
 matplotlib
 pytz
+tzdata
 requests
 python-dotenv
 xai-sdk>=1.17.0

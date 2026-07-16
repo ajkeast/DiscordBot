@@ -24,7 +24,7 @@ async def test_ask_success(report, ai_cog, mock_ctx):
     expected = "Grok says hi"
     ai_cog.grok.send_message.return_value = ("new-id", expected)
 
-    await ai_cog.ask.callback(ai_cog, mock_ctx, arg="hello grok")
+    await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="hello grok")
 
     actual = mock_ctx.send.call_args.args[0]
     report.record("ctx.send", expected, actual, section=SECTION_COMMANDS)
@@ -41,7 +41,7 @@ async def test_ask_api_error(report, ai_cog, mock_ctx):
     expected = "Something broke on my end, dude. Check the bot logs and try again."
     ai_cog.grok.send_message.side_effect = RuntimeError("API down")
 
-    await ai_cog.ask.callback(ai_cog, mock_ctx, arg="hello")
+    await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="hello")
 
     actual = mock_ctx.send.call_args.args[0]
     report.record("error message", expected, actual, section=SECTION_COMMANDS)
@@ -73,7 +73,7 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
         "revised_prompt": None,
     }
 
-    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg="a red circle")
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="a red circle")
 
     sent_file = mock_ctx.send.call_args.kwargs.get("file")
     report.record("imagine status", "success", mock_imagine.return_value["status"], section=SECTION_COMMANDS)
@@ -100,7 +100,7 @@ async def test_imagine_with_multiple_input_images(mock_imagine, report, mock_db_
     }
 
     prompt = "Put the person from <IMAGE_0> into the scene from <IMAGE_1>"
-    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg=prompt)
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt=prompt)
 
     mock_imagine.assert_called_once_with(prompt, input_image_urls=urls)
     embed = mock_ctx.send.call_args.kwargs["embed"]
@@ -117,9 +117,9 @@ async def test_imagine_rejects_too_many_images(mock_imagine, report, mock_db_ops
         for i in range(MAX_IMAGINE_INPUT_IMAGES + 1)
     ]
 
-    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg="combine these")
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="combine these")
 
-    expected = f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `_imagine`."
+    expected = f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `/imagine`."
     actual = mock_ctx.send.call_args.args[0]
     report.record("too many images message", expected, actual, section=SECTION_COMMANDS)
     mock_imagine.assert_not_called()
@@ -130,7 +130,7 @@ async def test_imagine_rejects_too_many_images(mock_imagine, report, mock_db_ops
 async def test_imagine_failure(mock_imagine, report, ai_cog, mock_ctx):
     mock_imagine.return_value = {"status": "error", "error": "rate limited"}
 
-    await ai_cog.imagine.callback(ai_cog, mock_ctx, arg="a red circle")
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="a red circle")
 
     embed = mock_ctx.send.call_args.kwargs["embed"]
     expected_desc = "Failed to generate image. Check the bot logs and try again."
@@ -156,7 +156,7 @@ def test_imagine_has_hourly_rate_limit(report, ai_cog):
 
 async def test_imagine_cooldown_error_message(report, mock_ctx):
     expected = (
-        "You've hit the `_imagine` limit (30 per hour). "
+        "You've hit the `/imagine` limit (30 per hour). "
         "Try again in about 4 minutes."
     )
     bot = DinkBot.__new__(DinkBot)
@@ -183,7 +183,7 @@ async def test_voice_success(mock_getenv, mock_post, report, ai_cog, mock_ctx):
     mock_response.raise_for_status = MagicMock()
     mock_post.return_value = mock_response
 
-    await ai_cog.voice.callback(ai_cog, mock_ctx, text="say hello")
+    await ai_cog.voice.callback(ai_cog, mock_ctx, prompt="say hello")
 
     audio_file = mock_ctx.send.call_args.kwargs["file"]
     report.record("grok reply", "spoken text", ai_cog.grok.send_message.return_value[1], section=SECTION_COMMANDS)
@@ -198,7 +198,7 @@ async def test_voice_success(mock_getenv, mock_post, report, ai_cog, mock_ctx):
 @patch("cogs.ai.os.getenv", return_value=None)
 async def test_voice_missing_api_key(_mock_getenv, report, ai_cog, mock_ctx):
     expected = "XAI API key not configured."
-    await ai_cog.voice.callback(ai_cog, mock_ctx, text="hello")
+    await ai_cog.voice.callback(ai_cog, mock_ctx, prompt="hello")
 
     actual = mock_ctx.send.call_args.args[0]
     report.record("error message", expected, actual, section=SECTION_COMMANDS)
@@ -214,7 +214,7 @@ async def test_voice_tts_failure_hides_exception(mock_getenv, mock_post, report,
     ai_cog.grok.send_message.return_value = ("tts-id", "spoken text")
     mock_post.side_effect = requests.exceptions.RequestException("connection reset")
 
-    await ai_cog.voice.callback(ai_cog, mock_ctx, text="say hello")
+    await ai_cog.voice.callback(ai_cog, mock_ctx, prompt="say hello")
 
     actual = mock_ctx.send.call_args.args[0]
     report.record("error message", expected, actual, section=SECTION_COMMANDS)

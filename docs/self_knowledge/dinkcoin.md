@@ -6,15 +6,15 @@ on any blockchain or crypto wallet.
 
 ## How to get DINK
 
-- Win the daily `_1st` game. Each win earns **1 DINK**.
+- Win the daily `/1st` game. Each win earns **1 DINK**.
 - That is the only way new DINK enters the server — nobody can print it except
   by winning first.
 
 ## How to use DINK
 
-- `_balance` — see how much DINK you have.
-- `_ledger` — see who holds the most DINK on the server (top 10 by default, up to 20).
-- `_pay @user <amount>` — send DINK to another member.
+- `/balance` — see how much DINK you have.
+- `/ledger` — see who holds the most DINK on the server (top 10 by default, up to 20).
+- `/pay` — send DINK to another member (pick the user and amount).
 
 ## Rules for paying
 
@@ -26,6 +26,6 @@ on any blockchain or crypto wallet.
 
 | Command | What it does |
 |---------|--------------|
-| `_balance` | Your DINK balance |
-| `_ledger [limit]` | Top holders + total DINK on the server |
-| `_pay @user <amount>` | Send DINK to someone |
+| `/balance` | Your DINK balance |
+| `/ledger [limit]` | Top holders + total DINK on the server |
+| `/pay` | Send DINK to someone |

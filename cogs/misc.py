@@ -1,13 +1,14 @@
 import discord
 from discord.ext import commands
 
+
 class Misc(commands.Cog):
     """Miscellaneous commands."""
     
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(brief='Show the donation board')
+    @commands.hybrid_command(brief='Show the donation board')
     async def donation(self, ctx):
         """Show the donation board."""
         embed=discord.Embed(title='Donation Board',description='Thank you to our generous patrons!',color=0x4d4170)
@@ -18,7 +19,7 @@ class Misc(commands.Cog):
         embed.add_field(name='Mike S',value=f'${(8.01+6.68):.2f}',inline=False)
         embed.add_field(name='Whike',value=f'${(6.00):.2f}',inline=False)
         embed.set_footer(text='Peter Dinklage is a non-profit')
-        await ctx.channel.send(embed=embed)
+        await ctx.send(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(Misc(bot)) 
+    await bot.add_cog(Misc(bot))
