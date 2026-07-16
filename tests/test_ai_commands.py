@@ -37,6 +37,79 @@ async def test_ask_success(report, ai_cog, mock_ctx):
     assert ai_cog._session_turns == 1
 
 
+async def test_ask_slash_inserts_message_row(report, mock_db_ops, ai_cog, mock_ctx):
+    """Slash skips on_message; AI logging FKs message_id → messages.id."""
+    from datetime import datetime, timezone
+
+    mock_ctx.interaction = MagicMock()
+    mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
+    context_msg = AsyncMock()
+    context_msg.reply = AsyncMock()
+    mock_ctx.send = AsyncMock(return_value=context_msg)
+    ai_cog.grok.send_message.return_value = ("new-id", "ok")
+
+    await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="hello slash")
+
+    mock_db_ops.update_messages.assert_called_once()
+    row = mock_db_ops.update_messages.call_args.args[0]
+    report.record("message id logged", mock_ctx.message.id, row[0], section=SECTION_COMMANDS)
+    report.record("message content", "hello slash", row[3], section=SECTION_COMMANDS)
+    assert row[0] == mock_ctx.message.id
+    assert row[3] == "hello slash"
+    ai_cog.grok.send_message.assert_called_once()
+
+
+async def test_ask_slash_quotes_prompt_then_replies(report, mock_db_ops, ai_cog, mock_ctx):
+    from datetime import datetime, timezone
+
+    mock_ctx.interaction = MagicMock()
+    mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
+    context_msg = AsyncMock()
+    context_msg.reply = AsyncMock()
+    mock_ctx.send = AsyncMock(return_value=context_msg)
+    ai_cog.grok.send_message.return_value = ("new-id", "answer only")
+
+    await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="what is juice?")
+
+    context_text = mock_ctx.send.call_args.args[0]
+    report.record("context has prompt", True, "what is juice?" in context_text, section=SECTION_COMMANDS)
+    report.record("context is quote", True, context_text.startswith(">"), section=SECTION_COMMANDS)
+    report.record("answer via reply", "answer only", context_msg.reply.call_args.args[0], section=SECTION_COMMANDS)
+
+    assert "what is juice?" in context_text
+    assert context_text.startswith(">")
+    assert mock_ctx.author.mention in context_text
+    context_msg.reply.assert_awaited_once_with("answer only", mention_author=False)
+    # Answer must not restate the prompt
+    assert context_msg.reply.call_args.args[0] == "answer only"
+
+
+async def test_ask_prefix_skips_message_insert(report, mock_db_ops, ai_cog, mock_ctx):
+    mock_ctx.interaction = None
+    ai_cog.grok.send_message.return_value = ("new-id", "ok")
+
+    await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="hello prefix")
+
+    mock_db_ops.update_messages.assert_not_called()
+    report.record("prefix message insert", "skipped", "skipped", section=SECTION_COMMANDS)
+
+
+def test_format_prompt_context_quotes_and_attributes(report, mock_author):
+    from cogs.ai import _format_prompt_context
+
+    text = _format_prompt_context(mock_author, "line one\nline two")
+    report.record("format starts with quote", True, text.startswith("> line one"), section=SECTION_COMMANDS)
+    assert "> line one" in text
+    assert "> line two" in text
+    assert mock_author.mention in text
+
+
+def test_ask_image_option_is_optional(report, ai_cog):
+    param = ai_cog.ask.clean_params["image"]
+    report.record("image required", False, param.required, section=SECTION_COMMANDS)
+    assert param.required is False
+
+
 async def test_ask_api_error(report, ai_cog, mock_ctx):
     expected = "Something broke on my end, dude. Check the bot logs and try again."
     ai_cog.grok.send_message.side_effect = RuntimeError("API down")

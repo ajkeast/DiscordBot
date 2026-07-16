@@ -153,6 +153,7 @@ def mock_db_ops(request):
         patch.object(db_ops, "update_members", MagicMock()),
         patch.object(db_ops, "update_emojis", MagicMock()),
         patch.object(db_ops, "update_channels", MagicMock()),
+        patch.object(db_ops, "update_messages", MagicMock()),
         patch.object(db_ops, "log_chatgpt_interaction", MagicMock()),
         patch.object(db_ops, "get_dink_balance", MagicMock(return_value=0.0)),
         patch.object(db_ops, "get_dink_ledger", MagicMock()),

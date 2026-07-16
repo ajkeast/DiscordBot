@@ -46,6 +46,57 @@ def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List
     return _image_urls_from_message(ctx)
 
 
+async def _ensure_message_row(ctx, content: str = "") -> None:
+    """Insert a messages row for slash invocations (they skip on_message).
+
+    AI logging FKs chatgpt_logs / dalle_3_prompts.message_id → messages.id.
+    Prefix commands are already stored in on_message before process_commands.
+    """
+    if ctx.interaction is None:
+        return
+    message_data = (
+        ctx.message.id,
+        ctx.author.id,
+        ctx.channel.id,
+        content or (getattr(ctx.message, "content", None) or ""),
+        ctx.message.created_at,
+    )
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, db_ops.update_messages, message_data)
+
+
+def _format_prompt_context(author, prompt: str) -> str:
+    """Blockquote the prompt so slash invocations are visible in-channel."""
+    attribution = f"\n— {author.mention}"
+    max_body = 2000 - len(attribution)
+    body = (prompt or "").strip() or "…"
+    if len(body) > max_body - 2:
+        body = body[: max_body - 5] + "..."
+    quoted = "\n".join(f"> {line}" if line else ">" for line in body.splitlines())
+    return f"{quoted}{attribution}"
+
+
+async def _send_slash_prompt_context(ctx, prompt: str):
+    """Post a visible prompt quote for slash commands; no-op for prefix."""
+    if ctx.interaction is None:
+        return None
+    return await ctx.send(_format_prompt_context(ctx.author, prompt))
+
+
+async def _send_answer(ctx, context_msg, content=None, **kwargs):
+    """Reply to the slash prompt quote when present; otherwise send normally."""
+    if context_msg is not None:
+        if content is not None:
+            await context_msg.reply(content, mention_author=False, **kwargs)
+        else:
+            await context_msg.reply(mention_author=False, **kwargs)
+    else:
+        if content is not None:
+            await ctx.send(content, **kwargs)
+        else:
+            await ctx.send(**kwargs)
+
+
 class AI(commands.Cog):
     """Chat, image generation, and voice."""
 
@@ -121,7 +172,13 @@ class AI(commands.Cog):
         prompt="Your question or message",
         image="Optional image to include with your question",
     )
-    async def ask(self, ctx, image: discord.Attachment = None, *, prompt: str):
+    async def ask(
+        self,
+        ctx,
+        *,
+        prompt: str,
+        image: Optional[discord.Attachment] = None,
+    ):
         """Ask a question. You can also attach images."""
 
         image_urls = _collect_image_urls(ctx, image)
@@ -131,7 +188,10 @@ class AI(commands.Cog):
             if self._session_turns >= MAX_GROK_SESSION_TURNS:
                 self._reset_session()
 
+            context_msg = await _send_slash_prompt_context(ctx, prompt)
+
             try:
+                await _ensure_message_row(ctx, content=prompt)
                 next_response_id, response_text = self.grok.send_message(
                     prompt,
                     previous_response_id=self.last_response_id,
@@ -142,14 +202,22 @@ class AI(commands.Cog):
                 )
             except Exception:
                 logger.exception("/ask failed for user %s", ctx.author.id)
-                await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
+                await _send_answer(
+                    ctx,
+                    context_msg,
+                    "Something broke on my end, dude. Check the bot logs and try again.",
+                )
                 return
 
             if next_response_id is not None:
                 self.last_response_id = next_response_id
                 self._session_turns += 1
 
-            await ctx.send(response_text or "Sorry, I couldn't generate a reply this time. Please try again.")
+            await _send_answer(
+                ctx,
+                context_msg,
+                response_text or "Sorry, I couldn't generate a reply this time. Please try again.",
+            )
 
     @commands.hybrid_command(brief="Generate an AI image")
     @commands.cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS, commands.BucketType.user)
@@ -162,19 +230,17 @@ class AI(commands.Cog):
     async def imagine(
         self,
         ctx,
-        image1: discord.Attachment = None,
-        image2: discord.Attachment = None,
-        image3: discord.Attachment = None,
         *,
         prompt: str,
+        image1: Optional[discord.Attachment] = None,
+        image2: Optional[discord.Attachment] = None,
+        image3: Optional[discord.Attachment] = None,
     ):
         """Generate an AI image based on a prompt and optional input images.
 
         Attach up to 3 images to edit or combine them; refer to them in the prompt
         as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
         """
-
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
 
         input_image_urls = _collect_image_urls(ctx, image1, image2, image3)
         if len(input_image_urls) > MAX_IMAGINE_INPUT_IMAGES:
@@ -184,6 +250,9 @@ class AI(commands.Cog):
             return
 
         async with acknowledge(ctx):
+            await _ensure_message_row(ctx, content=prompt)
+            db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
+
             response = call_grok_imagine(
                 prompt,
                 input_image_urls=input_image_urls or None,
@@ -242,10 +311,12 @@ class AI(commands.Cog):
             return
 
         async with acknowledge(ctx):
+            context_msg = await _send_slash_prompt_context(ctx, prompt)
             try:
                 if self._session_turns >= MAX_GROK_SESSION_TURNS:
                     self._reset_session()
 
+                await _ensure_message_row(ctx, content=prompt)
                 next_response_id, response_text = self.grok.send_message(
                     prompt,
                     previous_response_id=self.last_response_id,
@@ -259,7 +330,11 @@ class AI(commands.Cog):
                     self._session_turns += 1
 
                 if not response_text:
-                    await ctx.send("Sorry, I couldn't generate a spoken response. Please try again.")
+                    await _send_answer(
+                        ctx,
+                        context_msg,
+                        "Sorry, I couldn't generate a spoken response. Please try again.",
+                    )
                     return
 
                 tts_response = requests.post(
@@ -281,14 +356,22 @@ class AI(commands.Cog):
                     filename="voice.mp3"
                 )
 
-                await ctx.send(file=audio_file)
+                await _send_answer(ctx, context_msg, file=audio_file)
 
             except requests.exceptions.RequestException:
                 logger.exception("/voice TTS request failed for user %s", ctx.author.id)
-                await ctx.send("Something broke generating speech. Check the bot logs and try again.")
+                await _send_answer(
+                    ctx,
+                    context_msg,
+                    "Something broke generating speech. Check the bot logs and try again.",
+                )
             except Exception:
                 logger.exception("/voice failed for user %s", ctx.author.id)
-                await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
+                await _send_answer(
+                    ctx,
+                    context_msg,
+                    "Something broke on my end, dude. Check the bot logs and try again.",
+                )
 
 
 async def setup(bot):
