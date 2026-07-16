@@ -43,13 +43,13 @@ async def test_members(report, mock_db_ops, mock_bot, mock_ctx):
     rows = mock_db_ops.update_members.call_args.args[0]
     report.record("member id", 111, rows[0][0], section=SECTION_COMMANDS)
     report.record("member username", "alice", rows[0][1], section=SECTION_COMMANDS)
-    report.record("confirmation", "Member info successfully updated.", mock_ctx.channel.send.call_args.args[0], section=SECTION_COMMANDS)
+    report.record("confirmation", "Member info successfully updated.", mock_ctx.send.call_args.args[0], section=SECTION_COMMANDS)
 
     mock_db_ops.update_members.assert_called_once()
     assert len(rows) == 1
     assert rows[0][0] == 111
     assert rows[0][1] == "alice"
-    mock_ctx.channel.send.assert_awaited_once_with("Member info successfully updated.")
+    mock_ctx.send.assert_awaited_once_with("Member info successfully updated.")
 
 
 async def test_emojis(report, mock_db_ops, mock_bot, mock_ctx):
@@ -67,11 +67,11 @@ async def test_emojis(report, mock_db_ops, mock_bot, mock_ctx):
 
     rows = mock_db_ops.update_emojis.call_args.args[0]
     report.record("emoji name", "pepe", rows[0][1], section=SECTION_COMMANDS)
-    report.record("confirmation", "Emoji info successfully updated.", mock_ctx.channel.send.call_args.args[0], section=SECTION_COMMANDS)
+    report.record("confirmation", "Emoji info successfully updated.", mock_ctx.send.call_args.args[0], section=SECTION_COMMANDS)
 
     mock_db_ops.update_emojis.assert_called_once()
     assert rows[0][1] == "pepe"
-    mock_ctx.channel.send.assert_awaited_once_with("Emoji info successfully updated.")
+    mock_ctx.send.assert_awaited_once_with("Emoji info successfully updated.")
 
 
 async def test_channels(report, mock_db_ops, mock_bot, mock_ctx):
@@ -88,9 +88,9 @@ async def test_channels(report, mock_db_ops, mock_bot, mock_ctx):
     rows = mock_db_ops.update_channels.call_args.args[0]
     report.record("channel id", 444, rows[0][0], section=SECTION_COMMANDS)
     report.record("channel name", "general", rows[0][1], section=SECTION_COMMANDS)
-    report.record("confirmation", "Channel info successfully updated.", mock_ctx.channel.send.call_args.args[0], section=SECTION_COMMANDS)
+    report.record("confirmation", "Channel info successfully updated.", mock_ctx.send.call_args.args[0], section=SECTION_COMMANDS)
 
     mock_db_ops.update_channels.assert_called_once()
     assert rows[0][0] == 444
     assert rows[0][1] == "general"
-    mock_ctx.channel.send.assert_awaited_once_with("Channel info successfully updated.")
+    mock_ctx.send.assert_awaited_once_with("Channel info successfully updated.")

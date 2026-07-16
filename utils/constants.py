@@ -20,9 +20,9 @@ MAX_GROK_SESSION_TURNS = 20
 # Grok Imagine multi-reference edit limit (xAI API: up to 3 source images).
 MAX_IMAGINE_INPUT_IMAGES = 3
 
-# Per-user _imagine rate limit (discord.py cooldown: rate uses per period seconds).
+# Per-user /imagine rate limit (discord.py cooldown: rate uses per period seconds).
 IMAGINE_RATE_LIMIT = 30
 IMAGINE_RATE_PERIOD_SECONDS = 3600
 
-# DINK awarded for each successful _1st claim (MySQL ledger only)
+# DINK awarded for each successful /1st claim (MySQL ledger only)
 DINK_MINT_AMOUNT = float(os.getenv("DINK_MINT_AMOUNT", "1"))

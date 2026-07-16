@@ -1,4 +1,5 @@
 from discord.ext import commands, tasks
+from discord import app_commands
 from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
 from utils.constants import (
     EMBED_COLOR,
@@ -8,7 +9,9 @@ from utils.constants import (
     MAX_IMAGINE_INPUT_IMAGES,
 )
 from utils.db import db_ops
+from utils.interactions import acknowledge
 from datetime import datetime, timedelta
+from typing import List, Optional
 import asyncio
 import discord
 import pytz
@@ -23,6 +26,26 @@ EASTERN = pytz.timezone("US/Eastern")
 DAILY_CLEAR_HOUR = 3  # 3am US/Eastern
 
 
+def _image_urls_from_message(ctx) -> List[str]:
+    return [
+        a.url
+        for a in ctx.message.attachments
+        if a.content_type and a.content_type.startswith("image/")
+    ]
+
+
+def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List[str]:
+    """Prefer explicit slash attachment options; fall back to message attachments."""
+    urls = [
+        a.url
+        for a in attachments
+        if a is not None and a.content_type and a.content_type.startswith("image/")
+    ]
+    if urls:
+        return urls
+    return _image_urls_from_message(ctx)
+
+
 class AI(commands.Cog):
     """Chat, image generation, and voice."""
 
@@ -34,8 +57,8 @@ class AI(commands.Cog):
         self._session_turns = 0  # turns in current session; reset when starting fresh or hitting limit
         self.system_prompt = (
             "You are Peter Dinklage, the resident bot of this Discord server (Dinkscord). "
-            "You are not just a chat assistant: you run the daily _1st game, the DinkCoin (DINK) economy, "
-            "image generation, and server stats. Commands use the '_' prefix. "
+            "You are not just a chat assistant: you run the daily /1st game, the DinkCoin (DINK) economy, "
+            "image generation, and server stats. Commands are slash commands (also available with the '_' prefix). "
             "You speak to server members as yourself — never as a separate AI product. "
             "Never mention API providers, model names, databases, table names, code files, "
             "environment variables, or other internal implementation details. "
@@ -93,24 +116,24 @@ class AI(commands.Cog):
         next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
         await asyncio.sleep((next_hour - now).total_seconds())
 
-    @commands.command(brief="Ask a question")
-    async def ask(self, ctx, *, arg):
+    @commands.hybrid_command(brief="Ask a question")
+    @app_commands.describe(
+        prompt="Your question or message",
+        image="Optional image to include with your question",
+    )
+    async def ask(self, ctx, image: discord.Attachment = None, *, prompt: str):
         """Ask a question. You can also attach images."""
 
-        image_urls = [
-            a.url
-            for a in ctx.message.attachments
-            if a.content_type and a.content_type.startswith("image/")
-        ]
+        image_urls = _collect_image_urls(ctx, image)
 
-        async with ctx.typing():
+        async with acknowledge(ctx):
             # Start a new session if we've hit the turn limit (keeps context/cost bounded)
             if self._session_turns >= MAX_GROK_SESSION_TURNS:
                 self._reset_session()
 
             try:
                 next_response_id, response_text = self.grok.send_message(
-                    arg,
+                    prompt,
                     previous_response_id=self.last_response_id,
                     system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
@@ -118,7 +141,7 @@ class AI(commands.Cog):
                     image_urls=image_urls if image_urls else None,
                 )
             except Exception:
-                logger.exception("_ask failed for user %s", ctx.author.id)
+                logger.exception("/ask failed for user %s", ctx.author.id)
                 await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
                 return
 
@@ -128,31 +151,41 @@ class AI(commands.Cog):
 
             await ctx.send(response_text or "Sorry, I couldn't generate a reply this time. Please try again.")
 
-    @commands.command(brief="Generate an AI image")
+    @commands.hybrid_command(brief="Generate an AI image")
     @commands.cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS, commands.BucketType.user)
-    async def imagine(self, ctx, *, arg):
+    @app_commands.describe(
+        prompt="Describe the image to generate or edit",
+        image1="Optional first reference image",
+        image2="Optional second reference image",
+        image3="Optional third reference image",
+    )
+    async def imagine(
+        self,
+        ctx,
+        image1: discord.Attachment = None,
+        image2: discord.Attachment = None,
+        image3: discord.Attachment = None,
+        *,
+        prompt: str,
+    ):
         """Generate an AI image based on a prompt and optional input images.
 
         Attach up to 3 images to edit or combine them; refer to them in the prompt
         as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
         """
 
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=arg, message_id=ctx.message.id)
+        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
 
-        input_image_urls = [
-            a.url
-            for a in ctx.message.attachments
-            if a.content_type and a.content_type.startswith("image/")
-        ]
+        input_image_urls = _collect_image_urls(ctx, image1, image2, image3)
         if len(input_image_urls) > MAX_IMAGINE_INPUT_IMAGES:
             await ctx.send(
-                f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `_imagine`."
+                f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `/imagine`."
             )
             return
 
-        async with ctx.typing():
+        async with acknowledge(ctx):
             response = call_grok_imagine(
-                arg,
+                prompt,
                 input_image_urls=input_image_urls or None,
             )
 
@@ -163,7 +196,7 @@ class AI(commands.Cog):
                 )
                 embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
                 embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
-                embed.add_field(name="Prompt", value=arg, inline=False)
+                embed.add_field(name="Prompt", value=prompt, inline=False)
                 if input_image_urls:
                     count = len(input_image_urls)
                     embed.add_field(
@@ -174,7 +207,7 @@ class AI(commands.Cog):
                 embed.set_footer(text=f"Requested by {ctx.author.display_name}")
                 await ctx.send(embed=embed, file=image_file)
             else:
-                logger.error("_imagine failed: %s", response.get("error"))
+                logger.error("/imagine failed: %s", response.get("error"))
                 await ctx.send(
                     embed=discord.Embed(
                         title="❌ Error",
@@ -183,22 +216,23 @@ class AI(commands.Cog):
                     )
                 )
 
-    @commands.command(brief="Clear the shared chat")
+    @commands.hybrid_command(brief="Clear the shared chat")
     async def clear(self, ctx):
-        """Clear the shared chat so the next _ask starts fresh."""
+        """Clear the shared chat so the next /ask starts fresh."""
 
         self._reset_session()
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
 
-    @commands.command(brief="Answer a prompt out loud")
-    async def voice(self, ctx, *, text):
+    @commands.hybrid_command(brief="Answer a prompt out loud")
+    @app_commands.describe(prompt="The prompt to answer and speak aloud")
+    async def voice(self, ctx, *, prompt: str):
         """Answer a prompt and read the reply aloud."""
 
-        if not text:
+        if not prompt:
             await ctx.send("Please provide text to convert to speech.")
             return
 
-        if len(text) > 15000:
+        if len(prompt) > 15000:
             await ctx.send("Text is too long. Maximum 15,000 characters.")
             return
 
@@ -207,13 +241,13 @@ class AI(commands.Cog):
             await ctx.send("XAI API key not configured.")
             return
 
-        async with ctx.typing():
+        async with acknowledge(ctx):
             try:
                 if self._session_turns >= MAX_GROK_SESSION_TURNS:
                     self._reset_session()
 
                 next_response_id, response_text = self.grok.send_message(
-                    text,
+                    prompt,
                     previous_response_id=self.last_response_id,
                     system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
@@ -250,10 +284,10 @@ class AI(commands.Cog):
                 await ctx.send(file=audio_file)
 
             except requests.exceptions.RequestException:
-                logger.exception("_voice TTS request failed for user %s", ctx.author.id)
+                logger.exception("/voice TTS request failed for user %s", ctx.author.id)
                 await ctx.send("Something broke generating speech. Check the bot logs and try again.")
             except Exception:
-                logger.exception("_voice failed for user %s", ctx.author.id)
+                logger.exception("/voice failed for user %s", ctx.author.id)
                 await ctx.send("Something broke on my end, dude. Check the bot logs and try again.")
 
 

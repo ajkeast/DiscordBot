@@ -91,11 +91,13 @@ def mock_ctx(mock_author):
     ctx.message.author = mock_author
     ctx.message.mentions = []
     ctx.message.attachments = []
+    ctx.interaction = None
 
     typing_cm = AsyncMock()
     typing_cm.__aenter__ = AsyncMock(return_value=None)
     typing_cm.__aexit__ = AsyncMock(return_value=None)
     ctx.typing = MagicMock(return_value=typing_cm)
+    ctx.defer = AsyncMock()
 
     return ctx
 

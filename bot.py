@@ -21,6 +21,9 @@ logging.basicConfig(
     force=True,
 )
 
+logger = logging.getLogger(__name__)
+
+
 # Setup bot
 class DinkBot(commands.Bot):
     """A Discord bot with first-tracking, AI capabilities, and utility functions."""
@@ -37,7 +40,20 @@ class DinkBot(commands.Bot):
         await self.load_extension('cogs.utility')
         await self.load_extension('cogs.misc')
 
+        await self._sync_app_commands()
         self.loop.create_task(self._console_post_loop())
+
+    async def _sync_app_commands(self):
+        """Register slash commands with Discord (guild sync when DISCORD_GUILD_ID is set)."""
+        guild_id = os.getenv("DISCORD_GUILD_ID")
+        if guild_id:
+            guild = discord.Object(id=int(guild_id))
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            logger.info("Synced %s app commands to guild %s", len(synced), guild_id)
+        else:
+            synced = await self.tree.sync()
+            logger.info("Synced %s app commands globally", len(synced))
 
     async def _console_post_loop(self):
         await self.wait_until_ready()
@@ -60,11 +76,10 @@ class DinkBot(commands.Bot):
         if isinstance(error, commands.CommandOnCooldown):
             minutes = max(1, math.ceil(error.retry_after / 60))
             await ctx.send(
-                f"You've hit the `_imagine` limit (30 per hour). "
+                f"You've hit the `/imagine` limit (30 per hour). "
                 f"Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
             )
             return
-        logger = logging.getLogger(__name__)
         logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)
         await ctx.send("Something went wrong running that command.")
 

@@ -1,6 +1,7 @@
 import logging
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from utils.constants import EMBED_COLOR
@@ -15,13 +16,14 @@ class DinkCoin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(brief="Check your DINK balance")
+    @commands.hybrid_command(brief="Check your DINK balance")
     async def balance(self, ctx):
         """Show your DINK balance."""
         balance = db_ops.get_dink_balance(ctx.author.id)
         await ctx.send(f"{ctx.author.mention} has **{balance:g} DINK**")
 
-    @commands.command(brief="Show the DINK leaderboard")
+    @commands.hybrid_command(brief="Show the DINK leaderboard")
+    @app_commands.describe(limit="How many holders to show (1–20, default 10)")
     async def ledger(self, ctx, limit: int = 10):
         """Show the DINK leaderboard."""
         limit = min(max(limit, 1), 20)
@@ -37,7 +39,7 @@ class DinkCoin(commands.Cog):
         if df.empty:
             embed.add_field(
                 name="No balances yet",
-                value="Claim `_1st` to earn your first DINK!",
+                value="Claim `/1st` to earn your first DINK!",
                 inline=False,
             )
         else:
@@ -53,9 +55,13 @@ class DinkCoin(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @commands.command(brief="Send DINK to another user")
+    @commands.hybrid_command(brief="Send DINK to another user")
+    @app_commands.describe(
+        member="Who to send DINK to",
+        amount="Whole number of DINK to send",
+    )
     async def pay(self, ctx, member: discord.Member, amount: float):
-        """Send DINK to another user. Usage: `_pay @user <amount>`"""
+        """Send DINK to another user."""
         if member.bot:
             await ctx.send("You cannot pay bots.")
             return
