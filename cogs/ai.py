@@ -46,6 +46,25 @@ def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List
     return _image_urls_from_message(ctx)
 
 
+async def _ensure_message_row(ctx, content: str = "") -> None:
+    """Insert a messages row for slash invocations (they skip on_message).
+
+    AI logging FKs chatgpt_logs / dalle_3_prompts.message_id → messages.id.
+    Prefix commands are already stored in on_message before process_commands.
+    """
+    if ctx.interaction is None:
+        return
+    message_data = (
+        ctx.message.id,
+        ctx.author.id,
+        ctx.channel.id,
+        content or (getattr(ctx.message, "content", None) or ""),
+        ctx.message.created_at,
+    )
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, db_ops.update_messages, message_data)
+
+
 class AI(commands.Cog):
     """Chat, image generation, and voice."""
 
@@ -121,7 +140,13 @@ class AI(commands.Cog):
         prompt="Your question or message",
         image="Optional image to include with your question",
     )
-    async def ask(self, ctx, image: discord.Attachment = None, *, prompt: str):
+    async def ask(
+        self,
+        ctx,
+        *,
+        prompt: str,
+        image: Optional[discord.Attachment] = None,
+    ):
         """Ask a question. You can also attach images."""
 
         image_urls = _collect_image_urls(ctx, image)
@@ -132,6 +157,7 @@ class AI(commands.Cog):
                 self._reset_session()
 
             try:
+                await _ensure_message_row(ctx, content=prompt)
                 next_response_id, response_text = self.grok.send_message(
                     prompt,
                     previous_response_id=self.last_response_id,
@@ -162,19 +188,17 @@ class AI(commands.Cog):
     async def imagine(
         self,
         ctx,
-        image1: discord.Attachment = None,
-        image2: discord.Attachment = None,
-        image3: discord.Attachment = None,
         *,
         prompt: str,
+        image1: Optional[discord.Attachment] = None,
+        image2: Optional[discord.Attachment] = None,
+        image3: Optional[discord.Attachment] = None,
     ):
         """Generate an AI image based on a prompt and optional input images.
 
         Attach up to 3 images to edit or combine them; refer to them in the prompt
         as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
         """
-
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
 
         input_image_urls = _collect_image_urls(ctx, image1, image2, image3)
         if len(input_image_urls) > MAX_IMAGINE_INPUT_IMAGES:
@@ -184,6 +208,9 @@ class AI(commands.Cog):
             return
 
         async with acknowledge(ctx):
+            await _ensure_message_row(ctx, content=prompt)
+            db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
+
             response = call_grok_imagine(
                 prompt,
                 input_image_urls=input_image_urls or None,
@@ -246,6 +273,7 @@ class AI(commands.Cog):
                 if self._session_turns >= MAX_GROK_SESSION_TURNS:
                     self._reset_session()
 
+                await _ensure_message_row(ctx, content=prompt)
                 next_response_id, response_text = self.grok.send_message(
                     prompt,
                     previous_response_id=self.last_response_id,
