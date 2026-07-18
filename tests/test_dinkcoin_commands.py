@@ -131,6 +131,7 @@ async def test_request_sends_buttons(mock_db_ops, mock_bot, mock_ctx):
 
 
 async def test_request_self(mock_db_ops, mock_bot, mock_ctx):
+    mock_ctx.author.bot = False
     cog = DinkCoin(mock_bot)
     await cog.request.callback(cog, mock_ctx, mock_ctx.author, 1)
 
