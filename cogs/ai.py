@@ -66,7 +66,7 @@ async def _ensure_message_row(ctx, content: str = "") -> None:
 
 
 def _format_prompt_context(author, prompt: str) -> str:
-    """Blockquote the prompt so slash invocations are visible in-channel."""
+    """Blockquote the prompt so slash /voice invocations are visible in-channel."""
     attribution = f"\n— {author.mention}"
     max_body = 2000 - len(attribution)
     body = (prompt or "").strip() or "…"
@@ -76,15 +76,33 @@ def _format_prompt_context(author, prompt: str) -> str:
     return f"{quoted}{attribution}"
 
 
+def _format_slash_ask_message(author, prompt: str, response: str) -> str:
+    """Format slash /ask as '@user: prompt\\n\\nresponse' (Discord 2000-char limit)."""
+    header = f"{author.mention}: "
+    sep = "\n\n"
+    prompt_body = (prompt or "").strip() or "…"
+    answer = (response or "").strip() or "…"
+    available = 2000 - len(header) - len(sep)
+    if len(prompt_body) + len(answer) > available:
+        # Prefer keeping the answer; trim the prompt first, then the answer.
+        max_prompt = min(len(prompt_body), max(32, available // 3))
+        if len(prompt_body) > max_prompt:
+            prompt_body = prompt_body[: max_prompt - 3] + "..."
+        max_answer = available - len(prompt_body)
+        if len(answer) > max_answer:
+            answer = answer[: max_answer - 3] + "..."
+    return f"{header}{prompt_body}{sep}{answer}"
+
+
 async def _send_slash_prompt_context(ctx, prompt: str):
-    """Post a visible prompt quote for slash commands; no-op for prefix."""
+    """Post a visible prompt quote for slash /voice; no-op for prefix."""
     if ctx.interaction is None:
         return None
     return await ctx.send(_format_prompt_context(ctx.author, prompt))
 
 
 async def _send_answer(ctx, context_msg, content=None, **kwargs):
-    """Reply to the slash prompt quote when present; otherwise send normally."""
+    """Reply to the slash /voice prompt quote when present; otherwise send normally."""
     if context_msg is not None:
         if content is not None:
             await context_msg.reply(content, mention_author=False, **kwargs)
@@ -95,6 +113,14 @@ async def _send_answer(ctx, context_msg, content=None, **kwargs):
             await ctx.send(content, **kwargs)
         else:
             await ctx.send(**kwargs)
+
+
+async def _send_ask_answer(ctx, prompt: str, content: str):
+    """Send /ask answer; slash includes '@user: prompt' in one message."""
+    if ctx.interaction is not None:
+        await ctx.send(_format_slash_ask_message(ctx.author, prompt, content))
+    else:
+        await ctx.send(content)
 
 
 class AI(commands.Cog):
@@ -188,8 +214,6 @@ class AI(commands.Cog):
             if self._session_turns >= MAX_GROK_SESSION_TURNS:
                 self._reset_session()
 
-            context_msg = await _send_slash_prompt_context(ctx, prompt)
-
             try:
                 await _ensure_message_row(ctx, content=prompt)
                 next_response_id, response_text = self.grok.send_message(
@@ -202,9 +226,9 @@ class AI(commands.Cog):
                 )
             except Exception:
                 logger.exception("/ask failed for user %s", ctx.author.id)
-                await _send_answer(
+                await _send_ask_answer(
                     ctx,
-                    context_msg,
+                    prompt,
                     "Something broke on my end, dude. Check the bot logs and try again.",
                 )
                 return
@@ -213,9 +237,9 @@ class AI(commands.Cog):
                 self.last_response_id = next_response_id
                 self._session_turns += 1
 
-            await _send_answer(
+            await _send_ask_answer(
                 ctx,
-                context_msg,
+                prompt,
                 response_text or "Sorry, I couldn't generate a reply this time. Please try again.",
             )
 
