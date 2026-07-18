@@ -26,3 +26,9 @@ IMAGINE_RATE_PERIOD_SECONDS = 3600
 
 # DINK awarded for each successful /1st claim (MySQL ledger only)
 DINK_MINT_AMOUNT = float(os.getenv("DINK_MINT_AMOUNT", "1"))
+
+# Public Dinkscord dashboard
+DINKSCORD_URL = "https://dinkscord.com"
+
+# Temporary: append site promo + link button on successful /1st claims
+PROMOTE_DINKSCORD_ON_FIRST = True

@@ -17,7 +17,7 @@ EXPECTED_COMMANDS = frozenset({
     "balance", "ledger", "pay",
     "ask", "imagine", "clear", "voice",
     "members", "emojis", "channels",
-    "hello", "ping", "simonsays",
+    "hello", "ping", "simonsays", "dashboard",
     "donation",
 })
 

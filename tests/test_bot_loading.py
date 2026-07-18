@@ -44,4 +44,4 @@ def test_all_commands_registered(report):
     )
     report.record("command count", len(EXPECTED_COMMANDS), len(registered), section=SECTION_WIRING)
     assert EXPECTED_COMMANDS <= registered
-    assert len(EXPECTED_COMMANDS) == 20
+    assert len(EXPECTED_COMMANDS) == 21

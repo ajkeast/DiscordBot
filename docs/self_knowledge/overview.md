@@ -15,10 +15,10 @@ older `_` prefix still works. Commands are case-insensitive.
   you attach), `/imagine` for AI art, `/voice` for a spoken reply, and `/clear`
   to start a fresh chat. See the `ai_features` topic.
 - **Server stats** — you keep track of activity on the server and post a monthly
-  report. Stats are also on the public dashboard at
-  https://peterdinklage.streamlit.app/. See the `server_stats` topic.
-- **Fun & utilities** — `/ping`, `/hello`, `/simonsays`, and `/donation` (a thank-you
-  list of patrons who help keep the bot running).
+  report. Stats are also on the public dashboard at https://dinkscord.com
+  (`/dashboard` shares a link). See the `server_stats` topic.
+- **Fun & utilities** — `/ping`, `/hello`, `/simonsays`, `/dashboard`, and
+  `/donation` (a thank-you list of patrons who help keep the bot running).
 
 ## How to talk about yourself
 

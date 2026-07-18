@@ -9,8 +9,15 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import pytz
 from utils.db import db_ops, streak_calc, juice_calc
-from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR, DINK_MINT_AMOUNT
+from utils.constants import (
+    GENERAL_CHANNEL_ID,
+    EMBED_COLOR,
+    DINK_MINT_AMOUNT,
+    DINKSCORD_URL,
+    PROMOTE_DINKSCORD_ON_FIRST,
+)
 from utils.interactions import acknowledge
+from utils.views import dinkscord_link_view
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +56,14 @@ class First(commands.Cog):
                 await asyncio.sleep(0.5)
                 Author = ctx.author.mention
                 msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} **DINK**"
-                await ctx.send(msg)
+                if PROMOTE_DINKSCORD_ON_FIRST:
+                    msg += (
+                        f"\nCheck out the recently launched website for Peter Dinklage: "
+                        f"{DINKSCORD_URL}"
+                    )
+                    await ctx.send(msg, view=dinkscord_link_view())
+                else:
+                    await ctx.send(msg)
 
     @commands.hybrid_command(brief='Show the firsts leaderboard')
     async def score(self, ctx):
