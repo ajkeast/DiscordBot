@@ -8,7 +8,14 @@ import pytz
 
 from cogs.first import First
 from tests.reporting import SECTION_COMMANDS
-from utils.constants import GENERAL_CHANNEL_ID
+from utils.constants import DINKSCORD_URL, GENERAL_CHANNEL_ID
+
+
+def _expected_first_win(mention: str) -> str:
+    return (
+        f"{mention} is first today! 🥳 +1 **DINK**\n"
+        f"Check out the recently launched website for Peter Dinklage: {DINKSCORD_URL}"
+    )
 
 
 def _est_today_df(date_str: str, user_id: str = "999") -> pd.DataFrame:
@@ -39,7 +46,7 @@ async def test_first_wrong_channel(report, mock_bot, mock_ctx):
 async def test_first_successful_claim(
     mock_datetime, _mock_sleep, report, mock_db_ops, mock_bot, mock_ctx,
 ):
-    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 **DINK**"
+    expected = _expected_first_win(mock_ctx.author.mention)
     est = pytz.timezone("US/Eastern")
     today = est.localize(datetime(2024, 6, 11, 8, 0, 0))
 
@@ -55,7 +62,9 @@ async def test_first_successful_claim(
 
     mock_db_ops.write_first_entry.assert_called_once_with(mock_ctx.author.id)
     mock_db_ops.record_dink_mint.assert_called_once_with(mock_ctx.author.id, 1.0)
-    mock_ctx.send.assert_awaited_once_with(expected)
+    mock_ctx.send.assert_awaited_once()
+    assert actual == expected
+    assert mock_ctx.send.call_args.kwargs.get("view") is not None
 
 
 @patch("cogs.first.datetime")
@@ -143,7 +152,7 @@ async def test_juice(report, mock_db_ops, mock_bot, mock_ctx, leaderboard_first_
 async def test_first_empty_table_allows_claim(
     mock_datetime, _mock_sleep, report, mock_db_ops, mock_bot, mock_ctx, empty_first_df,
 ):
-    expected = f"{mock_ctx.author.mention} is first today! 🥳 +1 **DINK**"
+    expected = _expected_first_win(mock_ctx.author.mention)
     est = pytz.timezone("US/Eastern")
     today = est.localize(datetime(2024, 6, 11, 8, 0, 0))
 
@@ -159,7 +168,9 @@ async def test_first_empty_table_allows_claim(
 
     mock_db_ops.write_first_entry.assert_called_once_with(mock_ctx.author.id)
     mock_db_ops.record_dink_mint.assert_called_once_with(mock_ctx.author.id, 1.0)
-    mock_ctx.send.assert_awaited_once_with(expected)
+    mock_ctx.send.assert_awaited_once()
+    assert actual == expected
+    assert mock_ctx.send.call_args.kwargs.get("view") is not None
 
 
 async def test_score_empty(report, mock_db_ops, mock_bot, mock_ctx, empty_first_df):

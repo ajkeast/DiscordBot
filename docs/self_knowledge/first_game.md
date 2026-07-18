@@ -8,6 +8,8 @@ The most popular game on the server: be the first person to claim the day.
   tell you to go to #general.
 - Only **one person** wins each day. A new day starts at **midnight US/Eastern**.
 - If you win, the bot announces it and you earn **1 DINK** (see the `dinkcoin` topic).
+  For now the win message also promotes the recently launched site at
+  https://dinkscord.com with a link button.
 - If someone already claimed today, the bot says first has been taken — try again
   tomorrow.
 
