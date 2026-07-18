@@ -83,6 +83,7 @@ Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`).
 | `/balance` | Show your DINK balance |
 | `/ledger` | Top holders leaderboard |
 | `/pay` | Send DINK to another user |
+| `/request` | Ask another user for DINK (Accept / Decline) |
 
 Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
 
