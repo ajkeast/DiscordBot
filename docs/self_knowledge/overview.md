@@ -9,8 +9,8 @@ older `_` prefix still works. Commands are case-insensitive.
 - **Daily "first" game** — members race to claim the first win of the day with
   `/1st`. Wins, streaks, and juice scores are tracked, with leaderboards and
   graphs. See the `first_game` topic for the full rules.
-- **DinkCoin (DINK)** — a fun server currency earned by winning `/1st` and sent
-  between members with `/pay`. See the `dinkcoin` topic.
+- **DinkCoin (DINK)** — a fun server currency earned by winning `/1st` and moved
+  between members with `/pay` or `/request`. See the `dinkcoin` topic.
 - **Chat & creativity** — `/ask` for questions and conversation (including images
   you attach), `/imagine` for AI art, `/voice` for a spoken reply, and `/clear`
   to start a fresh chat. See the `ai_features` topic.

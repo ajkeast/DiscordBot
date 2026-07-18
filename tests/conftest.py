@@ -14,7 +14,7 @@ from utils.constants import GENERAL_CHANNEL_ID  # noqa: E402
 
 EXPECTED_COMMANDS = frozenset({
     "1st", "score", "stats", "juice", "graph", "juicegraph",
-    "balance", "ledger", "pay",
+    "balance", "ledger", "pay", "request",
     "ask", "imagine", "clear", "voice",
     "members", "emojis", "channels",
     "hello", "ping", "simonsays", "dashboard",
