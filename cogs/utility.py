@@ -1,8 +1,6 @@
 from discord import app_commands
 from discord.ext import commands
-from utils.constants import DINKSCORD_URL
 from utils.views import dinkscord_link_view
-
 
 
 class Utility(commands.Cog):
@@ -32,10 +30,8 @@ class Utility(commands.Cog):
     @commands.hybrid_command(brief='Link to the Dinkscord dashboard')
     async def dashboard(self, ctx):
         """Share a link button to the public Dinkscord dashboard."""
-        await ctx.send(
-            f"Check out the Dinkscord dashboard: {DINKSCORD_URL}",
-            view=dinkscord_link_view(),
-        )
+        # Discord requires message content; zero-width space keeps it button-only.
+        await ctx.send("\u200b", view=dinkscord_link_view())
 
 
 async def setup(bot):

@@ -2,7 +2,6 @@
 
 from cogs.utility import Utility
 from tests.reporting import SECTION_COMMANDS
-from utils.constants import DINKSCORD_URL
 
 
 async def test_hello(report, mock_bot, mock_ctx):
@@ -33,7 +32,7 @@ async def test_simonsays(report, mock_bot, mock_ctx):
 
 
 async def test_dashboard(report, mock_bot, mock_ctx):
-    expected = f"Check out the Dinkscord dashboard: {DINKSCORD_URL}"
+    expected = "\u200b"
     cog = Utility(mock_bot)
     await cog.dashboard.callback(cog, mock_ctx)
     actual = mock_ctx.send.call_args.args[0]
