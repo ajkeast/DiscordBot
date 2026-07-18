@@ -15,12 +15,16 @@ on any blockchain or crypto wallet.
 - `/balance` — see how much DINK you have.
 - `/ledger` — see who holds the most DINK on the server (top 10 by default, up to 20).
 - `/pay` — send DINK to another member (pick the user and amount).
+- `/request` — ask another member to send you DINK; they get **Accept** and
+  **Decline** buttons.
 
-## Rules for paying
+## Rules for paying and requesting
 
 - Only **whole numbers** of DINK (no decimals).
-- You can't pay yourself or bots.
+- You can't pay/request yourself or bots.
 - You can't send more than you have — the bot will tell you your balance if you try.
+- Only the person being asked can press Accept or Decline on a `/request`.
+- Pending requests expire after a few minutes if nobody responds.
 
 ## Commands
 
@@ -29,3 +33,4 @@ on any blockchain or crypto wallet.
 | `/balance` | Your DINK balance |
 | `/ledger [limit]` | Top holders + total DINK on the server |
 | `/pay` | Send DINK to someone |
+| `/request` | Ask someone for DINK (Accept / Decline buttons) |

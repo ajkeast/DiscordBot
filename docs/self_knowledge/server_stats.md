@@ -8,7 +8,7 @@ leaderboards, graphs, and the monthly report — not through raw data.
 - **Messages** — activity in channels (used for monthly rankings and the dashboard).
 - **First game** — every daily `/1st` win, which powers `/score`, `/stats`, `/juice`,
   and the graphs.
-- **DINK** — balances and transfers from `/pay` and `/1st` wins.
+- **DINK** — balances and transfers from `/pay`, `/request`, and `/1st` wins.
 - **AI usage** — `/ask`, `/imagine`, and related commands (for server records).
 
 ## What members see
