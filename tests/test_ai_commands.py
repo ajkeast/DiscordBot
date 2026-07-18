@@ -43,9 +43,7 @@ async def test_ask_slash_inserts_message_row(report, mock_db_ops, ai_cog, mock_c
 
     mock_ctx.interaction = MagicMock()
     mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
-    context_msg = AsyncMock()
-    context_msg.reply = AsyncMock()
-    mock_ctx.send = AsyncMock(return_value=context_msg)
+    mock_ctx.send = AsyncMock()
     ai_cog.grok.send_message.return_value = ("new-id", "ok")
 
     await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="hello slash")
@@ -59,29 +57,20 @@ async def test_ask_slash_inserts_message_row(report, mock_db_ops, ai_cog, mock_c
     ai_cog.grok.send_message.assert_called_once()
 
 
-async def test_ask_slash_quotes_prompt_then_replies(report, mock_db_ops, ai_cog, mock_ctx):
+async def test_ask_slash_single_message_with_prompt(report, mock_db_ops, ai_cog, mock_ctx):
     from datetime import datetime, timezone
 
     mock_ctx.interaction = MagicMock()
     mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
-    context_msg = AsyncMock()
-    context_msg.reply = AsyncMock()
-    mock_ctx.send = AsyncMock(return_value=context_msg)
+    mock_ctx.send = AsyncMock()
     ai_cog.grok.send_message.return_value = ("new-id", "answer only")
 
     await ai_cog.ask.callback(ai_cog, mock_ctx, prompt="what is juice?")
 
-    context_text = mock_ctx.send.call_args.args[0]
-    report.record("context has prompt", True, "what is juice?" in context_text, section=SECTION_COMMANDS)
-    report.record("context is quote", True, context_text.startswith(">"), section=SECTION_COMMANDS)
-    report.record("answer via reply", "answer only", context_msg.reply.call_args.args[0], section=SECTION_COMMANDS)
-
-    assert "what is juice?" in context_text
-    assert context_text.startswith(">")
-    assert mock_ctx.author.mention in context_text
-    context_msg.reply.assert_awaited_once_with("answer only", mention_author=False)
-    # Answer must not restate the prompt
-    assert context_msg.reply.call_args.args[0] == "answer only"
+    expected = f"{mock_ctx.author.mention}: what is juice?\n\nanswer only"
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("slash ask message", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.send.assert_awaited_once_with(expected)
 
 
 async def test_ask_prefix_skips_message_insert(report, mock_db_ops, ai_cog, mock_ctx):
@@ -102,6 +91,16 @@ def test_format_prompt_context_quotes_and_attributes(report, mock_author):
     assert "> line one" in text
     assert "> line two" in text
     assert mock_author.mention in text
+
+
+def test_format_slash_ask_message(report, mock_author):
+    from cogs.ai import _format_slash_ask_message
+
+    text = _format_slash_ask_message(mock_author, "what is juice?", "minutes to midnight")
+    expected = f"{mock_author.mention}: what is juice?\n\nminutes to midnight"
+    report.record("slash ask format", expected, text, section=SECTION_COMMANDS)
+    assert text == expected
+    assert len(text) <= 2000
 
 
 def test_ask_image_option_is_optional(report, ai_cog):

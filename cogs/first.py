@@ -13,7 +13,6 @@ from utils.constants import (
     GENERAL_CHANNEL_ID,
     EMBED_COLOR,
     DINK_MINT_AMOUNT,
-    DINKSCORD_URL,
     PROMOTE_DINKSCORD_ON_FIRST,
 )
 from utils.interactions import acknowledge
@@ -57,10 +56,7 @@ class First(commands.Cog):
                 Author = ctx.author.mention
                 msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} **DINK**"
                 if PROMOTE_DINKSCORD_ON_FIRST:
-                    msg += (
-                        f"\nCheck out the recently launched website for Peter Dinklage: "
-                        f"{DINKSCORD_URL}"
-                    )
+                    msg += "\nCheck out the new Dinkscord website"
                     await ctx.send(msg, view=dinkscord_link_view())
                 else:
                     await ctx.send(msg)

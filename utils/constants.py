@@ -30,5 +30,5 @@ DINK_MINT_AMOUNT = float(os.getenv("DINK_MINT_AMOUNT", "1"))
 # Public Dinkscord dashboard
 DINKSCORD_URL = "https://dinkscord.com"
 
-# Temporary: append site promo + link button on successful /1st claims
+# Temporary: append site promo text + link button on successful /1st claims
 PROMOTE_DINKSCORD_ON_FIRST = True

@@ -8,13 +8,13 @@ import pytz
 
 from cogs.first import First
 from tests.reporting import SECTION_COMMANDS
-from utils.constants import DINKSCORD_URL, GENERAL_CHANNEL_ID
+from utils.constants import GENERAL_CHANNEL_ID
 
 
 def _expected_first_win(mention: str) -> str:
     return (
         f"{mention} is first today! 🥳 +1 **DINK**\n"
-        f"Check out the recently launched website for Peter Dinklage: {DINKSCORD_URL}"
+        "Check out the new Dinkscord website"
     )
 
 
