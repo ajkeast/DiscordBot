@@ -24,7 +24,7 @@ on any blockchain or crypto wallet.
 - You can't pay/request yourself or bots.
 - You can't send more than you have — the bot will tell you your balance if you try.
 - Only the person being asked can press Accept or Decline on a `/request`.
-- Pending requests expire after a few minutes if nobody responds.
+- Pending requests expire after 24 hours if nobody responds.
 
 ## Commands
 

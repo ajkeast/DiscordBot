@@ -9,7 +9,7 @@ from utils.db import DatabaseError, db_ops
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT_SECONDS = 300
+REQUEST_TIMEOUT_SECONDS = 24 * 60 * 60
 
 
 class DinkRequestView(discord.ui.View):
