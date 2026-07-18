@@ -52,7 +52,7 @@ class DinkRequestView(discord.ui.View):
             except discord.HTTPException:
                 logger.exception("Failed to edit expired DINK request message")
 
-    @discord.ui.button(label="Accept", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.primary)
     async def accept(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
