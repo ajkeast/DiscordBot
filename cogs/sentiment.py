@@ -64,7 +64,7 @@ class Sentiment(commands.Cog):
 
     @commands.hybrid_command(brief="Score unscored messages with Grok sentiment")
     @app_commands.describe(
-        limit="Max messages to score (omit for all unscored / SENTIMENT_NIGHTLY_LIMIT)",
+        limit="Max messages to score, newest first (omit for all / SENTIMENT_NIGHTLY_LIMIT)",
     )
     async def score_sentiment(self, ctx, limit: int | None = None):
         """Manually kick off incremental sentiment scoring for unscored messages."""
