@@ -177,3 +177,27 @@ def test_sentiment_cog_disabled_without_api_key(monkeypatch):
         cog = Sentiment(bot)
     assert cog._enabled is False
     start.assert_not_called()
+
+
+def test_run_sentiment_rejects_overlap(monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    bot = MagicMock()
+    with patch("discord.ext.tasks.Loop.start"):
+        cog = Sentiment(bot)
+
+    async def _check():
+        await cog._run_lock.acquire()
+        try:
+            raised = False
+            try:
+                await cog._run_sentiment(limit=1)
+            except RuntimeError as exc:
+                raised = True
+                assert "already running" in str(exc)
+            assert raised
+        finally:
+            cog._run_lock.release()
+
+    asyncio.run(_check())
