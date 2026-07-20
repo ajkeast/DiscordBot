@@ -7,3 +7,4 @@ tzdata
 requests
 python-dotenv
 xai-sdk>=1.17.0
+pydantic>=2.0
