@@ -1,35 +1,15 @@
-"""Pydantic schema for nightly Discord sentiment scoring (matches message_sentiment)."""
+"""Plain validation for nightly Discord sentiment scoring (matches message_sentiment)."""
 
 from __future__ import annotations
 
-from enum import Enum
+import json
+from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
 
-
-class Polarity(str, Enum):
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-    NEUTRAL = "neutral"
-    MIXED = "mixed"
-
-
-class Toxicity(str, Enum):
-    NONE = "none"
-    MILD = "mild"
-    MODERATE = "moderate"
-    SEVERE = "severe"
-
-
-class DirectedAt(str, Enum):
-    GENERAL = "general"
-    PERSON = "person"
-    GROUP = "group"
-    SELF = "self"
-    TOPIC = "topic"
-
-
+POLARITIES = frozenset({"positive", "negative", "neutral", "mixed"})
+TOXICITIES = frozenset({"none", "mild", "moderate", "severe"})
+DIRECTED_ATS = frozenset({"general", "person", "group", "self", "topic"})
 ALLOWED_EMOTIONS = frozenset(
     {
         "joy",
@@ -45,46 +25,88 @@ ALLOWED_EMOTIONS = frozenset(
 )
 
 
-class SentimentResult(BaseModel):
+@dataclass(frozen=True)
+class SentimentResult:
     message_id: str
-    polarity: Polarity
-    polarity_score: float = Field(..., ge=-1.0, le=1.0)
-    emotions: list[str] = Field(..., min_length=1, max_length=3)
+    polarity: str
+    polarity_score: float
+    emotions: list[str]
     sarcasm: bool
-    toxicity: Toxicity
-    directed_at: DirectedAt
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    rationale: str = Field(..., max_length=200)
-
-    @field_validator("emotions")
-    @classmethod
-    def validate_emotions(cls, values: list[str]) -> list[str]:
-        cleaned: list[str] = []
-        for emotion in values:
-            key = emotion.strip().lower()
-            if key not in ALLOWED_EMOTIONS:
-                raise ValueError(
-                    f"emotion '{emotion}' not in {sorted(ALLOWED_EMOTIONS)}"
-                )
-            if key not in cleaned:
-                cleaned.append(key)
-        if not cleaned:
-            raise ValueError("emotions must contain at least one label")
-        return cleaned[:3]
-
-    @field_validator("rationale")
-    @classmethod
-    def shorten_rationale(cls, value: str) -> str:
-        words = value.strip().split()
-        if len(words) > 15:
-            return " ".join(words[:15])
-        return value.strip()
-
-    @field_validator("message_id", mode="before")
-    @classmethod
-    def coerce_message_id(cls, value: Any) -> str:
-        return str(value)
+    toxicity: str
+    directed_at: str
+    confidence: float
+    rationale: str
 
 
-class SentimentBatchResponse(BaseModel):
-    results: list[SentimentResult]
+def _shorten_rationale(value: str) -> str:
+    words = value.strip().split()
+    if len(words) > 15:
+        return " ".join(words[:15])
+    return value.strip()
+
+
+def _clean_emotions(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        raise ValueError("emotions must be a non-empty list")
+    cleaned: list[str] = []
+    for emotion in values:
+        key = str(emotion).strip().lower()
+        if key not in ALLOWED_EMOTIONS:
+            raise ValueError(f"emotion '{emotion}' not in {sorted(ALLOWED_EMOTIONS)}")
+        if key not in cleaned:
+            cleaned.append(key)
+    if not cleaned:
+        raise ValueError("emotions must contain at least one label")
+    return cleaned[:3]
+
+
+def parse_sentiment_result(raw: Any) -> SentimentResult:
+    if not isinstance(raw, dict):
+        raise ValueError("result must be an object")
+
+    message_id = str(raw.get("message_id", "")).strip()
+    if not message_id:
+        raise ValueError("message_id is required")
+
+    polarity = str(raw.get("polarity", "")).strip().lower()
+    if polarity not in POLARITIES:
+        raise ValueError(f"invalid polarity: {polarity!r}")
+
+    toxicity = str(raw.get("toxicity", "")).strip().lower()
+    if toxicity not in TOXICITIES:
+        raise ValueError(f"invalid toxicity: {toxicity!r}")
+
+    directed_at = str(raw.get("directed_at", "")).strip().lower()
+    if directed_at not in DIRECTED_ATS:
+        raise ValueError(f"invalid directed_at: {directed_at!r}")
+
+    polarity_score = float(raw["polarity_score"])
+    if polarity_score < -1.0 or polarity_score > 1.0:
+        raise ValueError(f"polarity_score out of range: {polarity_score}")
+
+    confidence = float(raw["confidence"])
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError(f"confidence out of range: {confidence}")
+
+    return SentimentResult(
+        message_id=message_id,
+        polarity=polarity,
+        polarity_score=polarity_score,
+        emotions=_clean_emotions(raw.get("emotions")),
+        sarcasm=bool(raw.get("sarcasm")),
+        toxicity=toxicity,
+        directed_at=directed_at,
+        confidence=confidence,
+        rationale=_shorten_rationale(str(raw.get("rationale", ""))),
+    )
+
+
+def parse_sentiment_batch(payload: Any) -> list[SentimentResult]:
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        raise ValueError("batch response must be an object")
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        raise ValueError("results must be a non-empty list")
+    return [parse_sentiment_result(item) for item in results]

@@ -3,18 +3,14 @@
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
 from cogs.sentiment import Sentiment
 from utils import sentiment_job
 from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt
 from utils.sentiment_schema import (
     ALLOWED_EMOTIONS,
-    Polarity,
-    SentimentBatchResponse,
     SentimentResult,
-    Toxicity,
-    DirectedAt,
+    parse_sentiment_batch,
 )
 
 
@@ -70,12 +66,12 @@ def test_iter_batches():
 def test_upsert_results_writes_rows():
     result = SentimentResult(
         message_id="123",
-        polarity=Polarity.POSITIVE,
+        polarity="positive",
         polarity_score=0.5,
         emotions=["joy"],
         sarcasm=False,
-        toxicity=Toxicity.NONE,
-        directed_at=DirectedAt.GENERAL,
+        toxicity="none",
+        directed_at="general",
         confidence=0.9,
         rationale="Friendly greeting",
     )
@@ -108,12 +104,12 @@ def test_run_sentiment_nightly_scores_and_upserts(monkeypatch):
     scored = [
         SentimentResult(
             message_id="99",
-            polarity=Polarity.POSITIVE,
+            polarity="positive",
             polarity_score=0.4,
             emotions=["amusement"],
             sarcasm=False,
-            toxicity=Toxicity.NONE,
-            directed_at=DirectedAt.TOPIC,
+            toxicity="none",
+            directed_at="topic",
             confidence=0.8,
             rationale="Casual cheer",
         )
@@ -144,7 +140,7 @@ def test_run_sentiment_nightly_scores_and_upserts(monkeypatch):
     upsert.assert_called_once_with(scored, model="grok-4.3")
 
 
-def test_sentiment_batch_response_round_trip():
+def test_parse_sentiment_batch_round_trip():
     payload = {
         "results": [
             {
@@ -160,8 +156,9 @@ def test_sentiment_batch_response_round_trip():
             }
         ]
     }
-    parsed = SentimentBatchResponse.model_validate(payload)
-    assert parsed.results[0].message_id == "42"
+    parsed = parse_sentiment_batch(payload)
+    assert parsed[0].message_id == "42"
+    assert parsed[0].polarity == "neutral"
 
 
 def test_sentiment_cog_starts_when_api_key_present(monkeypatch):

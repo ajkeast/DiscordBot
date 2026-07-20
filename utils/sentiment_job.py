@@ -6,6 +6,7 @@ prompt/schema shape as the Sentiment-Analysis backfill so rows stay compatible.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -18,7 +19,7 @@ from xai_sdk.chat import system, user
 
 from utils.db import db_ops
 from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt
-from utils.sentiment_schema import SentimentBatchResponse, SentimentResult
+from utils.sentiment_schema import SentimentResult, parse_sentiment_batch
 
 load_dotenv()
 
@@ -240,12 +241,14 @@ def score_batch_with_grok(
                 model=model,
                 temperature=0.2,
                 reasoning_effort="none",
+                response_format="json_object",
                 store_messages=False,
             )
             chat.append(system(SYSTEM_PROMPT))
             chat.append(user(user_prompt))
-            _response, parsed = chat.parse(SentimentBatchResponse)
-            results = [r for r in parsed.results if r.message_id in expected_ids]
+            response = chat.sample()
+            parsed = parse_sentiment_batch(json.loads(response.content))
+            results = [r for r in parsed if r.message_id in expected_ids]
             got_ids = {r.message_id for r in results}
             missing = expected_ids - got_ids
             if missing:
@@ -276,12 +279,12 @@ def upsert_results(results: list[SentimentResult], *, model: str) -> int:
         rows.append(
             (
                 int(mid),
-                r.polarity.value,
+                r.polarity,
                 float(r.polarity_score),
                 ",".join(r.emotions),
                 int(bool(r.sarcasm)),
-                r.toxicity.value,
-                r.directed_at.value,
+                r.toxicity,
+                r.directed_at,
                 float(r.confidence),
                 r.rationale[:255],
                 model,
