@@ -9,7 +9,7 @@ SYSTEM_PROMPT = f"""You are analyzing Discord chat messages for sentiment.
 Score ONLY the message marked >>> TARGET.
 Use the preceding messages solely as local context (sarcasm, irony, in-jokes, replies).
 
-Return a single JSON object (not an array) with:
+For each scored message include:
 - message_id (string, copy exactly from the input)
 - polarity: one of {", ".join(sorted(POLARITIES))} — never an emotion label
 - polarity_score: float from -1 (very negative) to 1 (very positive); mixed near 0
@@ -25,6 +25,7 @@ Rules:
 - Short Discord slang (lol, lmao, gg) can still carry clear polarity.
 - Prefer sarcasm=true when surface polarity conflicts with context.
 - Keep rationales terse; do not quote long message text.
+- Output one result per input item, same order, same message_ids.
 """
 
 
@@ -39,3 +40,22 @@ def build_user_prompt(item: dict) -> str:
         f"channel: #{item.get('channel_name', 'unknown')}\n"
         f"{item['context_text']}\n"
     )
+
+
+def build_batch_user_prompt(items: list[dict]) -> str:
+    """Build the user prompt for a batch of targets.
+
+    Each item needs: message_id, channel_name, context_text
+    """
+    blocks: list[str] = [
+        f"Analyze {len(items)} Discord message(s). "
+        'Return JSON {"results": [...]} with one object per item.\n'
+    ]
+    for idx, item in enumerate(items, start=1):
+        blocks.append(
+            f"--- ITEM {idx} ---\n"
+            f"message_id: {item['message_id']}\n"
+            f"channel: #{item.get('channel_name', 'unknown')}\n"
+            f"{item['context_text']}\n"
+        )
+    return "\n".join(blocks)

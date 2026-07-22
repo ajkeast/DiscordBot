@@ -18,8 +18,12 @@ from xai_sdk import Client
 from xai_sdk.chat import system, user
 
 from utils.db import db_ops
-from utils.sentiment_prompt import SYSTEM_PROMPT, build_user_prompt
-from utils.sentiment_schema import SentimentResult, parse_sentiment_response
+from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt, build_user_prompt
+from utils.sentiment_schema import (
+    SentimentResult,
+    parse_sentiment_batch_response,
+    parse_sentiment_response,
+)
 
 load_dotenv()
 
@@ -27,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 # grok-4.3 + reasoning_effort=none is the cheap chat path after fast-model retirement.
 DEFAULT_SENTIMENT_MODEL = "grok-4.3"
+DEFAULT_BATCH_SIZE = 10
 DEFAULT_CONTEXT_SIZE = 3
 DEFAULT_MAX_CONTENT_CHARS = 500
 DEFAULT_MAX_RETRIES = 3
@@ -120,6 +125,27 @@ def sentiment_enabled() -> bool:
     return bool(os.getenv("XAI_API_KEY", "").strip())
 
 
+def sentiment_batch_size() -> int:
+    raw = os.getenv("SENTIMENT_BATCH_SIZE", str(DEFAULT_BATCH_SIZE)).strip()
+    try:
+        size = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid SENTIMENT_BATCH_SIZE=%r; using %s",
+            raw,
+            DEFAULT_BATCH_SIZE,
+        )
+        return DEFAULT_BATCH_SIZE
+    if size < 1:
+        logger.warning(
+            "SENTIMENT_BATCH_SIZE=%s must be >= 1; using %s",
+            size,
+            DEFAULT_BATCH_SIZE,
+        )
+        return DEFAULT_BATCH_SIZE
+    return size
+
+
 def _truncate(text: str, max_chars: int) -> str:
     text = text.replace("\n", " ").strip()
     if len(text) <= max_chars:
@@ -148,11 +174,12 @@ def ensure_sentiment_table() -> None:
 
 
 def fetch_unscored_messages(limit: int | None = None) -> pd.DataFrame:
-    df = db_ops.db.fetch_df(UNSCORED_SQL)
+    if limit is not None:
+        df = db_ops.db.fetch_df(UNSCORED_SQL + " LIMIT %s", (int(limit),))
+    else:
+        df = db_ops.db.fetch_df(UNSCORED_SQL)
     if df.empty:
         return df
-    if limit is not None:
-        df = df.head(limit).copy()
     df["message_id"] = df["message_id"].astype("int64")
     df["created_at"] = pd.to_datetime(df["created_at"])
     df["content"] = df["content"].fillna("").astype(str)
@@ -216,6 +243,12 @@ def build_prompt_items(
     return items
 
 
+def iter_batches(items: list[dict], batch_size: int) -> list[list[dict]]:
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
+
+
 def score_message_with_grok(
     item: dict,
     *,
@@ -268,6 +301,94 @@ def score_message_with_grok(
     )
 
 
+def _score_batch_once(
+    items: list[dict],
+    *,
+    model: str,
+    client: Client,
+) -> list[SentimentResult]:
+    """Attempt a single batch call; raises on parse/coverage failure."""
+    user_prompt = build_batch_user_prompt(items)
+    expected_ids = {item["message_id"] for item in items}
+    chat = client.chat.create(
+        model=model,
+        temperature=0.2,
+        reasoning_effort="none",
+        response_format="json_object",
+        store_messages=False,
+    )
+    chat.append(system(SYSTEM_PROMPT))
+    chat.append(user(user_prompt))
+    response = chat.sample()
+    return parse_sentiment_batch_response(
+        json.loads(response.content),
+        expected_ids=expected_ids,
+    )
+
+
+def score_batch_with_grok(
+    items: list[dict],
+    *,
+    model: str,
+    client: Client | None = None,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+) -> list[SentimentResult]:
+    """Score a batch via Grok.
+
+    Retries the batch call on transient/parse failures. If the batch still fails,
+    falls back to per-message scoring so one bad JSON payload cannot abort the run.
+    Individual fallback failures are logged and skipped.
+    """
+    if not items:
+        return []
+    if len(items) == 1:
+        return [score_message_with_grok(items[0], model=model, client=client, max_retries=max_retries)]
+
+    if client is None:
+        api_key = os.getenv("XAI_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("XAI_API_KEY is required for sentiment scoring")
+        client = Client(api_key=api_key, timeout=120)
+
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            return _score_batch_once(items, model=model, client=client)
+        except Exception as exc:  # noqa: BLE001 — retry transient/parse failures
+            last_error = exc
+            logger.warning(
+                "Sentiment batch attempt %s/%s failed (%s messages): %s",
+                attempt + 1,
+                max_retries,
+                len(items),
+                exc,
+            )
+            time.sleep(1.5 * (attempt + 1))
+
+    logger.warning(
+        "Sentiment batch failed after %s attempts (%s); falling back to per-message scoring",
+        max_retries,
+        last_error,
+    )
+    results: list[SentimentResult] = []
+    for item in items:
+        try:
+            results.append(
+                score_message_with_grok(
+                    item,
+                    model=model,
+                    client=client,
+                    max_retries=max_retries,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Sentiment fallback failed for message_id=%s",
+                item["message_id"],
+            )
+    return results
+
+
 def upsert_results(results: list[SentimentResult], *, model: str) -> int:
     if not results:
         return 0
@@ -301,8 +422,9 @@ def run_sentiment_nightly(*, limit: int | None = None) -> int:
     """
     Score unscored messages with Grok and upsert into message_sentiment.
 
-    Scores one message at a time (newest first). Individual failures are logged
-    and skipped so one bad response cannot abort the whole run.
+    Scores in batches (newest first). Malformed batch responses fall back to
+    per-message scoring; individual failures are logged and skipped so one bad
+    response cannot abort the whole run.
 
     Returns number of rows written.
     """
@@ -314,6 +436,7 @@ def run_sentiment_nightly(*, limit: int | None = None) -> int:
         if raw:
             limit = int(raw)
 
+    batch_size = sentiment_batch_size()
     model = sentiment_model()
     api_key = os.getenv("XAI_API_KEY", "").strip()
     client = Client(api_key=api_key, timeout=120)
@@ -325,24 +448,43 @@ def run_sentiment_nightly(*, limit: int | None = None) -> int:
         return 0
 
     items = build_prompt_items(unscored)
-    logger.info("Scoring %s unscored messages with %s...", len(items), model)
+    batches = iter_batches(items, batch_size)
+    logger.info(
+        "Scoring %s unscored messages with %s (batch_size=%s, batches=%s)...",
+        len(items),
+        model,
+        batch_size,
+        len(batches),
+    )
 
     written = 0
     failures = 0
-    for i, item in enumerate(items, start=1):
+    processed = 0
+    for batch_idx, batch in enumerate(batches, start=1):
         try:
-            result = score_message_with_grok(item, model=model, client=client)
-            written += upsert_results([result], model=model)
+            results = score_batch_with_grok(batch, model=model, client=client)
+            skipped = len(batch) - len(results)
+            if skipped > 0:
+                failures += skipped
+            written += upsert_results(results, model=model)
         except Exception:
-            failures += 1
-            logger.exception("Sentiment failed for message_id=%s", item["message_id"])
-        if i % PROGRESS_EVERY == 0 or i == len(items):
+            failures += len(batch)
+            logger.exception(
+                "Sentiment batch %s/%s failed entirely (%s messages)",
+                batch_idx,
+                len(batches),
+                len(batch),
+            )
+        processed += len(batch)
+        if processed % PROGRESS_EVERY < len(batch) or batch_idx == len(batches):
             logger.info(
-                "Sentiment progress %s/%s (written=%s, failures=%s)",
-                i,
+                "Sentiment progress %s/%s (written=%s, failures=%s, batch=%s/%s)",
+                processed,
                 len(items),
                 written,
                 failures,
+                batch_idx,
+                len(batches),
             )
 
     logger.info("Upserted %s sentiment rows (%s failures)", written, failures)
