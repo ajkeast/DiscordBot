@@ -136,3 +136,38 @@ def parse_sentiment_response(payload: Any) -> SentimentResult:
             raise ValueError("results must be a single-item list")
         return parse_sentiment_result(results[0])
     return parse_sentiment_result(payload)
+
+
+def parse_sentiment_batch_response(
+    payload: Any,
+    *,
+    expected_ids: set[str] | None = None,
+) -> list[SentimentResult]:
+    """Parse a batch model response with a top-level results array."""
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        raise ValueError("response must be an object")
+
+    results_raw = payload.get("results")
+    if not isinstance(results_raw, list):
+        raise ValueError("results must be a list")
+    if not results_raw:
+        raise ValueError("results must not be empty")
+
+    results = [parse_sentiment_result(item) for item in results_raw]
+    ids = [r.message_id for r in results]
+    if len(ids) != len(set(ids)):
+        raise ValueError("duplicate message_ids in results")
+
+    if expected_ids is not None:
+        got_ids = set(ids)
+        unexpected = got_ids - expected_ids
+        if unexpected:
+            raise ValueError(f"unexpected message_ids: {sorted(unexpected)[:5]}")
+        missing = expected_ids - got_ids
+        if missing:
+            raise ValueError(f"Model omitted message_ids: {sorted(missing)[:5]}")
+
+    return results
+
