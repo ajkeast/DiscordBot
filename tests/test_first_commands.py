@@ -12,10 +12,7 @@ from utils.constants import GENERAL_CHANNEL_ID
 
 
 def _expected_first_win(mention: str) -> str:
-    return (
-        f"{mention} is first today! 🥳 +1 **DINK**\n"
-        "Check out the new Dinkscord website"
-    )
+    return f"{mention} is first today! 🥳 +1 **DINK**"
 
 
 def _est_today_df(date_str: str, user_id: str = "999") -> pd.DataFrame:
