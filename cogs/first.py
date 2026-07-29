@@ -56,7 +56,6 @@ class First(commands.Cog):
                 Author = ctx.author.mention
                 msg = f"{Author} is first today! 🥳 +{DINK_MINT_AMOUNT:g} **DINK**"
                 if PROMOTE_DINKSCORD_ON_FIRST:
-                    msg += "\nCheck out the new Dinkscord website"
                     await ctx.send(msg, view=dinkscord_link_view())
                 else:
                     await ctx.send(msg)
