@@ -1,5 +1,5 @@
 discord.py>=2.3.0
-pymysql
+psycopg[binary]>=3.1.0
 pandas
 matplotlib
 pytz

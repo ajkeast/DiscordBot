@@ -10,12 +10,26 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: discordbot
+          POSTGRES_PASSWORD: discordbot
+          POSTGRES_DB: discordbot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U discordbot -d discordbot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-      SQL_HOST: ${{ secrets.SQL_HOST }}
-      SQL_USER: ${{ secrets.SQL_USER }}
-      SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
-      SQL_DATABASE: ${{ secrets.SQL_DATABASE }}
+      SQL_HOST: localhost
+      SQL_USER: discordbot
+      SQL_PASSWORD: discordbot
+      SQL_DATABASE: discordbot
       MPLBACKEND: Agg
       CI_TEST_REPORT: ci-test-report.md
     steps:
@@ -30,6 +44,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Init schema
+        run: |
+          # Reuse dinkboard init when available via sibling checkout; otherwise minimal smoke schema.
+          python - <<'PY'
+          import psycopg
+          conn = psycopg.connect(host="localhost", user="discordbot", password="discordbot", dbname="discordbot")
+          conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+          conn.execute("""
+          CREATE TABLE IF NOT EXISTS firstlist_id (
+            user_id VARCHAR(255),
+            timesent TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+          """)
+          conn.commit()
+          conn.close()
+          PY
 
       - name: Run tests
         run: pytest tests/ -v --tb=short --junitxml=junit.xml

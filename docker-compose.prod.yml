@@ -1,0 +1,23 @@
+# Discord bot — joins the dinkboard Docker network and uses shared Postgres.
+# From /opt/apps/discordbot on the VPS:
+#   docker compose -f docker-compose.prod.yml up --build -d
+
+services:
+  discord-bot:
+    container_name: discord-bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SQL_HOST: postgres
+      SQL_PORT: "5432"
+    networks:
+      - dinkboard
+
+networks:
+  dinkboard:
+    external: true
+    name: dinkboard_dinkboard
