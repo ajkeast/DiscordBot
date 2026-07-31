@@ -1,0 +1,7 @@
+Dockerfile
+.env
+__pycache__
+*.pyc
+.git
+tests/
+.github/

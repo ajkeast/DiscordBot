@@ -5,28 +5,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-discordbot
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
-  restart:
+  deploy:
+    name: Deploy to VPS
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - name: Restart PebbleHost server
-        run: |
-          http_code=$(curl -sS -o /tmp/pebblehost-response.txt -w "%{http_code}" -X POST \
-            "https://panel.pebblehost.com/api/client/servers/${{ secrets.PEBBLEHOST_SERVER_ID }}/power" \
-            -H "Authorization: Bearer ${{ secrets.PEBBLEHOST_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -H "User-Agent: ajkeast-DiscordBot-Deploy/1.0 (GitHub Actions; contact: alexander.keast@gmail.com)" \
-            -d '{"signal":"restart"}')
-
-          echo "PebbleHost HTTP status: ${http_code}"
-          if [ -s /tmp/pebblehost-response.txt ]; then
-            cat /tmp/pebblehost-response.txt
-          fi
-
-          if [ "${http_code}" != "204" ]; then
-            exit 1
-          fi
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            /opt/apps/discordbot/deploy/deploy.sh

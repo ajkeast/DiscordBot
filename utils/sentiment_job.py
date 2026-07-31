@@ -39,23 +39,19 @@ PROGRESS_EVERY = 25
 
 ENSURE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS message_sentiment (
-  message_id BIGINT(20) NOT NULL,
-  polarity ENUM('positive','negative','neutral','mixed') NOT NULL,
-  polarity_score FLOAT NOT NULL,
+  message_id BIGINT PRIMARY KEY REFERENCES messages(id),
+  polarity TEXT NOT NULL CHECK (polarity IN ('positive','negative','neutral','mixed')),
+  polarity_score REAL NOT NULL,
   emotions VARCHAR(128) NOT NULL,
-  sarcasm TINYINT(1) NOT NULL,
-  toxicity ENUM('none','mild','moderate','severe') NOT NULL,
-  directed_at ENUM('general','person','group','self','topic') NOT NULL,
-  confidence FLOAT NOT NULL,
+  sarcasm BOOLEAN NOT NULL,
+  toxicity TEXT NOT NULL CHECK (toxicity IN ('none','mild','moderate','severe')),
+  directed_at TEXT NOT NULL CHECK (directed_at IN ('general','person','group','self','topic')),
+  confidence REAL NOT NULL,
   rationale VARCHAR(255) NOT NULL,
   model VARCHAR(64) NOT NULL,
   scored_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (message_id),
-  KEY idx_sentiment_scored_at (scored_at),
-  KEY idx_sentiment_polarity (polarity),
-  CONSTRAINT fk_sentiment_message FOREIGN KEY (message_id) REFERENCES messages (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
 """
 
 # Newest first so recent holes are filled before ancient backfill gaps.
@@ -103,16 +99,16 @@ INSERT INTO message_sentiment (
 ) VALUES (
   %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
-ON DUPLICATE KEY UPDATE
-  polarity = VALUES(polarity),
-  polarity_score = VALUES(polarity_score),
-  emotions = VALUES(emotions),
-  sarcasm = VALUES(sarcasm),
-  toxicity = VALUES(toxicity),
-  directed_at = VALUES(directed_at),
-  confidence = VALUES(confidence),
-  rationale = VALUES(rationale),
-  model = VALUES(model),
+ON CONFLICT (message_id) DO UPDATE SET
+  polarity = EXCLUDED.polarity,
+  polarity_score = EXCLUDED.polarity_score,
+  emotions = EXCLUDED.emotions,
+  sarcasm = EXCLUDED.sarcasm,
+  toxicity = EXCLUDED.toxicity,
+  directed_at = EXCLUDED.directed_at,
+  confidence = EXCLUDED.confidence,
+  rationale = EXCLUDED.rationale,
+  model = EXCLUDED.model,
   updated_at = CURRENT_TIMESTAMP
 """
 

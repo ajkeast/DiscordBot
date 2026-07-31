@@ -1,4 +1,4 @@
-"""Live smoke tests for MySQL connectivity. Requires SQL_* env vars."""
+"""Live smoke tests for Postgres connectivity. Requires SQL_* env vars."""
 
 import os
 
@@ -22,22 +22,26 @@ def sql_configured():
     return {var: os.getenv(var) for var in _SQL_VARS}
 
 
-def test_mysql_connection(report, sql_configured):
-    import pymysql
+def test_postgres_connection(report, sql_configured):
+    import psycopg
 
-    conn = pymysql.connect(
-        host=sql_configured["SQL_HOST"],
+    host = sql_configured["SQL_HOST"]
+    port = 5432
+    if ":" in host:
+        host, port_str = host.rsplit(":", 1)
+        port = int(port_str)
+
+    with psycopg.connect(
+        host=host,
+        port=port,
         user=sql_configured["SQL_USER"],
         password=sql_configured["SQL_PASSWORD"],
-        database=sql_configured["SQL_DATABASE"],
+        dbname=sql_configured["SQL_DATABASE"],
         connect_timeout=10,
-    )
-    try:
+    ) as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT 1")
             value = cursor.fetchone()[0]
-    finally:
-        conn.close()
 
     report.record("host", sql_configured["SQL_HOST"], sql_configured["SQL_HOST"], section=SECTION_LIVE_DB)
     report.record("database", sql_configured["SQL_DATABASE"], sql_configured["SQL_DATABASE"], section=SECTION_LIVE_DB)

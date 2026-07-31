@@ -1,226 +1,221 @@
-import pymysql
 import os
-import pandas as pd
-import warnings
-from dotenv import load_dotenv
-from datetime import datetime
-from contextlib import contextmanager
-from typing import Tuple, List, Optional
 import json
+from contextlib import contextmanager
+from typing import List, Optional, Tuple
+
+import pandas as pd
+import psycopg
+from dotenv import load_dotenv
 
 load_dotenv()
+
 
 class DatabaseError(Exception):
     """Custom exception for database operations"""
     pass
 
+
+def _connect():
+    host = os.getenv("SQL_HOST", "localhost")
+    port = 5432
+    if host and ":" in host:
+        host, port_str = host.rsplit(":", 1)
+        port = int(port_str)
+    return psycopg.connect(
+        host=host,
+        port=port,
+        user=os.getenv("SQL_USER"),
+        password=os.getenv("SQL_PASSWORD"),
+        dbname=os.getenv("SQL_DATABASE"),
+    )
+
+
 class Database:
     def __init__(self):
-        self.host = os.getenv('SQL_HOST')
-        self.user = os.getenv('SQL_USER')
-        self.password = os.getenv('SQL_PASSWORD')
-        self.database = os.getenv('SQL_DATABASE')
-        self._conn = None
-        self._cursor = None
+        self.host = os.getenv("SQL_HOST")
+        self.user = os.getenv("SQL_USER")
+        self.password = os.getenv("SQL_PASSWORD")
+        self.database = os.getenv("SQL_DATABASE")
 
     @contextmanager
     def connection(self):
-        """Context manager for database connections"""
         conn = None
         try:
-            conn = pymysql.connect(
-                host=self.host,
-                user=self.user,
-                password=self.password,
-                database=self.database
-            )
+            conn = _connect()
             yield conn
-        except pymysql.Error as e:
-            raise DatabaseError(f"Database connection error: {e}")
+        except psycopg.Error as e:
+            raise DatabaseError(f"Database connection error: {e}") from e
         finally:
             if conn:
                 conn.close()
 
     @contextmanager
     def cursor(self):
-        """Context manager for database cursors"""
         with self.connection() as conn:
             try:
                 cursor = conn.cursor()
                 yield cursor
                 conn.commit()
-            except pymysql.Error as e:
+            except psycopg.Error as e:
                 conn.rollback()
-                raise DatabaseError(f"Database operation error: {e}")
+                raise DatabaseError(f"Database operation error: {e}") from e
             finally:
                 if cursor:
                     cursor.close()
 
     def execute(self, query: str, params: Optional[tuple] = None) -> None:
-        """Execute a single query"""
         with self.cursor() as cursor:
             cursor.execute(query, params)
 
     def executemany(self, query: str, params: List[tuple]) -> None:
-        """Execute multiple queries"""
         with self.cursor() as cursor:
             cursor.executemany(query, params)
 
     def fetch_df(self, query: str, params: Optional[tuple] = None) -> pd.DataFrame:
-        """Fetch query results as pandas DataFrame"""
         with self.connection() as conn:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="pandas only supports SQLAlchemy connectable",
-                    category=UserWarning,
-                )
-                return pd.read_sql_query(query, conn, params=params)
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                if cursor.description is None:
+                    return pd.DataFrame()
+                columns = [desc.name for desc in cursor.description]
+                rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+
 
 class DataOperations:
     def __init__(self):
         self.db = Database()
 
     def write_first_entry(self, user_id: int) -> None:
-        """Record a 'first' entry for a user"""
         query = "INSERT INTO firstlist_id (user_id) VALUES (%s);"
-        self.db.execute(query, (user_id,))
+        self.db.execute(query, (str(user_id),))
 
     def write_dalle_entry(self, user_id: int, prompt: str, message_id: int) -> None:
-        """Record a DALL-E prompt entry"""
         query = "INSERT INTO dalle_3_prompts (user_id, prompt, message_id) VALUES (%s, %s, %s);"
-        self.db.execute(query, (user_id, prompt, message_id))
+        self.db.execute(query, (str(user_id), prompt, message_id))
 
-    def write_recipe_entry(self, member_id: int, name: str, ingredients: str, 
-                          instructions: str, cuisine: str, dietary_preference: str, 
-                          image_url: str) -> None:
-        """Record a new recipe entry
-        
-        Args:
-            member_id (int): Discord user ID of the recipe creator
-            name (str): Name of the recipe
-            ingredients (str): List of ingredients with quantities
-            instructions (str): Step-by-step cooking instructions
-            cuisine (str): Type of cuisine
-            dietary_preference (str): Dietary category
-            image_url (str): URL of the recipe image
-        """
+    def write_recipe_entry(
+        self,
+        member_id: int,
+        name: str,
+        ingredients: str,
+        instructions: str,
+        cuisine: str,
+        dietary_preference: str,
+        image_url: str,
+    ) -> None:
         query = """
-            INSERT INTO recipes 
+            INSERT INTO recipes
             (member_id, name, ingredients, instructions, cuisine, dietary_preference, image_url)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        self.db.execute(query, (
-            member_id,
-            name,
-            ingredients,
-            instructions,
-            cuisine,
-            dietary_preference,
-            image_url
-        ))
+        self.db.execute(
+            query,
+            (
+                member_id,
+                name,
+                ingredients,
+                instructions,
+                cuisine,
+                dietary_preference,
+                image_url,
+            ),
+        )
 
     def update_messages(self, message_data: Tuple) -> None:
-        """Update messages table"""
         query = """
             INSERT INTO messages (id, member_id, channel_id, content, created_at)
             VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                content = VALUES(content)
+            ON CONFLICT (id) DO UPDATE SET
+                content = EXCLUDED.content
         """
         self.db.execute(query, message_data)
 
     def update_members(self, member_data: List[Tuple]) -> None:
-        """Update members table"""
         query = """
             INSERT INTO members (id, user_name, display_name, avatar, created_at)
             VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                user_name = VALUES(user_name),
-                display_name = VALUES(display_name),
-                avatar = VALUES(avatar),
-                created_at = VALUES(created_at)
+            ON CONFLICT (id) DO UPDATE SET
+                user_name = EXCLUDED.user_name,
+                display_name = EXCLUDED.display_name,
+                avatar = EXCLUDED.avatar,
+                created_at = EXCLUDED.created_at
         """
         self.db.executemany(query, member_data)
 
     def update_emojis(self, emoji_data: List[Tuple]) -> None:
-        """Update emojis table"""
         query = """
             INSERT INTO emojis (id, emoji_name, guild_id, url, created_at)
             VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                emoji_name = VALUES(emoji_name),
-                guild_id = VALUES(guild_id),
-                url = VALUES(url),
-                created_at = VALUES(created_at)
+            ON CONFLICT (id) DO UPDATE SET
+                emoji_name = EXCLUDED.emoji_name,
+                guild_id = EXCLUDED.guild_id,
+                url = EXCLUDED.url,
+                created_at = EXCLUDED.created_at
         """
         self.db.executemany(query, emoji_data)
 
     def update_channels(self, channel_data: List[Tuple]) -> None:
-        """Update channels table"""
         query = """
             INSERT INTO channels (id, channel_name, created_at)
             VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                channel_name = VALUES(channel_name),
-                created_at = VALUES(created_at)
+            ON CONFLICT (id) DO UPDATE SET
+                channel_name = EXCLUDED.channel_name,
+                created_at = EXCLUDED.created_at
         """
         self.db.executemany(query, channel_data)
 
-    def log_chatgpt_interaction(self, user_id: int, model: str, request_messages: list, 
-                              response_content: str, input_tokens: int, output_tokens: int,
-                              message_id: int, function_calls: list = None, image_urls: list = None) -> None:
-        """Log a ChatGPT interaction to the database
-        
-        Args:
-            user_id (int): Discord user ID (will be converted to string)
-            model (str): GPT model used
-            request_messages (list): List of message objects in the conversation
-            response_content (str): Assistant's response
-            input_tokens (int): Number of input tokens
-            output_tokens (int): Number of output tokens
-            message_id (int): Discord message ID that triggered this interaction
-            function_calls (list, optional): List of function calls made
-            image_urls (list, optional): List of image URLs attached to the request
-        """
+    def log_chatgpt_interaction(
+        self,
+        user_id: int,
+        model: str,
+        request_messages: list,
+        response_content: str,
+        input_tokens: int,
+        output_tokens: int,
+        message_id: int,
+        function_calls: list = None,
+        image_urls: list = None,
+    ) -> None:
         query = """
-            INSERT INTO chatgpt_logs 
-            (user_id, model, request_messages, response_content, input_tokens, 
+            INSERT INTO chatgpt_logs
+            (user_id, model, request_messages, response_content, input_tokens,
              output_tokens, total_tokens, message_id, function_calls, image_urls)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
         """
         total_tokens = input_tokens + output_tokens
-        self.db.execute(query, (
-            str(user_id),  # Convert user_id to string to match VARCHAR(20)
-            model,
-            json.dumps(request_messages),
-            response_content,
-            input_tokens,
-            output_tokens,
-            total_tokens,
-            message_id,
-            json.dumps(function_calls) if function_calls else None,
-            json.dumps(image_urls) if image_urls else None
-        ))
+        self.db.execute(
+            query,
+            (
+                str(user_id),
+                model,
+                json.dumps(request_messages),
+                response_content,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                message_id,
+                json.dumps(function_calls) if function_calls else None,
+                json.dumps(image_urls) if image_urls else None,
+            ),
+        )
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
-        """Get entire table as DataFrame"""
         query = f"SELECT * FROM {table_name}"
-        if table_name == 'firstlist_id':
+        if table_name == "firstlist_id":
             query += " ORDER BY timesent ASC"
         return self.db.fetch_df(query)
 
     def upsert_dink_balance(self, user_id, delta: float) -> None:
-        """Add delta to a user's DINK balance."""
         query = """
             INSERT INTO dinkcoin_balances (user_id, balance)
             VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)
+            ON CONFLICT (user_id) DO UPDATE SET
+                balance = dinkcoin_balances.balance + EXCLUDED.balance
         """
         self.db.execute(query, (str(user_id), delta))
 
     def get_dink_balance(self, user_id) -> float:
-        """Get a user's DINK balance from the MySQL ledger."""
         query = "SELECT balance FROM dinkcoin_balances WHERE user_id = %s"
         df = self.db.fetch_df(query, (str(user_id),))
         if df.empty:
@@ -228,7 +223,6 @@ class DataOperations:
         return float(df.iloc[0]["balance"])
 
     def get_dink_ledger(self, limit: int = 20) -> pd.DataFrame:
-        """Return top DINK holders for the ledger command."""
         query = """
             SELECT user_id, balance
             FROM dinkcoin_balances
@@ -239,7 +233,6 @@ class DataOperations:
         return self.db.fetch_df(query, (limit,))
 
     def get_total_dink_circulation(self) -> float:
-        """Return total DINK tracked in the MySQL ledger."""
         query = "SELECT COALESCE(SUM(balance), 0) AS total FROM dinkcoin_balances"
         df = self.db.fetch_df(query)
         return float(df.iloc[0]["total"])
@@ -252,22 +245,23 @@ class DataOperations:
         tx_type: str,
         tx_hash: str = None,
     ) -> None:
-        """Record a mint or transfer in the audit log."""
         query = """
             INSERT INTO dinkcoin_transactions
             (from_user_id, to_user_id, amount, tx_type, tx_hash)
             VALUES (%s, %s, %s, %s, %s)
         """
-        self.db.execute(query, (
-            str(from_user_id) if from_user_id is not None else None,
-            str(to_user_id),
-            amount,
-            tx_type,
-            tx_hash,
-        ))
+        self.db.execute(
+            query,
+            (
+                str(from_user_id) if from_user_id is not None else None,
+                str(to_user_id),
+                amount,
+                tx_type,
+                tx_hash,
+            ),
+        )
 
     def apply_dink_transfer(self, from_user_id, to_user_id, amount: float) -> None:
-        """Atomically move DINK between two users in the MySQL ledger."""
         from_user_id = str(from_user_id)
         to_user_id = str(to_user_id)
         with self.db.cursor() as cursor:
@@ -285,13 +279,13 @@ class DataOperations:
                 """
                 INSERT INTO dinkcoin_balances (user_id, balance)
                 VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    balance = dinkcoin_balances.balance + EXCLUDED.balance
                 """,
                 (to_user_id, amount),
             )
 
     def record_dink_mint(self, user_id, amount: float, tx_hash: str = None) -> None:
-        """Credit DINK to a user after a successful _1st claim."""
         self.upsert_dink_balance(user_id, amount)
         self.log_dink_transaction(None, user_id, amount, "mint", tx_hash)
 
@@ -302,115 +296,92 @@ class DataOperations:
         amount: float,
         tx_hash: str = None,
     ) -> None:
-        """Move DINK between two users in the MySQL ledger."""
         self.apply_dink_transfer(from_user_id, to_user_id, amount)
         self.log_dink_transaction(from_user_id, to_user_id, amount, "transfer", tx_hash)
 
     def get_monthly_message_counts(self, year: int, month: int) -> pd.DataFrame:
-        """Get message counts for all members in a specific month
-        
-        Args:
-            year (int): The year to check
-            month (int): The month to check (1-12)
-            
-        Returns:
-            pd.DataFrame: DataFrame containing user_id, username, and message count
-        """
         query = """
             SELECT m.id, m.user_name, COUNT(msg.id) as message_count
             FROM members m
             LEFT JOIN messages msg ON m.id = msg.member_id
-            WHERE YEAR(msg.created_at) = %s AND MONTH(msg.created_at) = %s
+            WHERE EXTRACT(YEAR FROM msg.created_at) = %s
+              AND EXTRACT(MONTH FROM msg.created_at) = %s
             GROUP BY m.id, m.user_name
             ORDER BY message_count DESC
         """
         return self.db.fetch_df(query, (year, month))
 
+
 class StreakCalculator:
     @staticmethod
     def calculate_streak(df: pd.DataFrame) -> int:
-        """Calculate current streak"""
-        df = df.sort_values('timesent').reset_index(drop=True)
-        df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
-        df['streak_id'] = df['start_of_streak'].cumsum()
-        df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
+        df = df.sort_values("timesent").reset_index(drop=True)
+        df["start_of_streak"] = df.user_id.ne(df["user_id"].shift())
+        df["streak_id"] = df["start_of_streak"].cumsum()
+        df["streak_counter"] = df.groupby("streak_id").cumcount() + 1
         return df.streak_counter.iloc[-1]
 
     @staticmethod
     def calculate_user_streak(df: pd.DataFrame, user_id: str) -> int:
-        """Calculate streak for specific user using streak groups
-        
-        Args:
-            df (pd.DataFrame): DataFrame containing user_id column
-            user_id (str): The user ID to calculate streak for
-            
-        Returns:
-            int: The longest streak for the user
-        """
-        df = df.sort_values('timesent').reset_index(drop=True)
-        df['start_of_streak'] = df.user_id.ne(df['user_id'].shift())
-        df['streak_id'] = df['start_of_streak'].cumsum()
-        df['streak_counter'] = df.groupby('streak_id').cumcount() + 1
+        df = df.sort_values("timesent").reset_index(drop=True)
+        df["start_of_streak"] = df.user_id.ne(df["user_id"].shift())
+        df["streak_id"] = df["start_of_streak"].cumsum()
+        df["streak_counter"] = df.groupby("streak_id").cumcount() + 1
 
-        user_df = df[df['user_id'] == user_id]
+        user_df = df[df["user_id"] == user_id]
         if user_df.empty:
             return 0
-            
-        return user_df['streak_counter'].max()
+
+        return user_df["streak_counter"].max()
+
 
 class JuiceCalculator:
     @staticmethod
     def _convert_to_est(df: pd.DataFrame) -> pd.DataFrame:
-        """Convert timestamps to EST"""
         df = df.copy()
-        df['timesent'] = df['timesent'].dt.tz_localize('utc').dt.tz_convert('US/Eastern')
+        df["timesent"] = df["timesent"].dt.tz_localize("utc").dt.tz_convert("US/Eastern")
         return df
 
     @staticmethod
     def _add_juice_column(df: pd.DataFrame) -> pd.DataFrame:
-        """Minutes since midnight Eastern on the claim day, plus rollover for missed days.
-
-        Same as the original within-day juice, except when one or more Eastern
-        calendar days had no first claim — each missed day adds 1440 minutes.
-        """
         df = JuiceCalculator._convert_to_est(df)
-        df = df.sort_values('timesent').reset_index(drop=True)
-        within_day = (df['timesent'].dt.hour * 60 +
-                      df['timesent'].dt.minute +
-                      df['timesent'].dt.second / 60)
-        day_gap = (df['timesent'].dt.normalize() -
-                   df['timesent'].shift(1).dt.normalize()).dt.days
+        df = df.sort_values("timesent").reset_index(drop=True)
+        within_day = (
+            df["timesent"].dt.hour * 60
+            + df["timesent"].dt.minute
+            + df["timesent"].dt.second / 60
+        )
+        day_gap = (
+            df["timesent"].dt.normalize() - df["timesent"].shift(1).dt.normalize()
+        ).dt.days
         missed_days = day_gap.sub(1).clip(lower=0).fillna(0)
-        df['juice'] = within_day + missed_days * 1440
+        df["juice"] = within_day + missed_days * 1440
         return df
 
     @staticmethod
     def daily_juice_series(df: pd.DataFrame) -> pd.DataFrame:
-        """Return sorted timesent + juice columns for each claim day."""
         df = JuiceCalculator._add_juice_column(df)
-        return df[['timesent', 'juice']]
+        return df[["timesent", "juice"]]
 
     @staticmethod
     def calculate_juice(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, float]:
-        """Calculate juice scores for all users"""
         df = JuiceCalculator._add_juice_column(df)
 
-        highscore_idx = df['juice'].idxmax()
-        highscore_user = df.iloc[highscore_idx]['user_id']
-        highscore_value = df.iloc[highscore_idx]['juice']
+        highscore_idx = df["juice"].idxmax()
+        highscore_user = df.iloc[highscore_idx]["user_id"]
+        highscore_value = df.iloc[highscore_idx]["juice"]
 
-        juice_df = df.groupby('user_id')['juice'].sum().reset_index()
-        juice_df = juice_df.sort_values('juice', ascending=False)
+        juice_df = df.groupby("user_id")["juice"].sum().reset_index()
+        juice_df = juice_df.sort_values("juice", ascending=False)
 
         return juice_df, highscore_user, highscore_value
 
     @staticmethod
     def calculate_user_juice(df: pd.DataFrame, user_id: str) -> float:
-        """Calculate juice score for specific user"""
         df = JuiceCalculator._add_juice_column(df)
-        return df[df.user_id == user_id]['juice'].sum()
+        return df[df.user_id == user_id]["juice"].sum()
 
-# Create global instances
+
 db_ops = DataOperations()
 streak_calc = StreakCalculator()
-juice_calc = JuiceCalculator() 
+juice_calc = JuiceCalculator()

@@ -58,7 +58,7 @@ The bot is also connected to the DALL·E 3 API. It can take any prompt as descri
 
 ### Server Dashboard
 
-In addition to answering questions, the bot also writes events with usernames and timestamps to a MySQL database hosted on Amazon Web Services (AWS). This means that you can keep track of when users are interacting with your bot, and what commands they are sending. This information can be used to improve the performance and effectiveness of the bot over time, by analyzing the data to identify trends and patterns in user behavior.
+In addition to answering questions, the bot also writes events with usernames and timestamps to a Postgres database (with pgvector available) co-located on the same VPS as [dinkscord.com](https://dinkscord.com). This means that you can keep track of when users are interacting with your bot, and what commands they are sending.
 
 Basic summaries of the data can be found in the server dashboard (https://peterdinklage.streamlit.app/) displaying information like monthly messages by user or the number of times a user has had the 1st message of the day.
 
@@ -76,7 +76,7 @@ The core Discord functionality of this project is contained in the `bot.py` file
 
 ### DinkCoin
 
-Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`). Balances, the server ledger, and peer-to-peer trades all live in MySQL — no blockchain or crypto wallet required.
+Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`). Balances, the server ledger, and peer-to-peer trades all live in Postgres — no blockchain or crypto wallet required.
 
 | Command | Description |
 |---------|-------------|
@@ -85,7 +85,7 @@ Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`).
 | `/pay` | Send DINK to another user |
 | `/request` | Ask another user for DINK (Accept / Decline) |
 
-Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
+Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/postgres/init.sql` on the dinkboard VPS); `scripts/dinkcoin_schema.sql` is the same DDL for local use.
 
 ## Project Structure
 
@@ -101,7 +101,8 @@ Setup: run `scripts/dinkcoin_schema.sql` against your MySQL database once.
 - `utils/`: Utility modules:
   - `constants.py`: Constants and configuration values.
   - `db.py`: Database operations for logging messages and events.
-- `scripts/dinkcoin_schema.sql`: MySQL tables for the DINK ledger.
+- `scripts/dinkcoin_schema.sql`: Postgres tables for the DINK ledger.
+- `Dockerfile` / `docker-compose.prod.yml`: VPS container deploy (joins the dinkboard Docker network).
 - `requirements.txt`: Python dependencies required for the project.
 - `requirements-dev.txt`: Test dependencies (pytest, pytest-asyncio).
 - `tests/`: Pytest suite (mocked command tests, unit tests, and live smoke tests).
@@ -120,7 +121,7 @@ The dev script creates a virtual environment, installs dependencies, and starts 
 
 ## Running locally
 
-Local runs use the same credentials as production (Discord token, MySQL, xAI). Only one bot session can be active per token, so **stop the hosted bot first**.
+Local runs use the same credentials as production (Discord token, Postgres, xAI). Only one bot session can be active per token, so **stop the VPS bot container first**.
 
 1. Stop the bot on your hosting site.
 2. Ensure `.env` is populated (see `.env.example`).
@@ -183,4 +184,4 @@ Add these **repository secrets** under **Settings → Secrets and variables → 
 
 Locally, `./scripts/test.sh` writes the same `ci-test-report.md` in the project root after each run.
 
-Live MySQL smoke tests require your database to accept remote connections from GitHub Actions. If PebbleHost blocks external access, run `./scripts/test.sh -m "not live"` locally and rely on mocked DB tests in CI until remote access is configured.
+CI spins up a local `pgvector/pgvector` Postgres service for live DB smoke tests.
