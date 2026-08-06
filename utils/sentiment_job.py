@@ -400,7 +400,7 @@ def upsert_results(results: list[SentimentResult], *, model: str) -> int:
                 r.polarity,
                 float(r.polarity_score),
                 ",".join(r.emotions),
-                int(bool(r.sarcasm)),
+                bool(r.sarcasm),
                 r.toxicity,
                 r.directed_at,
                 float(r.confidence),

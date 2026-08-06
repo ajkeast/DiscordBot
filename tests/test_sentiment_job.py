@@ -138,6 +138,9 @@ def test_upsert_results_writes_rows():
     assert rows[0][0] == 123
     assert rows[0][1] == "positive"
     assert rows[0][3] == "joy"
+    # Postgres BOOLEAN rejects smallint — must bind a real bool.
+    assert rows[0][4] is False
+    assert isinstance(rows[0][4], bool)
     assert rows[0][9] == "grok-4.3"
 
 

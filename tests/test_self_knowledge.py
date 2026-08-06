@@ -238,3 +238,80 @@ def test_grok_client_caps_tool_rounds(report, mock_db_ops):
         MAX_TOOL_ROUNDS + 1,
         chat.sample.call_count,
     )
+
+
+def test_grok_client_skips_server_side_tool_calls(report, mock_db_ops):
+    """web_search/x_search are observability only — do not feed fake client results."""
+    from chatgpt_functions import GrokClient
+
+    with patch("chatgpt_functions.Client") as mock_client_cls:
+        grok = GrokClient(api_key="test-key", bot=None)
+        chat = MagicMock()
+        mock_client_cls.return_value.chat.create.return_value = chat
+
+        search_response = MagicMock()
+        search_response.tool_calls = [
+            _make_tool_call("web_search", {"query": "SEC NIL"}),
+            _make_tool_call("web_search", {"query": "college football"}),
+            _make_tool_call("browse_page", {"url": "https://example.com"}),
+        ]
+        search_response.id = "resp-search"
+        search_response.content = (
+            "NIL leveled the field, so SEC dominance looks less automatic."
+        )
+        chat.sample.return_value = search_response
+
+        next_id, text = grok.send_message(
+            "why is the SEC narrative shifting?",
+            system_prompt="sys",
+        )
+
+    # One sample only — server-side tool_calls must not trigger a client tool loop.
+    assert chat.sample.call_count == 1
+    assert next_id == "resp-search"
+    assert "NIL" in text
+    assert_eq(
+        report,
+        SECTION_SELF_KNOWLEDGE,
+        "server-side tools skipped",
+        "kept content",
+        "kept content",
+    )
+
+
+def test_grok_client_runs_client_tools_after_server_side(report, mock_db_ops):
+    from chatgpt_functions import GrokClient
+
+    with patch("chatgpt_functions.Client") as mock_client_cls:
+        grok = GrokClient(api_key="test-key", bot=None)
+        chat = MagicMock()
+        mock_client_cls.return_value.chat.create.return_value = chat
+
+        mixed_response = MagicMock()
+        mixed_response.tool_calls = [
+            _make_tool_call("web_search", {"query": "dink"}),
+            _make_tool_call("get_bot_documentation", {"topic": "dinkcoin"}),
+        ]
+        mixed_response.id = "resp-mixed"
+        mixed_response.content = ""
+
+        final_response = MagicMock()
+        final_response.tool_calls = []
+        final_response.id = "resp-final"
+        final_response.content = "DINK is minted by winning _1st."
+        chat.sample.side_effect = [mixed_response, final_response]
+
+        next_id, text = grok.send_message("how does dinkcoin work?", system_prompt="sys")
+
+    assert chat.sample.call_count == 2
+    assert text == "DINK is minted by winning _1st."
+    assert next_id == "resp-final"
+    # system + user + assistant(mixed) + one client tool_result (not web_search).
+    assert chat.append.call_count == 4
+    assert_eq(
+        report,
+        SECTION_SELF_KNOWLEDGE,
+        "mixed tools",
+        "client executed",
+        "client executed",
+    )
