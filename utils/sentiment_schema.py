@@ -24,6 +24,23 @@ ALLOWED_EMOTIONS = frozenset(
     }
 )
 
+# Models occasionally invent near-synonyms; map them so one label cannot abort a batch.
+EMOTION_ALIASES = {
+    "confusion": "surprise",
+    "confused": "surprise",
+    "curiosity": "surprise",
+    "curious": "surprise",
+    "happiness": "joy",
+    "happy": "joy",
+    "sad": "sadness",
+    "afraid": "fear",
+    "scared": "fear",
+    "frustrated": "annoyance",
+    "frustration": "annoyance",
+    "irritation": "annoyance",
+    "irritated": "annoyance",
+}
+
 
 @dataclass(frozen=True)
 class SentimentResult:
@@ -66,6 +83,16 @@ def _coerce_polarity(raw_polarity: Any, polarity_score: float) -> tuple[str, str
     raise ValueError(f"invalid polarity: {polarity!r}")
 
 
+def _normalize_emotion(emotion: Any) -> str | None:
+    key = str(emotion).strip().lower()
+    if not key:
+        return None
+    key = EMOTION_ALIASES.get(key, key)
+    if key in ALLOWED_EMOTIONS:
+        return key
+    return None
+
+
 def _clean_emotions(values: Any, *, extra: str | None = None) -> list[str]:
     if values is None:
         values = []
@@ -73,13 +100,14 @@ def _clean_emotions(values: Any, *, extra: str | None = None) -> list[str]:
         raise ValueError("emotions must be a list")
     cleaned: list[str] = []
     for emotion in values:
-        key = str(emotion).strip().lower()
-        if key not in ALLOWED_EMOTIONS:
-            raise ValueError(f"emotion '{emotion}' not in {sorted(ALLOWED_EMOTIONS)}")
+        key = _normalize_emotion(emotion)
+        if key is None:
+            continue
         if key not in cleaned:
             cleaned.append(key)
-    if extra and extra in ALLOWED_EMOTIONS and extra not in cleaned:
-        cleaned.insert(0, extra)
+    extra_key = _normalize_emotion(extra) if extra else None
+    if extra_key and extra_key not in cleaned:
+        cleaned.insert(0, extra_key)
     if not cleaned:
         cleaned = ["neutral"]
     return cleaned[:3]

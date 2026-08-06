@@ -104,6 +104,12 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Local Cursor agent notes / rules (not shared in the repo)
+.cursor/
+
+# macOS
+.DS_Store
+
 # Environments
 .env
 .venv

@@ -134,11 +134,12 @@ def test_upsert_results_writes_rows():
         written = sentiment_job.upsert_results([result], model="grok-4.3")
     assert written == 1
     execmany.assert_called_once()
+    # psycopg3 may adapt Python bool as smallint; cast in SQL so Postgres accepts it.
+    assert "%s::boolean" in execmany.call_args.args[0]
     rows = execmany.call_args.args[1]
     assert rows[0][0] == 123
     assert rows[0][1] == "positive"
     assert rows[0][3] == "joy"
-    # Postgres BOOLEAN rejects smallint — must bind a real bool.
     assert rows[0][4] is False
     assert isinstance(rows[0][4], bool)
     assert rows[0][9] == "grok-4.3"
@@ -431,6 +432,40 @@ def test_coerce_emotion_used_as_polarity():
     assert result.polarity == "neutral"
     assert result.emotions[0] == "surprise"
     assert "joy" in result.emotions
+
+
+def test_emotion_aliases_map_confusion():
+    result = parse_sentiment_result(
+        {
+            "message_id": "8",
+            "polarity": "neutral",
+            "polarity_score": 0.0,
+            "emotions": ["confusion"],
+            "sarcasm": False,
+            "toxicity": "none",
+            "directed_at": "general",
+            "confidence": 0.7,
+            "rationale": "Unclear intent",
+        }
+    )
+    assert result.emotions == ["surprise"]
+
+
+def test_unknown_emotions_fall_back_to_neutral():
+    result = parse_sentiment_result(
+        {
+            "message_id": "9",
+            "polarity": "neutral",
+            "polarity_score": 0.0,
+            "emotions": ["existential-dread"],
+            "sarcasm": False,
+            "toxicity": "none",
+            "directed_at": "general",
+            "confidence": 0.5,
+            "rationale": "Weird label",
+        }
+    )
+    assert result.emotions == ["neutral"]
 
 
 def test_invalid_polarity_still_raises():

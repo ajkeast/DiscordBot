@@ -97,7 +97,7 @@ INSERT INTO message_sentiment (
   message_id, polarity, polarity_score, emotions, sarcasm, toxicity,
   directed_at, confidence, rationale, model
 ) VALUES (
-  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+  %s, %s, %s, %s, %s::boolean, %s, %s, %s, %s, %s
 )
 ON CONFLICT (message_id) DO UPDATE SET
   polarity = EXCLUDED.polarity,
