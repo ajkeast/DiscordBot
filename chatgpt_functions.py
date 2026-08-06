@@ -17,7 +17,7 @@ import os
 from dotenv import load_dotenv
 from xai_sdk import Client
 from xai_sdk.chat import user, system, image, tool, tool_result
-from xai_sdk.tools import web_search, x_search
+from xai_sdk.tools import get_tool_call_type, web_search, x_search
 
 from utils import self_knowledge
 
@@ -31,6 +31,27 @@ GROK_IMAGINE_FILENAME = "grok-imagine.jpg"  # xAI base64 responses are JPEG
 
 # Safety cap on client-side tool round-trips per user message
 MAX_TOOL_ROUNDS = 5
+
+# Server-side tool function names (observability only — xAI already executed these).
+# Used as a fallback when get_tool_call_type() is unavailable (e.g. test mocks).
+_SERVER_SIDE_TOOL_NAMES = frozenset(
+    {
+        "web_search",
+        "web_search_with_snippets",
+        "browse_page",
+        "open_page",
+        "open_page_with_find",
+        "search_images",
+        "x_user_search",
+        "x_keyword_search",
+        "x_semantic_search",
+        "x_thread_fetch",
+        "code_execution",
+        "view_x_video",
+        "view_image",
+        "collections_search",
+    }
+)
 
 
 class GrokClient:
@@ -60,6 +81,35 @@ class GrokClient:
     def _build_tools(self) -> list:
         return [web_search(), x_search(), *self._client_tools]
 
+    def _is_client_side_tool_call(self, tool_call) -> bool:
+        """Return True only for tools that must be executed locally.
+
+        Server-side tools (web_search, x_search, …) are already run by xAI and
+        appear on response.tool_calls for observability. Feeding them back as
+        client tool results empties the reply.
+
+        Check known server-side function names first — get_tool_call_type() can
+        mis-classify non-proto mocks (type defaults to CLIENT_SIDE_TOOL).
+        """
+        name = getattr(getattr(tool_call, "function", None), "name", "") or ""
+        if name in _SERVER_SIDE_TOOL_NAMES:
+            return False
+        try:
+            return get_tool_call_type(tool_call) == "client_side_tool"
+        except Exception:
+            return True
+
+    def _client_side_tool_calls(self, response) -> list:
+        calls = getattr(response, "tool_calls", None) or []
+        client_calls = []
+        for tool_call in calls:
+            if self._is_client_side_tool_call(tool_call):
+                client_calls.append(tool_call)
+            else:
+                name = getattr(getattr(tool_call, "function", None), "name", "?")
+                logger.info("Grok server-side tool used: %s", name)
+        return client_calls
+
     def _execute_tool_call(self, tool_call) -> str:
         """Run one client-side tool call and return its string result."""
         name = tool_call.function.name
@@ -80,12 +130,19 @@ class GrokClient:
             return f"Error: tool '{name}' failed to execute."
 
     def _sample_with_tools(self, chat):
-        """Sample a response, executing client-side tool calls until Grok answers."""
+        """Sample a response, executing client-side tool calls until Grok answers.
+
+        Server-side tool calls on the response are ignored — xAI already executed
+        them. Only client_side_tool entries pause the loop for local handlers.
+        """
         response = chat.sample()
         rounds = 0
-        while getattr(response, "tool_calls", None) and rounds < MAX_TOOL_ROUNDS:
+        while rounds < MAX_TOOL_ROUNDS:
+            client_calls = self._client_side_tool_calls(response)
+            if not client_calls:
+                break
             chat.append(response)
-            for tool_call in response.tool_calls:
+            for tool_call in client_calls:
                 output = self._execute_tool_call(tool_call)
                 chat.append(tool_result(output, tool_call_id=tool_call.id))
             response = chat.sample()
