@@ -40,6 +40,7 @@ class DinkBot(commands.Bot):
         await self.load_extension('cogs.utility')
         await self.load_extension('cogs.misc')
         await self.load_extension('cogs.sentiment')
+        await self.load_extension('cogs.music')
 
         await self._sync_app_commands()
         self.loop.create_task(self._console_post_loop())

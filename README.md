@@ -85,6 +85,22 @@ Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`).
 | `/pay` | Send DINK to another user |
 | `/request` | Ask another user for DINK (Accept / Decline) |
 
+### Music (YouTube voice)
+
+Join a voice channel, then:
+
+| Command | Description |
+|---------|-------------|
+| `/play <url or search>` | Play a YouTube URL or the top search result |
+| `/skip` | Skip the current track |
+| `/stop` | Stop and clear the queue |
+| `/queue` | Show the queue |
+| `/np` | Now playing |
+| `/pause` / `/resume` | Pause or resume |
+| `/leave` | Disconnect from voice |
+
+Requires FFmpeg + yt-dlp in the container (installed via the Dockerfile / `requirements.txt`). The bot needs **Connect** and **Speak** permissions in the voice channel.
+
 Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/postgres/init.sql` on the dinkboard VPS); `scripts/dinkcoin_schema.sql` is the same DDL for local use.
 
 ## Project Structure
@@ -95,6 +111,7 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
   - `ai.py`: AI-related commands including ChatGPT integration and DALL·E 3 image generation.
   - `first.py`: Commands for tracking and managing first messages of the day.
   - `dinkcoin.py`: DinkCoin balance, ledger, and peer-to-peer transfers.
+  - `music.py`: YouTube voice playback (`/play` URL or search) via yt-dlp + FFmpeg.
   - `misc.py`: Miscellaneous utility commands.
   - `server.py`: Server management and dashboard-related commands.
   - `utility.py`: General utility commands.

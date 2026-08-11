@@ -6,13 +6,14 @@ from cogs.ai import AI
 from cogs.dinkcoin import DinkCoin
 from cogs.first import First
 from cogs.misc import Misc
+from cogs.music import Music
 from cogs.sentiment import Sentiment
 from cogs.server import Server
 from cogs.utility import Utility
 from tests.conftest import EXPECTED_COMMANDS
 from tests.reporting import SECTION_WIRING
 
-COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc, Sentiment)
+COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc, Sentiment, Music)
 
 
 def _server_init_without_tasks(self, bot):
@@ -25,7 +26,7 @@ def _sentiment_init_without_tasks(self, bot):
 
 
 def test_all_cogs_have_expected_names(report):
-    expected = {"First", "DinkCoin", "Server", "AI", "Utility", "Misc", "Sentiment"}
+    expected = {"First", "DinkCoin", "Server", "AI", "Utility", "Misc", "Sentiment", "Music"}
     actual = {cls.__name__ for cls in COG_CLASSES}
     report.record("cog class names", sorted(expected), sorted(actual), section=SECTION_WIRING)
     assert actual == expected
@@ -51,4 +52,4 @@ def test_all_commands_registered(report):
     )
     report.record("command count", len(EXPECTED_COMMANDS), len(registered), section=SECTION_WIRING)
     assert EXPECTED_COMMANDS <= registered
-    assert len(EXPECTED_COMMANDS) == 22
+    assert len(EXPECTED_COMMANDS) == 30
