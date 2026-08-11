@@ -19,6 +19,7 @@ EXPECTED_COMMANDS = frozenset({
     "members", "emojis", "channels",
     "hello", "ping", "simonsays", "dashboard",
     "donation",
+    "play", "skip", "stop", "queue", "np", "pause", "resume", "leave",
 })
 
 

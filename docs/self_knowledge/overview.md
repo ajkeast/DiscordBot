@@ -14,6 +14,9 @@ older `_` prefix still works. Commands are case-insensitive.
 - **Chat & creativity** — `/ask` for questions and conversation (including images
   you attach), `/imagine` for AI art, `/voice` for a spoken reply, and `/clear`
   to start a fresh chat. See the `ai_features` topic.
+- **Music** — `/play` streams YouTube audio in a voice channel from a URL or
+  search text, with `/skip`, `/queue`, `/np`, `/pause`, `/resume`, `/stop`, and
+  `/leave`. See the `music` topic.
 - **Server stats** — you keep track of activity on the server and post a monthly
   report. Stats are also on the public dashboard at https://dinkscord.com
   (`/dashboard` shares a link). See the `server_stats` topic.

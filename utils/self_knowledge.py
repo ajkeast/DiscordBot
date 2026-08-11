@@ -21,6 +21,7 @@ TOPICS = {
     "first_game": "Rules of the daily /1st game: claiming, score, streaks, and juice",
     "dinkcoin": "How DINK works: earning it, spending it, and the leaderboard",
     "ai_features": "How /ask, /imagine, /voice, and /clear work for members",
+    "music": "How /play works: YouTube URLs, search, queue, and voice controls",
     "server_stats": "Activity tracking, the monthly report, and the public dashboard",
 }
 
@@ -43,7 +44,7 @@ def build_command_reference(bot) -> str:
     if bot is None:
         return (
             "Live command registry unavailable. Use get_bot_documentation "
-            "(topics: overview, first_game, dinkcoin, ai_features) for command lists."
+            "(topics: overview, first_game, dinkcoin, ai_features, music) for command lists."
         )
     lines = ["Commands (slash /name; underscore _name also works, case-insensitive):"]
     for cog_name, cog in bot.cogs.items():
