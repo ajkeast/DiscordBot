@@ -1,6 +1,6 @@
 """Unit tests for music helpers and command edge cases."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from cogs.music import (
     Music,
