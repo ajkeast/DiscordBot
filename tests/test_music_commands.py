@@ -7,12 +7,14 @@ from cogs.music import (
     Music,
     Track,
     _webpage_url_from_entry,
+    _yt_dlp_user_message,
     extract_stream_url,
     extract_track_info,
     format_duration,
     is_youtube_url,
     safe_title,
     to_ydl_query,
+    ydl_options,
 )
 from tests.reporting import SECTION_COMMANDS
 
@@ -122,6 +124,31 @@ def test_extract_track_info_empty_search_raises(mock_ydl_cls, report):
         raised = True
     report.record("empty search raises", True, raised, section=SECTION_COMMANDS)
     assert raised
+
+
+def test_ydl_options_attaches_cookiefile(tmp_path, monkeypatch, report):
+    cookies = tmp_path / "youtube.cookies"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(cookies))
+    opts = ydl_options()
+    report.record("cookiefile set", str(cookies), opts.get("cookiefile"), section=SECTION_COMMANDS)
+    assert opts["cookiefile"] == str(cookies)
+
+
+def test_ydl_options_skips_missing_cookiefile(tmp_path, monkeypatch, report):
+    missing = tmp_path / "missing.cookies"
+    monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(missing))
+    opts = ydl_options()
+    report.record("missing cookiefile omitted", False, "cookiefile" in opts, section=SECTION_COMMANDS)
+    assert "cookiefile" not in opts
+
+
+def test_yt_dlp_user_message_bot_check(report):
+    msg = _yt_dlp_user_message(
+        Exception("ERROR: [youtube] abc: Sign in to confirm you’re not a bot")
+    )
+    report.record("bot check message", "refresh cookies", msg, section=SECTION_COMMANDS)
+    assert "cookies" in msg.lower()
 
 
 @patch("cogs.music.yt_dlp.YoutubeDL")

@@ -119,6 +119,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# YouTube / yt-dlp cookies (never commit)
+secrets/*
+!secrets/.gitkeep
+*.cookies
+cookies.txt
+
 # Spyder project settings
 .spyderproject
 .spyproject
