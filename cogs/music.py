@@ -86,6 +86,27 @@ def _track_duration_seconds(track: wavelink.Playable) -> Optional[int]:
         return None
 
 
+def is_preview_track(track: wavelink.Playable) -> bool:
+    """True when SoundCloud only exposes a short Go+ preview stream (~30s)."""
+    for attr in ("identifier", "uri"):
+        value = getattr(track, attr, None)
+        if value and "/preview/" in str(value).lower():
+            return True
+    return False
+
+
+def pick_playable_track(tracks) -> Optional[wavelink.Playable]:
+    """Prefer a full stream over a SoundCloud preview clip."""
+    if isinstance(tracks, wavelink.Playlist):
+        candidates = list(tracks.tracks)
+    else:
+        candidates = list(tracks)
+    for track in candidates:
+        if not is_preview_track(track):
+            return track
+    return candidates[0] if candidates else None
+
+
 def _track_url(track: wavelink.Playable) -> str:
     uri = getattr(track, "uri", None)
     if uri:
@@ -153,9 +174,10 @@ class Music(commands.Cog):
     def _track_line(self, track: wavelink.Playable, requester: str, *, prefix: str = "") -> str:
         title = safe_title(getattr(track, "title", None) or "Unknown title")
         duration = format_duration(_track_duration_seconds(track))
+        # Angle brackets keep the link clickable but suppress Discord's rich embed.
         return (
             f"{prefix}**{title}** ({duration})\n"
-            f"{_track_url(track)} — {requester}"
+            f"<{_track_url(track)}> — {requester}"
         )
 
     async def _ensure_player(self, ctx: commands.Context) -> wavelink.Player:
@@ -231,8 +253,21 @@ class Music(commands.Cog):
                 )
                 return
 
-            track = tracks[0] if not isinstance(tracks, wavelink.Playlist) else tracks.tracks[0]
+            track = pick_playable_track(tracks)
+            if track is None:
+                await ctx.send(
+                    "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
+                )
+                return
+
             requester = ctx.author.display_name
+            preview_note = ""
+            if is_preview_track(track):
+                # Direct URL (or all search hits) may still be preview-only.
+                preview_note = (
+                    "\n⚠️ SoundCloud only allows a short preview of this track "
+                    "(full stream needs Go+). Try another upload or search."
+                )
 
             if player.current is not None or len(player.queue) > 0:
                 if len(player.queue) >= MAX_QUEUE_SIZE:
@@ -246,11 +281,15 @@ class Music(commands.Cog):
                         requester,
                         prefix=f"Queued **#{position}:** ",
                     )
+                    + preview_note
                 )
                 return
 
             await player.play(track)
-            await ctx.send(self._track_line(track, requester, prefix="▶️ **Now playing:** "))
+            await ctx.send(
+                self._track_line(track, requester, prefix="▶️ **Now playing:** ")
+                + preview_note
+            )
 
     @commands.hybrid_command(brief="Skip the current track")
     async def skip(self, ctx: commands.Context):
