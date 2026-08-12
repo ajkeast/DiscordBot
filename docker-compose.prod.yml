@@ -1,24 +1,40 @@
 # Discord bot — joins the dinkboard Docker network and uses shared Postgres.
 # From /opt/apps/discordbot on the VPS:
 #   docker compose -f docker-compose.prod.yml up --build -d
+#
+# Required in .env (never commit):
+#   LAVALINK_PASSWORD=...
+# Optional after first YouTube OAuth (see README):
+#   YOUTUBE_OAUTH_REFRESH_TOKEN=...
 
 services:
+  lavalink:
+    container_name: discord-lavalink
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    environment:
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
+      YOUTUBE_OAUTH_REFRESH_TOKEN: ${YOUTUBE_OAUTH_REFRESH_TOKEN:-}
+    volumes:
+      - ./deploy/lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    networks:
+      - dinkboard
+
   discord-bot:
     container_name: discord-bot
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    depends_on:
+      - lavalink
     env_file:
       - .env
     environment:
       SQL_HOST: postgres
       SQL_PORT: "5432"
-      YOUTUBE_COOKIES_FILE: /run/secrets/youtube.cookies
-    volumes:
-      # Netscape cookies.txt for yt-dlp (create on host before first deploy):
-      #   /opt/apps/discordbot/secrets/youtube.cookies
-      - ./secrets:/run/secrets:ro
+      LAVALINK_URI: http://lavalink:2333
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
     networks:
       - dinkboard
 

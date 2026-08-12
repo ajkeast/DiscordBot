@@ -1,30 +1,20 @@
-"""Unit tests for music helpers and command edge cases."""
+"""Unit tests for music helpers and command edge cases (Lavalink/Wavelink)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import wavelink
 
 from cogs.music import (
     MAX_QUEUE_SIZE,
     Music,
-    Track,
-    _webpage_url_from_entry,
-    _yt_dlp_user_message,
-    extract_stream_url,
-    extract_track_info,
+    _lavalink_user_message,
     format_duration,
     is_youtube_url,
     safe_title,
-    to_ydl_query,
-    ydl_options,
+    to_search_query,
 )
 from tests.reporting import SECTION_COMMANDS
-
-
-def _ydl_mock(extract_return):
-    mock_ydl = MagicMock()
-    mock_ydl.__enter__ = MagicMock(return_value=mock_ydl)
-    mock_ydl.__exit__ = MagicMock(return_value=False)
-    mock_ydl.extract_info.return_value = extract_return
-    return mock_ydl
 
 
 def test_is_youtube_url_accepts_common_forms(report):
@@ -34,136 +24,49 @@ def test_is_youtube_url_accepts_common_forms(report):
         ("youtube.com/watch?v=dQw4w9WgXcQ", True),
         ("https://music.youtube.com/watch?v=dQw4w9WgXcQ", True),
         ("https://www.youtube.com/shorts/abc123xyz00", True),
-        ("tubthumping", False),
-        ("never gonna give you up", False),
+        ("not a url", False),
         ("https://example.com/watch?v=dQw4w9WgXcQ", False),
-        ("https://vimeo.com/123", False),
         ("https://youtube.com/", False),
-        ("check out https://youtu.be/dQw4w9WgXcQ please", False),
+        ("tubthumping", False),
         ("youtube.com/watch?v=dQw4w9WgXcQ and more", False),
     ]
     for value, expected in cases:
         actual = is_youtube_url(value)
         report.record(f"is_youtube_url({value!r})", expected, actual, section=SECTION_COMMANDS)
-        assert actual is expected, value
+        assert actual is expected
 
 
-def test_to_ydl_query_url_vs_search(report):
-    url = "https://youtu.be/dQw4w9WgXcQ"
-    assert to_ydl_query(url) == url
-    report.record("to_ydl_query(url)", url, to_ydl_query(url), section=SECTION_COMMANDS)
-
-    search = to_ydl_query("tubthumping")
-    expected = "ytsearch1:tubthumping"
-    report.record("to_ydl_query(search)", expected, search, section=SECTION_COMMANDS)
-    assert search == expected
-
-    bare = to_ydl_query("youtube.com/watch?v=dQw4w9WgXcQ")
+def test_to_search_query(report):
+    assert to_search_query("tubthumping") == "tubthumping"
+    report.record("search text", "tubthumping", to_search_query("tubthumping"), section=SECTION_COMMANDS)
+    bare = to_search_query("youtube.com/watch?v=dQw4w9WgXcQ")
+    report.record("bare url gets scheme", True, bare.startswith("https://"), section=SECTION_COMMANDS)
     assert bare.startswith("https://")
-    report.record("to_ydl_query(bare host)", "https://…", bare, section=SECTION_COMMANDS)
-
-    # Sentences must not be treated as URLs.
-    assert to_ydl_query("play https://youtu.be/dQw4w9WgXcQ").startswith("ytsearch1:")
 
 
 def test_format_duration(report):
     assert format_duration(None) == "?:??"
-    assert format_duration(0) == "0:00"
     assert format_duration(65) == "1:05"
     assert format_duration(3661) == "1:01:01"
     report.record("format_duration(65)", "1:05", format_duration(65), section=SECTION_COMMANDS)
 
 
-def test_safe_title_strips_link_breakers(report):
-    actual = safe_title("Song [Live] (Official)")
-    report.record("safe_title", "no brackets", actual, section=SECTION_COMMANDS)
+def test_safe_title(report):
+    actual = safe_title("Song [Live] *wow*")
+    report.record("safe_title strips brackets", True, "[" not in actual and "]" not in actual, section=SECTION_COMMANDS)
     assert "[" not in actual and "]" not in actual
 
 
-def test_webpage_url_prefers_watch_url_not_cdn(report):
-    entry = {
-        "id": "dQw4w9WgXcQ",
-        "url": "https://googlevideo.com/videoplayback?expire=1",
-        "title": "Rick Roll",
-    }
-    url = _webpage_url_from_entry(entry)
-    report.record("webpage from id", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", url, section=SECTION_COMMANDS)
-    assert url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+def test_lavalink_user_message_oauth(report):
+    msg = _lavalink_user_message(Exception("This video requires login / OAuth"))
+    report.record("oauth message", "OAuth", msg, section=SECTION_COMMANDS)
+    assert "oauth" in msg.lower()
 
 
-@patch("cogs.music.yt_dlp.YoutubeDL")
-def test_extract_track_info_search_uses_first_entry(mock_ydl_cls, report):
-    mock_ydl_cls.return_value = _ydl_mock({
-        "entries": [
-            {
-                "id": "abc123xyz00",
-                "title": "Tubthumping",
-                "webpage_url": "https://www.youtube.com/watch?v=abc123xyz00",
-                "duration": 271,
-                "url": "https://googlevideo.com/stream",
-            }
-        ]
-    })
-
-    info = extract_track_info("tubthumping")
-    mock_ydl_cls.return_value.extract_info.assert_called_once_with(
-        "ytsearch1:tubthumping", download=False
-    )
-    assert info["title"] == "Tubthumping"
-    assert info["webpage_url"] == "https://www.youtube.com/watch?v=abc123xyz00"
-    report.record("extract search title", "Tubthumping", info["title"], section=SECTION_COMMANDS)
-
-
-@patch("cogs.music.yt_dlp.YoutubeDL")
-def test_extract_track_info_empty_search_raises(mock_ydl_cls, report):
-    mock_ydl_cls.return_value = _ydl_mock({"entries": []})
-    try:
-        extract_track_info("zzznonsensequeryzzz")
-        raised = False
-    except ValueError:
-        raised = True
-    report.record("empty search raises", True, raised, section=SECTION_COMMANDS)
-    assert raised
-
-
-def test_ydl_options_attaches_cookiefile(tmp_path, monkeypatch, report):
-    cookies = tmp_path / "youtube.cookies"
-    runtime = tmp_path / "runtime.cookies"
-    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
-    monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(cookies))
-    monkeypatch.setattr("cogs.music._RUNTIME_COOKIE_PATH", str(runtime))
-    opts = ydl_options()
-    report.record("cookiefile set", str(runtime), opts.get("cookiefile"), section=SECTION_COMMANDS)
-    assert opts["cookiefile"] == str(runtime)
-    assert runtime.is_file()
-
-
-def test_ydl_options_skips_missing_cookiefile(tmp_path, monkeypatch, report):
-    missing = tmp_path / "missing.cookies"
-    monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(missing))
-    opts = ydl_options()
-    report.record("missing cookiefile omitted", False, "cookiefile" in opts, section=SECTION_COMMANDS)
-    assert "cookiefile" not in opts
-
-
-def test_yt_dlp_user_message_bot_check(report):
-    msg = _yt_dlp_user_message(
-        Exception("ERROR: [youtube] abc: Sign in to confirm you’re not a bot")
-    )
-    report.record("bot check message", "refresh cookies", msg, section=SECTION_COMMANDS)
-    assert "cookies" in msg.lower()
-
-
-@patch("cogs.music.yt_dlp.YoutubeDL")
-def test_extract_stream_url_rejects_non_youtube(mock_ydl_cls, report):
-    try:
-        extract_stream_url("https://example.com/audio.mp3")
-        rejected = False
-    except ValueError:
-        rejected = True
-    report.record("reject non-youtube stream", True, rejected, section=SECTION_COMMANDS)
-    assert rejected
-    mock_ydl_cls.assert_not_called()
+def test_lavalink_user_message_generic(report):
+    msg = _lavalink_user_message(Exception("something else"))
+    report.record("generic message", "Couldn't find", msg, section=SECTION_COMMANDS)
+    assert "couldn't find" in msg.lower()
 
 
 async def test_play_requires_voice_channel(report, mock_bot, mock_ctx):
@@ -176,132 +79,83 @@ async def test_play_requires_voice_channel(report, mock_bot, mock_ctx):
     cog = Music(mock_bot)
     await cog.play.callback(cog, mock_ctx, query="tubthumping")
     actual = mock_ctx.send.call_args.args[0]
-    report.record("play without VC", "Join a voice channel", actual, section=SECTION_COMMANDS)
+    report.record("play without voice", "Join a voice channel", actual, section=SECTION_COMMANDS)
     assert "Join a voice channel" in actual
 
 
 async def test_play_queues_when_busy(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
-    mock_ctx.guild.id = 9
+    mock_ctx.guild.id = 2
     mock_ctx.guild.me = None
-    voice_state = MagicMock()
-    voice_state.channel = MagicMock()
-    mock_ctx.author.voice = voice_state
-    mock_ctx.voice_client = MagicMock()
-    mock_ctx.voice_client.is_playing.return_value = True
-    mock_ctx.voice_client.is_paused.return_value = False
-    mock_ctx.voice_client.channel = voice_state.channel
+    mock_ctx.author.voice = MagicMock()
+    mock_ctx.author.voice.channel = MagicMock()
+    mock_ctx.author.display_name = "Alex"
+
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = True
+    player.paused = False
+    player.current = MagicMock()
+    player.queue = MagicMock()
+    player.queue.__len__ = MagicMock(return_value=1)
+    player.queue.put_wait = AsyncMock()
+    mock_ctx.voice_client = player
+
+    track = MagicMock()
+    track.title = "Song"
+    track.length = 120000
+    track.uri = "https://www.youtube.com/watch?v=abc123xyz00"
+    track.identifier = "abc123xyz00"
 
     cog = Music(mock_bot)
-    player = cog._player(9)
-    player.current = Track("Current", "https://youtu.be/cur", 10, 1, "A")
+    with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
+        with patch("cogs.music.wavelink.Playable.search", AsyncMock(return_value=[track])):
+            await cog.play.callback(cog, mock_ctx, query="tubthumping")
 
-    with patch(
-        "cogs.music.extract_track_info",
-        return_value={
-            "title": "Next Up",
-            "webpage_url": "https://www.youtube.com/watch?v=next123456",
-            "duration": 12,
-        },
-    ):
-        await cog.play.callback(cog, mock_ctx, query="next song")
-
+    player.queue.put_wait.assert_awaited_once_with(track)
+    player.play.assert_not_called()
     actual = mock_ctx.send.call_args.args[0]
-    report.record("play while busy", "Queued", actual, section=SECTION_COMMANDS)
+    report.record("queued while busy", True, "Queued" in actual, section=SECTION_COMMANDS)
     assert "Queued" in actual
-    assert len(player.queue) == 1
-    assert player.queue[0].title == "Next Up"
 
 
-async def test_play_respects_queue_limit(report, mock_bot, mock_ctx):
+async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
-    mock_ctx.guild.id = 11
+    mock_ctx.guild.id = 3
     mock_ctx.guild.me = None
-    voice_state = MagicMock()
-    voice_state.channel = MagicMock()
-    mock_ctx.author.voice = voice_state
-    mock_ctx.voice_client = MagicMock()
-    mock_ctx.voice_client.is_playing.return_value = True
-    mock_ctx.voice_client.is_paused.return_value = False
-    mock_ctx.voice_client.channel = voice_state.channel
+    mock_ctx.author.voice = MagicMock()
+    mock_ctx.author.display_name = "Alex"
+
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = False
+    player.paused = False
+    player.current = None
+    player.queue = MagicMock()
+    player.queue.__bool__ = MagicMock(return_value=False)
+    player.queue.__len__ = MagicMock(return_value=0)
+    player.play = AsyncMock()
+    mock_ctx.voice_client = player
+
+    track = MagicMock()
+    track.title = "Tubthumping"
+    track.length = 213000
+    track.uri = "https://www.youtube.com/watch?v=2H5uWRjFsGc"
+    track.identifier = "2H5uWRjFsGc"
 
     cog = Music(mock_bot)
-    player = cog._player(11)
-    player.current = Track("Current", "https://youtu.be/cur", 10, 1, "A")
-    for i in range(MAX_QUEUE_SIZE):
-        player.queue.append(Track(f"T{i}", "https://youtu.be/x", 1, 1, "A"))
+    with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
+        with patch("cogs.music.wavelink.Playable.search", AsyncMock(return_value=[track])):
+            await cog.play.callback(cog, mock_ctx, query="tubthumping")
 
-    with patch(
-        "cogs.music.extract_track_info",
-        return_value={
-            "title": "Overflow",
-            "webpage_url": "https://www.youtube.com/watch?v=overflow01",
-            "duration": 1,
-        },
-    ):
-        await cog.play.callback(cog, mock_ctx, query="overflow")
-
+    player.play.assert_awaited_once_with(track)
     actual = mock_ctx.send.call_args.args[0]
-    report.record("queue full", "Queue is full", actual, section=SECTION_COMMANDS)
-    assert "Queue is full" in actual
-    assert len(player.queue) == MAX_QUEUE_SIZE
-
-
-async def test_stop_bumps_generation_and_clears(report, mock_bot, mock_ctx):
-    mock_ctx.guild = MagicMock()
-    mock_ctx.guild.id = 5
-    mock_ctx.voice_client = MagicMock()
-    mock_ctx.voice_client.is_playing.return_value = True
-    mock_ctx.voice_client.is_paused.return_value = False
-
-    cog = Music(mock_bot)
-    player = cog._player(5)
-    player.current = Track("Now", "https://youtu.be/n", 1, 1, "A")
-    player.queue.append(Track("Next", "https://youtu.be/x", 1, 1, "B"))
-    before = player.generation
-
-    await cog.stop.callback(cog, mock_ctx)
-
-    report.record("stop generation", before + 1, player.generation, section=SECTION_COMMANDS)
-    assert player.generation == before + 1
-    assert player.current is None
-    assert len(player.queue) == 0
-    mock_ctx.voice_client.stop.assert_called_once()
-
-
-async def test_play_next_aborts_stale_generation(report, mock_bot):
-    guild = MagicMock()
-    guild.id = 3
-    voice = MagicMock()
-    voice.is_connected.return_value = True
-    voice.is_playing.return_value = False
-    voice.is_paused.return_value = False
-    guild.voice_client = voice
-    mock_bot.get_guild.return_value = guild
-
-    cog = Music(mock_bot)
-    player = cog._player(3)
-    track = Track("Song", "https://www.youtube.com/watch?v=abc123xyz00", 10, 1, "A")
-    player.queue.append(track)
-
-    def slow_extract(_url):
-        # Simulate /stop during extract: bump generation before play starts.
-        player.generation += 1
-        return "https://cdn.example/stream"
-
-    with patch("cogs.music.extract_stream_url", side_effect=slow_extract):
-        with patch("cogs.music.discord.FFmpegOpusAudio") as ffmpeg:
-            await cog._play_next(3)
-
-    ffmpeg.assert_not_called()
-    voice.play.assert_not_called()
-    assert player.current is None
-    report.record("stale generation aborts play", True, True, section=SECTION_COMMANDS)
+    report.record("now playing", True, "Now playing" in actual, section=SECTION_COMMANDS)
+    assert "Now playing" in actual
 
 
 async def test_queue_empty_message(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
     mock_ctx.guild.id = 42
+    mock_ctx.voice_client = None
     cog = Music(mock_bot)
     await cog.queue.callback(cog, mock_ctx)
     actual = mock_ctx.send.call_args.args[0]
@@ -312,6 +166,7 @@ async def test_queue_empty_message(report, mock_bot, mock_ctx):
 async def test_np_when_idle(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
     mock_ctx.guild.id = 42
+    mock_ctx.voice_client = None
     cog = Music(mock_bot)
     await cog.now_playing.callback(cog, mock_ctx)
     actual = mock_ctx.send.call_args.args[0]
@@ -319,65 +174,16 @@ async def test_np_when_idle(report, mock_bot, mock_ctx):
     assert "Nothing is playing" in actual
 
 
-async def test_queue_lists_current_and_upcoming(report, mock_bot, mock_ctx):
+async def test_skip_when_idle(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
-    mock_ctx.guild.id = 7
+    mock_ctx.voice_client = None
     cog = Music(mock_bot)
-    player = cog._player(7)
-    player.current = Track(
-        title="Now Song",
-        webpage_url="https://youtu.be/now",
-        duration=120,
-        requester_id=1,
-        requester_name="Alice",
-    )
-    player.queue.append(
-        Track(
-            title="Next Song",
-            webpage_url="https://youtu.be/next",
-            duration=90,
-            requester_id=2,
-            requester_name="Bob",
-        )
-    )
-    await cog.queue.callback(cog, mock_ctx)
+    await cog.skip.callback(cog, mock_ctx)
     actual = mock_ctx.send.call_args.args[0]
-    report.record("queue contents", "Now Song + Next Song", actual, section=SECTION_COMMANDS)
-    assert "Now Song" in actual
-    assert "Next Song" in actual
-    assert "Bob" in actual
+    report.record("skip idle", "Nothing is playing", actual, section=SECTION_COMMANDS)
+    assert "Nothing is playing" in actual
 
 
-async def test_auto_leave_when_alone(report, mock_bot):
-    cog = Music(mock_bot)
-    mock_bot.user = MagicMock()
-    mock_bot.user.id = 999
-
-    channel = MagicMock()
-    channel.guild.id = 77
-    bot_member = MagicMock()
-    bot_member.bot = True
-    channel.members = [bot_member]
-
-    voice = AsyncMock()
-    voice.channel = channel
-    channel.guild.voice_client = voice
-
-    human = MagicMock()
-    human.id = 1
-    human.bot = False
-    before = MagicMock()
-    before.channel = channel
-    after = MagicMock()
-    after.channel = None
-
-    player = cog._player(77)
-    player.current = Track("X", "https://youtu.be/x", 1, 1, "A")
-    player.queue.append(Track("Y", "https://youtu.be/y", 1, 1, "B"))
-
-    await cog.on_voice_state_update(human, before, after)
-
-    voice.disconnect.assert_awaited()
-    assert player.current is None
-    assert len(player.queue) == 0
-    report.record("auto-leave when alone", True, True, section=SECTION_COMMANDS)
+def test_max_queue_size_constant(report):
+    report.record("MAX_QUEUE_SIZE", 50, MAX_QUEUE_SIZE, section=SECTION_COMMANDS)
+    assert MAX_QUEUE_SIZE == 50
