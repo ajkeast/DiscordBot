@@ -3,6 +3,9 @@
 Play YouTube audio in a voice channel. Join a voice channel first, then use
 `/play` with either a **YouTube URL** or a **search phrase**.
 
+Audio is fetched by **Lavalink** (YouTube plugin + OAuth), not by the Discord
+bot process itself.
+
 ## Play — `/play`
 
 - `/play https://youtu.be/...` — play that video's audio

@@ -119,7 +119,7 @@ ENV/
 env.bak/
 venv.bak/
 
-# YouTube / yt-dlp cookies (never commit)
+# Local secrets (never commit) — cookies leftover from old yt-dlp path
 secrets/*
 !secrets/.gitkeep
 *.cookies
