@@ -4,8 +4,6 @@
 #
 # Required in .env (never commit):
 #   LAVALINK_PASSWORD=...
-# Optional after first YouTube OAuth (see README):
-#   YOUTUBE_OAUTH_REFRESH_TOKEN=...
 
 services:
   lavalink:
@@ -14,7 +12,6 @@ services:
     restart: unless-stopped
     environment:
       LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
-      YOUTUBE_OAUTH_REFRESH_TOKEN: ${YOUTUBE_OAUTH_REFRESH_TOKEN:-}
     volumes:
       - ./deploy/lavalink/application.yml:/opt/Lavalink/application.yml:ro
     networks:

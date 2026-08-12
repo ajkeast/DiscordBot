@@ -14,7 +14,7 @@ older `_` prefix still works. Commands are case-insensitive.
 - **Chat & creativity** — `/ask` for questions and conversation (including images
   you attach), `/imagine` for AI art, `/voice` for a spoken reply, and `/clear`
   to start a fresh chat. See the `ai_features` topic.
-- **Music** — `/play` streams YouTube audio in a voice channel from a URL or
+- **Music** — `/play` streams SoundCloud audio in a voice channel from a URL or
   search text, with `/skip`, `/queue`, `/np`, `/pause`, `/resume`, `/stop`, and
   `/leave`. See the `music` topic.
 - **Server stats** — you keep track of activity on the server and post a monthly
