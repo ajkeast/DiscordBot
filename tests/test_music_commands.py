@@ -187,6 +187,15 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
             await cog.play.callback(cog, mock_ctx, query="lofi")
 
     player.play.assert_awaited_once_with(track)
+    assert player.music_pending_ctx is mock_ctx
+    # Announce waits for track start so 404 fallbacks stay silent.
+    mock_ctx.send.assert_not_called()
+
+    start = MagicMock()
+    start.player = player
+    start.track = track
+    await cog.on_wavelink_track_start(start)
+
     actual = mock_ctx.send.call_args.args[0]
     report.record("now playing", True, "Now playing" in actual, section=SECTION_COMMANDS)
     assert "Now playing" in actual
@@ -237,6 +246,14 @@ async def test_play_skips_preview_and_keeps_full_fallbacks(report, mock_bot, moc
 
     player.play.assert_awaited_once_with(full_a)
     assert player.music_fallbacks == [full_b]
+    assert player.music_pending_ctx is mock_ctx
+    mock_ctx.send.assert_not_called()
+
+    start = MagicMock()
+    start.player = player
+    start.track = full_a
+    await cog.on_wavelink_track_start(start)
+
     actual = mock_ctx.send.call_args.args[0]
     report.record("preferred full stream", True, "Fan Upload A" in actual, section=SECTION_COMMANDS)
     assert "Fan Upload A" in actual
@@ -284,6 +301,9 @@ async def test_track_exception_plays_next_full_stream(report, mock_bot):
     channel.send = AsyncMock()
     player.music_text_channel = channel
     player.music_requester = "Alex"
+    player.music_pending_ctx = None
+    player.music_status_message = None
+    player.music_announce_fallback = False
     preview = MagicMock()
     preview.title = "Preview Hit"
     preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
@@ -306,10 +326,52 @@ async def test_track_exception_plays_next_full_stream(report, mock_bot):
     await cog.on_wavelink_track_exception(payload)
 
     player.play.assert_awaited_once_with(full_b)
+    assert player.music_announce_fallback is True
+    # Failed candidates stay silent until a fallback actually starts.
+    channel.send.assert_not_called()
+
+    start = MagicMock()
+    start.player = player
+    start.track = full_b
+    await cog.on_wavelink_track_start(start)
+
     sent = channel.send.await_args.args[0]
     report.record("fallback message", True, "Playing instead" in sent, section=SECTION_COMMANDS)
     assert "Playing instead" in sent
     assert "Full Backup" in sent
+
+
+async def test_track_exception_hides_failed_announce(report, mock_bot):
+    player = MagicMock(spec=wavelink.Player)
+    player.play = AsyncMock()
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    player.music_text_channel = channel
+    player.music_requester = "Alex"
+    player.music_pending_ctx = None
+    failed_msg = MagicMock()
+    failed_msg.delete = AsyncMock()
+    player.music_status_message = failed_msg
+    player.music_announce_fallback = False
+    full_b = MagicMock()
+    full_b.title = "Full Backup"
+    full_b.length = 180000
+    full_b.uri = "https://soundcloud.com/fan/b"
+    full_b.identifier = "https://api-v2.soundcloud.com/media/b/stream/hls"
+    player.music_fallbacks = [full_b]
+
+    payload = MagicMock()
+    payload.exception = {"message": "404"}
+    payload.track = MagicMock(title="Broken")
+    payload.player = player
+
+    cog = Music(mock_bot)
+    await cog.on_wavelink_track_exception(payload)
+
+    failed_msg.delete.assert_awaited_once()
+    assert player.music_status_message is None
+    channel.send.assert_not_called()
+    report.record("failed announce deleted", True, True, section=SECTION_COMMANDS)
 
 
 async def test_queue_empty_message(report, mock_bot, mock_ctx):
