@@ -221,12 +221,11 @@ class Music(commands.Cog):
             return
 
         track = payload.track
-        requester = getattr(player, "music_requester", None) or "someone"
         player.music_announce_fallback = False  # type: ignore[attr-defined]
         # Always "Now playing" — users shouldn't see the failed candidates we walked.
         await self._send_music_message(
             player,
-            self._track_line(track, requester, prefix="▶️ **Now playing:** "),
+            self._track_line(track, prefix="▶️ **Now playing:** "),
         )
 
     @commands.Cog.listener()
@@ -270,26 +269,21 @@ class Music(commands.Cog):
             "Couldn't play a full version of that. Try another SoundCloud search or URL.",
         )
 
-    def _track_line(self, track: wavelink.Playable, requester: str, *, prefix: str = "") -> str:
+    def _track_line(self, track: wavelink.Playable, *, prefix: str = "") -> str:
         title = safe_title(getattr(track, "title", None) or "Unknown title")
         duration = format_duration(_track_duration_seconds(track))
         # Angle brackets keep the link clickable but suppress Discord's rich embed.
-        return (
-            f"{prefix}**{title}** ({duration})\n"
-            f"<{_track_url(track)}> — {requester}"
-        )
+        return f"{prefix}**{title}** ({duration})\n<{_track_url(track)}>"
 
     def _arm_play_candidates(
         self,
         player: wavelink.Player,
         candidates: list[wavelink.Playable],
-        requester: str,
         ctx: commands.Context,
     ) -> wavelink.Playable:
         """Play the best candidate; keep the rest for quiet exception fallback."""
         track = candidates[0]
         player.music_fallbacks = candidates[1:]  # type: ignore[attr-defined]
-        player.music_requester = requester  # type: ignore[attr-defined]
         player.music_pending_ctx = ctx  # type: ignore[attr-defined]
         player.music_announce_fallback = False  # type: ignore[attr-defined]
         player.music_status_message = None  # type: ignore[attr-defined]
@@ -377,8 +371,6 @@ class Music(commands.Cog):
                 )
                 return
 
-            requester = ctx.author.display_name
-
             if player.current is not None or len(player.queue) > 0:
                 if len(player.queue) >= MAX_QUEUE_SIZE:
                     await ctx.send(f"Queue is full ({MAX_QUEUE_SIZE} tracks).")
@@ -388,15 +380,11 @@ class Music(commands.Cog):
                 await player.queue.put_wait(track)
                 position = len(player.queue)
                 await ctx.send(
-                    self._track_line(
-                        track,
-                        requester,
-                        prefix=f"Queued **#{position}:** ",
-                    )
+                    self._track_line(track, prefix=f"Queued **#{position}:** ")
                 )
                 return
 
-            track = self._arm_play_candidates(player, candidates, requester, ctx)
+            track = self._arm_play_candidates(player, candidates, ctx)
             try:
                 await player.play(track)
             except Exception as exc:
@@ -453,7 +441,7 @@ class Music(commands.Cog):
         lines: list[str] = []
         if player.current is not None:
             lines.append(
-                self._track_line(player.current, "now", prefix="▶️ **Now playing:** ")
+                self._track_line(player.current, prefix="▶️ **Now playing:** ")
             )
         for index, track in enumerate(list(player.queue)[:20], start=1):
             title = safe_title(getattr(track, "title", None) or "Unknown title")
@@ -473,7 +461,7 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player) or player.current is None:
             await ctx.send("Nothing is playing.")
             return
-        await ctx.send(self._track_line(player.current, "now", prefix="▶️ **Now playing:** "))
+        await ctx.send(self._track_line(player.current, prefix="▶️ **Now playing:** "))
 
     @commands.hybrid_command(brief="Pause playback")
     async def pause(self, ctx: commands.Context):

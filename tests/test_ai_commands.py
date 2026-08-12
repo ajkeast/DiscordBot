@@ -83,16 +83,6 @@ async def test_ask_prefix_skips_message_insert(report, mock_db_ops, ai_cog, mock
     report.record("prefix message insert", "skipped", "skipped", section=SECTION_COMMANDS)
 
 
-def test_format_prompt_context_quotes_and_attributes(report, mock_author):
-    from cogs.ai import _format_prompt_context
-
-    text = _format_prompt_context(mock_author, "line one\nline two")
-    report.record("format starts with quote", True, text.startswith("> line one"), section=SECTION_COMMANDS)
-    assert "> line one" in text
-    assert "> line two" in text
-    assert mock_author.mention in text
-
-
 def test_format_slash_ask_message(report, mock_author):
     from cogs.ai import _format_slash_ask_message
 
@@ -265,6 +255,35 @@ async def test_voice_success(mock_getenv, mock_post, report, ai_cog, mock_ctx):
     mock_post.assert_called_once()
     mock_ctx.send.assert_awaited_once()
     assert audio_file.filename == "voice.mp3"
+    # Prefix: audio only (no quoted prompt / reply chain).
+    assert not mock_ctx.send.call_args.args
+
+
+@patch("cogs.ai.requests.post")
+@patch("cogs.ai.os.getenv", return_value="test-key")
+async def test_voice_slash_single_message_with_prompt(
+    mock_getenv, mock_post, report, mock_db_ops, ai_cog, mock_ctx
+):
+    from datetime import datetime, timezone
+
+    mock_ctx.interaction = MagicMock()
+    mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
+    mock_ctx.send = AsyncMock()
+    ai_cog.grok.send_message.return_value = ("tts-id", "spoken text")
+    mock_response = MagicMock()
+    mock_response.content = b"fake-mp3"
+    mock_response.raise_for_status = MagicMock()
+    mock_post.return_value = mock_response
+
+    await ai_cog.voice.callback(ai_cog, mock_ctx, prompt="say hello")
+
+    expected = f"{mock_ctx.author.mention}: say hello\n\nspoken text"
+    actual = mock_ctx.send.call_args.args[0]
+    audio_file = mock_ctx.send.call_args.kwargs["file"]
+    report.record("slash voice message", expected, actual, section=SECTION_COMMANDS)
+    report.record("single send", 1, mock_ctx.send.await_count, section=SECTION_COMMANDS)
+    mock_ctx.send.assert_awaited_once_with(expected, file=audio_file)
+    assert audio_file.filename == "voice.mp3"
 
 
 @patch("cogs.ai.os.getenv", return_value=None)
@@ -292,3 +311,26 @@ async def test_voice_tts_failure_hides_exception(mock_getenv, mock_post, report,
     report.record("error message", expected, actual, section=SECTION_COMMANDS)
     mock_ctx.send.assert_awaited_once_with(expected)
     assert "connection reset" not in actual
+
+
+@patch("cogs.ai.requests.post")
+@patch("cogs.ai.os.getenv", return_value="test-key")
+async def test_voice_slash_error_single_message(mock_getenv, mock_post, report, mock_db_ops, ai_cog, mock_ctx):
+    import requests
+    from datetime import datetime, timezone
+
+    mock_ctx.interaction = MagicMock()
+    mock_ctx.message.created_at = datetime(2024, 6, 11, tzinfo=timezone.utc)
+    mock_ctx.send = AsyncMock()
+    ai_cog.grok.send_message.return_value = ("tts-id", "spoken text")
+    mock_post.side_effect = requests.exceptions.RequestException("connection reset")
+
+    await ai_cog.voice.callback(ai_cog, mock_ctx, prompt="say hello")
+
+    expected = (
+        f"{mock_ctx.author.mention}: say hello\n\n"
+        "Something broke generating speech. Check the bot logs and try again."
+    )
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("slash voice error", expected, actual, section=SECTION_COMMANDS)
+    mock_ctx.send.assert_awaited_once_with(expected)
