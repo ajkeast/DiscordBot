@@ -101,7 +101,12 @@ Join a voice channel, then:
 
 Requires FFmpeg + yt-dlp in the container (installed via the Dockerfile / `requirements.txt`). The bot needs **Connect** and **Speak** permissions in the voice channel.
 
-Production also needs a Netscape `youtube.cookies` file (logged-in Google/YouTube account) at `secrets/youtube.cookies` on the VPS — YouTube blocks anonymous datacenter IPs. Set `YOUTUBE_COOKIES_FILE` (compose defaults to `/run/secrets/youtube.cookies`). Prefer a spare account; refresh cookies when `/play` starts failing bot checks again.
+Production needs:
+
+1. **Deno** in the Docker image (for yt-dlp YouTube JS challenges).
+2. A Netscape `youtube.cookies` file from a logged-in Google/YouTube account at `secrets/youtube.cookies` on the VPS.
+
+Export cookies only after opening [youtube.com](https://www.youtube.com) while signed in (play a video once). Prefer a spare account. Refresh when `/play` hits bot checks again.
 
 Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/postgres/init.sql` on the dinkboard VPS); `scripts/dinkcoin_schema.sql` is the same DDL for local use.
 
