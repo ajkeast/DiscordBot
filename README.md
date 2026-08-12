@@ -85,13 +85,13 @@ Successful `/1st` claims award **1 DINK** (configurable via `DINK_MINT_AMOUNT`).
 | `/pay` | Send DINK to another user |
 | `/request` | Ask another user for DINK (Accept / Decline) |
 
-### Music (YouTube voice)
+### Music (SoundCloud voice)
 
 Join a voice channel, then:
 
 | Command | Description |
 |---------|-------------|
-| `/play <url or search>` | Play a YouTube URL or the top search result |
+| `/play <url or search>` | Play a SoundCloud URL or the top search result |
 | `/skip` | Skip the current track |
 | `/stop` | Stop and clear the queue |
 | `/queue` | Show the queue |
@@ -99,24 +99,12 @@ Join a voice channel, then:
 | `/pause` / `/resume` | Pause or resume |
 | `/leave` | Disconnect from voice |
 
-Requires **Lavalink** (Java audio node) + the official YouTube plugin with OAuth. The Discord bot talks to Lavalink via Wavelink; it does **not** need yt-dlp, cookies, or a residential proxy for `/play`. The bot needs **Connect** and **Speak** permissions in the voice channel.
+Requires **Lavalink** (Java audio node) with SoundCloud enabled. The Discord bot talks to Lavalink via Wavelink. The bot needs **Connect** and **Speak** permissions in the voice channel.
 
 Production setup:
 
 1. Put a long random `LAVALINK_PASSWORD` in the VPS `.env` (compose passes it to both `lavalink` and `discord-bot`).
 2. Deploy: `cd /opt/apps/discordbot && ./deploy/deploy.sh` (starts `discord-lavalink` + `discord-bot`).
-3. Complete **YouTube OAuth once** with a **throwaway Google account** (never your main account):
-
-```bash
-# Watch for the device login URL/code:
-ssh dinkboard 'docker logs -f discord-lavalink' | grep -iE 'oauth|device|https://www.youtube.com'
-
-# Open the URL, enter the code, authorize the spare account.
-# Lavalink prints a refresh token — save it:
-#   YOUTUBE_OAUTH_REFRESH_TOKEN=...
-# in /opt/apps/discordbot/.env, then:
-ssh dinkboard 'cd /opt/apps/discordbot && docker compose -f docker-compose.prod.yml up -d lavalink'
-```
 
 Locally: run Lavalink (same `deploy/lavalink/application.yml`), set `LAVALINK_URI=http://127.0.0.1:2333` and `LAVALINK_PASSWORD`, then start the bot.
 
@@ -130,7 +118,7 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
   - `ai.py`: AI-related commands including ChatGPT integration and DALL·E 3 image generation.
   - `first.py`: Commands for tracking and managing first messages of the day.
   - `dinkcoin.py`: DinkCoin balance, ledger, and peer-to-peer transfers.
-  - `music.py`: YouTube voice playback (`/play` URL or search) via Lavalink + Wavelink.
+  - `music.py`: SoundCloud voice playback (`/play` URL or search) via Lavalink + Wavelink.
   - `misc.py`: Miscellaneous utility commands.
   - `server.py`: Server management and dashboard-related commands.
   - `utility.py`: General utility commands.
@@ -139,7 +127,7 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
   - `db.py`: Database operations for logging messages and events.
 - `scripts/dinkcoin_schema.sql`: Postgres tables for the DINK ledger.
 - `Dockerfile` / `docker-compose.prod.yml`: VPS containers for the bot + Lavalink (joins the dinkboard Docker network).
-- `deploy/lavalink/application.yml`: Lavalink + youtube-source OAuth config.
+- `deploy/lavalink/application.yml`: Lavalink config (SoundCloud enabled; YouTube off).
 - `requirements.txt`: Python dependencies required for the project.
 - `requirements-dev.txt`: Test dependencies (pytest, pytest-asyncio).
 - `tests/`: Pytest suite (mocked command tests, unit tests, and live smoke tests).

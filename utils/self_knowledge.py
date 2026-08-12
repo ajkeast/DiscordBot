@@ -21,7 +21,7 @@ TOPICS = {
     "first_game": "Rules of the daily /1st game: claiming, score, streaks, and juice",
     "dinkcoin": "How DINK works: earning it, spending it, and the leaderboard",
     "ai_features": "How /ask, /imagine, /voice, and /clear work for members",
-    "music": "How /play works: YouTube URLs, search, queue, and voice controls",
+    "music": "How /play works: SoundCloud URLs, search, queue, and voice controls",
     "server_stats": "Activity tracking, the monthly report, and the public dashboard",
 }
 

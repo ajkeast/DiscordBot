@@ -1,4 +1,4 @@
-"""YouTube voice playback via Lavalink + Wavelink (URL or search query)."""
+"""SoundCloud voice playback via Lavalink + Wavelink (URL or search query)."""
 
 from __future__ import annotations
 
@@ -20,47 +20,40 @@ logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
 
-YOUTUBE_HOSTS = frozenset({
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "music.youtube.com",
-    "youtu.be",
-    "www.youtu.be",
+SOUNDCLOUD_HOSTS = frozenset({
+    "soundcloud.com",
+    "www.soundcloud.com",
+    "m.soundcloud.com",
+    "on.soundcloud.com",
 })
 
-_YOUTUBE_HOST_RE = re.compile(
-    r"^(?:https?://)?(?:www\.)?(?:music\.)?(?:m\.)?(?:youtube\.com|youtu\.be)/",
+_SOUNDCLOUD_HOST_RE = re.compile(
+    r"^(?:https?://)?(?:www\.|m\.|on\.)?soundcloud\.com/",
     re.IGNORECASE,
 )
 
 
-def is_youtube_url(query: str) -> bool:
-    """True only when the entire query is a YouTube URL (not search text)."""
+def is_soundcloud_url(query: str) -> bool:
+    """True only when the entire query is a SoundCloud URL (not search text)."""
     text = query.strip()
     if not text or any(ch.isspace() for ch in text):
         return False
-    if not _YOUTUBE_HOST_RE.match(text):
+    if not _SOUNDCLOUD_HOST_RE.match(text):
         return False
     try:
         parsed = urlparse(text if "://" in text else f"https://{text}")
     except ValueError:
         return False
     host = (parsed.hostname or "").lower()
-    if host not in YOUTUBE_HOSTS:
+    if host not in SOUNDCLOUD_HOSTS:
         return False
-    if host.endswith("youtu.be"):
-        return bool(parsed.path.strip("/"))
-    path = parsed.path or ""
-    return bool(parsed.query) or path.startswith(
-        ("/watch", "/shorts/", "/live/", "/embed/", "/v/")
-    )
+    return bool(parsed.path.strip("/"))
 
 
 def to_search_query(query: str) -> str:
-    """Normalize user input for Wavelink search (URL or bare search text)."""
+    """Normalize user input for Wavelink SoundCloud search (URL or bare search text)."""
     text = query.strip()
-    if is_youtube_url(text):
+    if is_soundcloud_url(text):
         if "://" not in text:
             return f"https://{text}"
         return text
@@ -87,7 +80,6 @@ def _track_duration_seconds(track: wavelink.Playable) -> Optional[int]:
     length = getattr(track, "length", None)
     if length is None:
         return None
-    # Wavelink lengths are milliseconds.
     try:
         return max(0, int(length) // 1000)
     except (TypeError, ValueError):
@@ -96,29 +88,25 @@ def _track_duration_seconds(track: wavelink.Playable) -> Optional[int]:
 
 def _track_url(track: wavelink.Playable) -> str:
     uri = getattr(track, "uri", None)
-    if uri and is_youtube_url(str(uri)):
-        return str(uri) if "://" in str(uri) else f"https://{uri}"
-    identifier = getattr(track, "identifier", None)
-    if identifier and re.fullmatch(r"[\w-]{6,}", str(identifier)):
-        return f"https://www.youtube.com/watch?v={identifier}"
-    return str(uri or "https://www.youtube.com")
+    if uri:
+        text = str(uri)
+        if "://" not in text and is_soundcloud_url(text):
+            return f"https://{text}"
+        return text
+    return "https://soundcloud.com"
 
 
 def _lavalink_user_message(exc: BaseException) -> str:
     text = str(exc).lower()
-    if "oauth" in text or "login" in text or "sign in" in text or "not a bot" in text:
-        return (
-            "YouTube needs Lavalink OAuth. An admin should check "
-            "`discord-lavalink` logs for the device login URL, then set "
-            "`YOUTUBE_OAUTH_REFRESH_TOKEN`."
-        )
-    if "nodisconnected" in text.replace(" ", "") or "no nodes" in text or "node" in text and "connect" in text:
+    if "nodisconnected" in text.replace(" ", "") or "no nodes" in text or (
+        "node" in text and "connect" in text
+    ):
         return "Music backend is offline. Try again in a moment."
-    return "Couldn't find that on YouTube. Try a different search or paste a video URL."
+    return "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
 
 
 class Music(commands.Cog):
-    """Play YouTube audio in a voice channel via Lavalink (URL or search)."""
+    """Play SoundCloud audio in a voice channel via Lavalink (URL or search)."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -142,6 +130,25 @@ class Music(commands.Cog):
             await wavelink.Pool.close()
         except Exception:
             logger.debug("Lavalink pool close failed", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(
+        self, payload: wavelink.TrackExceptionEventPayload
+    ) -> None:
+        """Surface stream failures instead of silent 'playing'."""
+        exc = payload.exception or {}
+        message = str(exc.get("message") or exc.get("cause") or exc)
+        logger.error("Track exception for %r: %s", getattr(payload.track, "title", None), message)
+        player = payload.player
+        text_channel = getattr(player, "music_text_channel", None) if player is not None else None
+        if text_channel is None:
+            return
+        try:
+            await text_channel.send(
+                "Couldn't play that track. Try another SoundCloud search or URL."
+            )
+        except discord.HTTPException:
+            logger.debug("Failed to notify channel of track exception", exc_info=True)
 
     def _track_line(self, track: wavelink.Playable, requester: str, *, prefix: str = "") -> str:
         title = safe_title(getattr(track, "title", None) or "Unknown title")
@@ -183,21 +190,22 @@ class Music(commands.Cog):
             raise commands.CommandError(f"Could not join voice: {exc}") from exc
 
         assert isinstance(player, wavelink.Player)
-        # Advance the queue when a track ends (no AutoPlay recommendations).
         player.autoplay = wavelink.AutoPlayMode.partial
+        if ctx.channel is not None:
+            player.music_text_channel = ctx.channel  # type: ignore[attr-defined]
         return player
 
-    @commands.hybrid_command(brief="Play a YouTube URL or search query in voice")
-    @app_commands.describe(query="YouTube URL or search text (e.g. tubthumping)")
+    @commands.hybrid_command(brief="Play a SoundCloud URL or search query in voice")
+    @app_commands.describe(query="SoundCloud URL or search text (e.g. lofi hip hop)")
     async def play(self, ctx: commands.Context, *, query: str):
-        """Play audio from a YouTube URL or the top search result."""
+        """Play audio from a SoundCloud URL or the top search result."""
         if ctx.guild is None:
             await ctx.send("This command only works in a server.")
             return
 
         query = query.strip()
         if not query:
-            await ctx.send("Give me a YouTube URL or something to search for.")
+            await ctx.send("Give me a SoundCloud URL or something to search for.")
             return
 
         async with acknowledge(ctx):
@@ -210,16 +218,16 @@ class Music(commands.Cog):
             try:
                 tracks = await wavelink.Playable.search(
                     to_search_query(query),
-                    source=wavelink.TrackSource.YouTube,
+                    source=wavelink.TrackSource.SoundCloud,
                 )
             except Exception as exc:
-                logger.exception("Lavalink search failed for query %r", query)
+                logger.exception("Lavalink SoundCloud search failed for query %r", query)
                 await ctx.send(_lavalink_user_message(exc))
                 return
 
             if not tracks:
                 await ctx.send(
-                    "Couldn't find that on YouTube. Try a different search or paste a video URL."
+                    "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
                 )
                 return
 
