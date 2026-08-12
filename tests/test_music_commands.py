@@ -12,6 +12,7 @@ from cogs.music import (
     is_preview_track,
     is_soundcloud_url,
     pick_playable_track,
+    rank_playable_tracks,
     safe_title,
     to_search_query,
 )
@@ -76,16 +77,20 @@ def test_is_preview_track(report):
     assert is_preview_track(full) is False
 
 
-def test_pick_playable_track_skips_preview(report):
+def test_rank_playable_tracks_full_then_preview(report):
     preview = MagicMock()
     preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
     preview.uri = "https://soundcloud.com/a/preview-song"
-    full = MagicMock()
-    full.identifier = "https://api-v2.soundcloud.com/media/x/stream/hls"
-    full.uri = "https://soundcloud.com/a/full-song"
-    chosen = pick_playable_track([preview, full])
-    report.record("picks full over preview", full, chosen, section=SECTION_COMMANDS)
-    assert chosen is full
+    full_a = MagicMock()
+    full_a.identifier = "https://api-v2.soundcloud.com/media/a/stream/hls"
+    full_a.uri = "https://soundcloud.com/a/full-a"
+    full_b = MagicMock()
+    full_b.identifier = "https://api-v2.soundcloud.com/media/b/stream/hls"
+    full_b.uri = "https://soundcloud.com/a/full-b"
+    ranked = rank_playable_tracks([preview, full_a, full_b])
+    report.record("rank order", [full_a, full_b, preview], ranked, section=SECTION_COMMANDS)
+    assert ranked == [full_a, full_b, preview]
+    assert pick_playable_track([preview, full_a, full_b]) is full_a
 
 
 def test_lavalink_user_message_offline(report):
@@ -188,7 +193,7 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     report.record("url wrapped to hide embed", True, True, section=SECTION_COMMANDS)
 
 
-async def test_play_skips_preview_for_full_stream(report, mock_bot, mock_ctx):
+async def test_play_prefers_full_and_keeps_preview_fallback(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
     mock_ctx.guild.id = 4
     mock_ctx.guild.me = None
@@ -225,8 +230,9 @@ async def test_play_skips_preview_for_full_stream(report, mock_bot, mock_ctx):
             await cog.play.callback(cog, mock_ctx, query="tubthumping")
 
     player.play.assert_awaited_once_with(full)
+    assert player.music_fallbacks == [preview]
     actual = mock_ctx.send.call_args.args[0]
-    report.record("skipped preview hit", True, "Fan Upload Full" in actual, section=SECTION_COMMANDS)
+    report.record("preferred full stream", True, "Fan Upload Full" in actual, section=SECTION_COMMANDS)
     assert "Fan Upload Full" in actual
     assert "preview" not in actual.lower()
 
@@ -263,6 +269,37 @@ async def test_play_warns_when_only_preview(report, mock_bot, mock_ctx):
     actual = mock_ctx.send.call_args.args[0]
     report.record("preview warning", True, "preview" in actual.lower(), section=SECTION_COMMANDS)
     assert "preview" in actual.lower()
+
+
+async def test_track_exception_plays_fallback(report, mock_bot):
+    player = MagicMock(spec=wavelink.Player)
+    player.play = AsyncMock()
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    player.music_text_channel = channel
+    player.music_requester = "Alex"
+    preview = MagicMock()
+    preview.title = "Preview Hit"
+    preview.length = 30000
+    preview.uri = "https://soundcloud.com/x/preview"
+    preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
+    player.music_fallbacks = [preview]
+
+    failed = MagicMock()
+    failed.title = "Broken Full"
+    payload = MagicMock()
+    payload.exception = {"message": "Invalid status code for soundcloud stream: 404"}
+    payload.track = failed
+    payload.player = player
+
+    cog = Music(mock_bot)
+    await cog.on_wavelink_track_exception(payload)
+
+    player.play.assert_awaited_once_with(preview)
+    sent = channel.send.await_args.args[0]
+    report.record("fallback message", True, "Playing instead" in sent, section=SECTION_COMMANDS)
+    assert "Playing instead" in sent
+    assert "Preview Hit" in sent
 
 
 async def test_queue_empty_message(report, mock_bot, mock_ctx):
