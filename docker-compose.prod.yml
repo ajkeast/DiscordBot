@@ -14,6 +14,11 @@ services:
     environment:
       SQL_HOST: postgres
       SQL_PORT: "5432"
+      YOUTUBE_COOKIES_FILE: /run/secrets/youtube.cookies
+    volumes:
+      # Netscape cookies.txt for yt-dlp (create on host before first deploy):
+      #   /opt/apps/discordbot/secrets/youtube.cookies
+      - ./secrets:/run/secrets:ro
     networks:
       - dinkboard
 

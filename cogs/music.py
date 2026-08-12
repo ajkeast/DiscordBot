@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from collections import deque
 from dataclasses import dataclass
@@ -41,6 +42,34 @@ YDL_OPTIONS = {
     "socket_timeout": YDL_SOCKET_TIMEOUT,
     "cachedir": False,
 }
+
+
+def ydl_options() -> dict:
+    """Build yt-dlp options, attaching Netscape cookies when configured."""
+    opts = dict(YDL_OPTIONS)
+    cookiefile = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
+    if not cookiefile:
+        return opts
+    if os.path.isfile(cookiefile):
+        opts["cookiefile"] = cookiefile
+    else:
+        logger.warning("YOUTUBE_COOKIES_FILE set but file missing: %s", cookiefile)
+    return opts
+
+
+def _yt_dlp_user_message(exc: BaseException) -> str:
+    text = str(exc).lower()
+    if (
+        "sign in to confirm" in text
+        or "not a bot" in text
+        or "login_required" in text
+        or "cookies" in text
+    ):
+        return (
+            "YouTube blocked this request (bot check). "
+            "An admin needs to refresh the YouTube cookies on the server."
+        )
+    return "Couldn't find that on YouTube. Try a different search or paste a video URL."
 
 FFMPEG_OPTIONS = {
     "before_options": (
@@ -137,7 +166,7 @@ def _webpage_url_from_entry(entry: dict) -> str:
 def extract_track_info(query: str) -> dict:
     """Resolve a URL or search query to track metadata (no download)."""
     ydl_query = to_ydl_query(query)
-    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+    with yt_dlp.YoutubeDL(ydl_options()) as ydl:
         info = ydl.extract_info(ydl_query, download=False)
     if info is None:
         raise ValueError("No results.")
@@ -153,7 +182,7 @@ def extract_stream_url(webpage_url: str) -> str:
     """Fetch a fresh audio stream URL for an already-resolved video page."""
     if not is_youtube_url(webpage_url):
         raise ValueError("Refusing to stream a non-YouTube URL.")
-    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+    with yt_dlp.YoutubeDL(ydl_options()) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
     if info is None:
         raise ValueError("Could not get an audio stream for that video.")
@@ -182,6 +211,14 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._players: Dict[int, GuildPlayer] = {}
+        cookiefile = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
+        if cookiefile and os.path.isfile(cookiefile):
+            logger.info("YouTube cookies enabled (%s)", cookiefile)
+        else:
+            logger.warning(
+                "YouTube cookies not loaded — /play may hit bot checks. "
+                "Set YOUTUBE_COOKIES_FILE to a Netscape cookies.txt path."
+            )
 
     def _player(self, guild_id: int) -> GuildPlayer:
         if guild_id not in self._players:
@@ -323,11 +360,9 @@ class Music(commands.Cog):
 
             try:
                 info = await asyncio.to_thread(extract_track_info, query)
-            except Exception:
+            except Exception as exc:
                 logger.exception("yt-dlp failed for query %r", query)
-                await ctx.send(
-                    "Couldn't find that on YouTube. Try a different search or paste a video URL."
-                )
+                await ctx.send(_yt_dlp_user_message(exc))
                 return
 
             track = Track(
