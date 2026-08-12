@@ -112,27 +112,21 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
 
 ## Project Structure
 
-- `bot.py`: Main bot file that initializes the Discord bot and loads command cogs.
-- `chatgpt_functions.py`: Contains functions for interacting with the ChatGPT API and handling AI responses.
-- `cogs/`: Directory containing modular command extensions:
-  - `ai.py`: AI-related commands including ChatGPT integration and DALL·E 3 image generation.
-  - `first.py`: Commands for tracking and managing first messages of the day.
-  - `dinkcoin.py`: DinkCoin balance, ledger, and peer-to-peer transfers.
-  - `music.py`: SoundCloud voice playback (`/play` URL or search) via Lavalink + Wavelink.
-  - `misc.py`: Miscellaneous utility commands.
-  - `server.py`: Server management and dashboard-related commands.
-  - `utility.py`: General utility commands.
-- `utils/`: Utility modules:
-  - `constants.py`: Constants and configuration values.
-  - `db.py`: Database operations for logging messages and events.
-- `scripts/dinkcoin_schema.sql`: Postgres tables for the DINK ledger.
-- `Dockerfile` / `docker-compose.prod.yml`: VPS containers for the bot + Lavalink (joins the dinkboard Docker network).
-- `deploy/lavalink/application.yml`: Lavalink config (SoundCloud enabled; YouTube off).
-- `requirements.txt`: Python dependencies required for the project.
-- `requirements-dev.txt`: Test dependencies (pytest, pytest-asyncio).
-- `tests/`: Pytest suite (mocked command tests, unit tests, and live smoke tests).
-- `scripts/test.sh`: Run the full test suite locally (mirrors CI).
-- `README.md`: This documentation file.
+- `bot.py`: Discord bot entrypoint; loads cogs.
+- `chatgpt_functions.py`: xAI/Grok client, tools, and `/ask` response handling.
+- `cogs/`: Command extensions:
+  - `ai.py`: `/ask`, `/imagine`, `/clear`, `/voice`
+  - `first.py`: `/1st` daily game
+  - `dinkcoin.py`: DINK balance, ledger, pay, request
+  - `music.py`: SoundCloud `/play` via Lavalink + Wavelink
+  - `sentiment.py`: Nightly + manual message sentiment scoring
+  - `server.py` / `utility.py` / `misc.py`: server stats and misc commands
+- `utils/`: DB, self-knowledge docs loader, sentiment helpers, shared constants
+- `docs/self_knowledge/`: Topic docs exposed to Grok tool calls
+- `deploy/`: VPS deploy script + Lavalink `application.yml`
+- `Dockerfile` / `docker-compose.prod.yml`: Production bot + Lavalink
+- `scripts/`: `dev.sh`, `test.sh`, DINK schema DDL
+- `tests/`: Pytest suite (unit + live smoke)
 
 ## Installation
 
