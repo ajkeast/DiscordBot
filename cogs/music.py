@@ -19,7 +19,7 @@ from utils.interactions import acknowledge
 logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
-MAX_PLAY_CANDIDATES = 5
+MAX_PLAY_CANDIDATES = 8
 
 SOUNDCLOUD_HOSTS = frozenset({
     "soundcloud.com",
@@ -96,30 +96,19 @@ def is_preview_track(track: wavelink.Playable) -> bool:
     return False
 
 
-def rank_playable_tracks(tracks) -> list[wavelink.Playable]:
-    """Order candidates: full streams first, then previews (search order preserved)."""
+def full_stream_tracks(tracks) -> list[wavelink.Playable]:
+    """Return only fully streamable uploads (no Go+ preview clips)."""
     if isinstance(tracks, wavelink.Playlist):
         candidates = list(tracks.tracks)
     else:
         candidates = list(tracks)
-    full = [t for t in candidates if not is_preview_track(t)]
-    previews = [t for t in candidates if is_preview_track(t)]
-    return full + previews
+    return [t for t in candidates if not is_preview_track(t)]
 
 
 def pick_playable_track(tracks) -> Optional[wavelink.Playable]:
-    """Prefer a full stream over a SoundCloud preview clip."""
-    ranked = rank_playable_tracks(tracks)
-    return ranked[0] if ranked else None
-
-
-def _preview_note(track: wavelink.Playable) -> str:
-    if not is_preview_track(track):
-        return ""
-    return (
-        "\n⚠️ SoundCloud only allows a short preview of this track "
-        "(full stream needs Go+)."
-    )
+    """First fully streamable SoundCloud result, if any."""
+    full = full_stream_tracks(tracks)
+    return full[0] if full else None
 
 
 def _track_url(track: wavelink.Playable) -> str:
@@ -187,6 +176,8 @@ class Music(commands.Cog):
 
         while fallbacks:
             next_track = fallbacks.pop(0)
+            if is_preview_track(next_track):
+                continue
             player.music_fallbacks = fallbacks  # type: ignore[attr-defined]
             try:
                 await player.play(next_track)
@@ -197,7 +188,6 @@ class Music(commands.Cog):
                 )
                 continue
             if text_channel is not None:
-                note = _preview_note(next_track)
                 try:
                     await text_channel.send(
                         self._track_line(
@@ -205,7 +195,6 @@ class Music(commands.Cog):
                             requester,
                             prefix="▶️ **Playing instead:** ",
                         )
-                        + note
                     )
                 except discord.HTTPException:
                     logger.debug("Failed to notify channel of fallback play", exc_info=True)
@@ -216,7 +205,7 @@ class Music(commands.Cog):
             return
         try:
             await text_channel.send(
-                "Couldn't play that track. Try another SoundCloud search or URL."
+                "Couldn't play a full version of that. Try another SoundCloud search or URL."
             )
         except discord.HTTPException:
             logger.debug("Failed to notify channel of track exception", exc_info=True)
@@ -315,10 +304,12 @@ class Music(commands.Cog):
                 )
                 return
 
-            candidates = rank_playable_tracks(tracks)[:MAX_PLAY_CANDIDATES]
+            # Skip Go+ previews; only fully streamable uploads (try several if one 404s).
+            candidates = full_stream_tracks(tracks)[:MAX_PLAY_CANDIDATES]
             if not candidates:
                 await ctx.send(
-                    "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
+                    "Couldn't find a full streamable version on SoundCloud "
+                    "(that result is preview-only). Try another search or URL."
                 )
                 return
 
@@ -338,7 +329,6 @@ class Music(commands.Cog):
                         requester,
                         prefix=f"Queued **#{position}:** ",
                     )
-                    + _preview_note(track)
                 )
                 return
 
@@ -346,7 +336,6 @@ class Music(commands.Cog):
             await player.play(track)
             await ctx.send(
                 self._track_line(track, requester, prefix="▶️ **Now playing:** ")
-                + _preview_note(track)
             )
 
     @commands.hybrid_command(brief="Skip the current track")

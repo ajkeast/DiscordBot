@@ -29,9 +29,9 @@ Also works with the `_play` prefix.
 ## Tips for members
 
 - You must be in a voice channel before `/play`.
-- Search uses SoundCloud's top matches — full streams are tried first; if one
-  fails, the bot automatically tries another result (including short previews).
-- If a track is preview-only (~30 seconds), the bot will say so. Try another
-  upload of the same song for a full play.
+- Only **fully streamable** SoundCloud uploads are used — Go+ ~30s previews are
+  skipped. If the first result fails, the bot tries another full upload.
+- If every hit is preview-only, you'll get a message to try a different search
+  or URL.
 - `/voice` is different: that one answers a prompt as an MP3 file in chat, not
   voice-channel music.

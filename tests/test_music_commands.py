@@ -9,10 +9,10 @@ from cogs.music import (
     Music,
     _lavalink_user_message,
     format_duration,
+    full_stream_tracks,
     is_preview_track,
     is_soundcloud_url,
     pick_playable_track,
-    rank_playable_tracks,
     safe_title,
     to_search_query,
 )
@@ -77,7 +77,7 @@ def test_is_preview_track(report):
     assert is_preview_track(full) is False
 
 
-def test_rank_playable_tracks_full_then_preview(report):
+def test_full_stream_tracks_excludes_previews(report):
     preview = MagicMock()
     preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
     preview.uri = "https://soundcloud.com/a/preview-song"
@@ -87,10 +87,11 @@ def test_rank_playable_tracks_full_then_preview(report):
     full_b = MagicMock()
     full_b.identifier = "https://api-v2.soundcloud.com/media/b/stream/hls"
     full_b.uri = "https://soundcloud.com/a/full-b"
-    ranked = rank_playable_tracks([preview, full_a, full_b])
-    report.record("rank order", [full_a, full_b, preview], ranked, section=SECTION_COMMANDS)
-    assert ranked == [full_a, full_b, preview]
+    full = full_stream_tracks([preview, full_a, full_b])
+    report.record("full only", [full_a, full_b], full, section=SECTION_COMMANDS)
+    assert full == [full_a, full_b]
     assert pick_playable_track([preview, full_a, full_b]) is full_a
+    assert pick_playable_track([preview]) is None
 
 
 def test_lavalink_user_message_offline(report):
@@ -193,7 +194,7 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     report.record("url wrapped to hide embed", True, True, section=SECTION_COMMANDS)
 
 
-async def test_play_prefers_full_and_keeps_preview_fallback(report, mock_bot, mock_ctx):
+async def test_play_skips_preview_and_keeps_full_fallbacks(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
     mock_ctx.guild.id = 4
     mock_ctx.guild.me = None
@@ -215,29 +216,34 @@ async def test_play_prefers_full_and_keeps_preview_fallback(report, mock_bot, mo
     preview.length = 180000
     preview.uri = "https://soundcloud.com/label/official"
     preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
-    full = MagicMock()
-    full.title = "Fan Upload Full"
-    full.length = 180000
-    full.uri = "https://soundcloud.com/fan/full"
-    full.identifier = "https://api-v2.soundcloud.com/media/y/stream/hls"
+    full_a = MagicMock()
+    full_a.title = "Fan Upload A"
+    full_a.length = 180000
+    full_a.uri = "https://soundcloud.com/fan/a"
+    full_a.identifier = "https://api-v2.soundcloud.com/media/a/stream/hls"
+    full_b = MagicMock()
+    full_b.title = "Fan Upload B"
+    full_b.length = 180000
+    full_b.uri = "https://soundcloud.com/fan/b"
+    full_b.identifier = "https://api-v2.soundcloud.com/media/b/stream/hls"
 
     cog = Music(mock_bot)
     with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
         with patch(
             "cogs.music.wavelink.Playable.search",
-            AsyncMock(return_value=[preview, full]),
+            AsyncMock(return_value=[preview, full_a, full_b]),
         ):
             await cog.play.callback(cog, mock_ctx, query="tubthumping")
 
-    player.play.assert_awaited_once_with(full)
-    assert player.music_fallbacks == [preview]
+    player.play.assert_awaited_once_with(full_a)
+    assert player.music_fallbacks == [full_b]
     actual = mock_ctx.send.call_args.args[0]
-    report.record("preferred full stream", True, "Fan Upload Full" in actual, section=SECTION_COMMANDS)
-    assert "Fan Upload Full" in actual
+    report.record("preferred full stream", True, "Fan Upload A" in actual, section=SECTION_COMMANDS)
+    assert "Fan Upload A" in actual
     assert "preview" not in actual.lower()
 
 
-async def test_play_warns_when_only_preview(report, mock_bot, mock_ctx):
+async def test_play_rejects_preview_only_results(report, mock_bot, mock_ctx):
     mock_ctx.guild = MagicMock()
     mock_ctx.guild.id = 5
     mock_ctx.guild.me = None
@@ -265,13 +271,13 @@ async def test_play_warns_when_only_preview(report, mock_bot, mock_ctx):
         with patch("cogs.music.wavelink.Playable.search", AsyncMock(return_value=[preview])):
             await cog.play.callback(cog, mock_ctx, query="safety dance")
 
-    player.play.assert_awaited_once_with(preview)
+    player.play.assert_not_called()
     actual = mock_ctx.send.call_args.args[0]
-    report.record("preview warning", True, "preview" in actual.lower(), section=SECTION_COMMANDS)
-    assert "preview" in actual.lower()
+    report.record("preview-only rejected", True, "preview-only" in actual.lower(), section=SECTION_COMMANDS)
+    assert "preview-only" in actual.lower()
 
 
-async def test_track_exception_plays_fallback(report, mock_bot):
+async def test_track_exception_plays_next_full_stream(report, mock_bot):
     player = MagicMock(spec=wavelink.Player)
     player.play = AsyncMock()
     channel = MagicMock()
@@ -280,10 +286,14 @@ async def test_track_exception_plays_fallback(report, mock_bot):
     player.music_requester = "Alex"
     preview = MagicMock()
     preview.title = "Preview Hit"
-    preview.length = 30000
-    preview.uri = "https://soundcloud.com/x/preview"
     preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
-    player.music_fallbacks = [preview]
+    full_b = MagicMock()
+    full_b.title = "Full Backup"
+    full_b.length = 180000
+    full_b.uri = "https://soundcloud.com/fan/b"
+    full_b.identifier = "https://api-v2.soundcloud.com/media/b/stream/hls"
+    # Preview must be skipped; next full stream should play.
+    player.music_fallbacks = [preview, full_b]
 
     failed = MagicMock()
     failed.title = "Broken Full"
@@ -295,11 +305,11 @@ async def test_track_exception_plays_fallback(report, mock_bot):
     cog = Music(mock_bot)
     await cog.on_wavelink_track_exception(payload)
 
-    player.play.assert_awaited_once_with(preview)
+    player.play.assert_awaited_once_with(full_b)
     sent = channel.send.await_args.args[0]
     report.record("fallback message", True, "Playing instead" in sent, section=SECTION_COMMANDS)
     assert "Playing instead" in sent
-    assert "Preview Hit" in sent
+    assert "Full Backup" in sent
 
 
 async def test_queue_empty_message(report, mock_bot, mock_ctx):

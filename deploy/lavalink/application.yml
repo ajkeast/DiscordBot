@@ -23,8 +23,8 @@ lavalink:
     useSeekGhosting: true
     playerUpdateInterval: 5
     soundcloudSearchEnabled: true
-    # Keep Go+ previews in search so we can fall back when a "full" stream 404s.
-    soundcloudFilterOutPreviewTracks: false
+    # Drop Go+ ~30s previews; /play only uses fully streamable uploads.
+    soundcloudFilterOutPreviewTracks: true
     gc-warnings: true
 
 metrics:
