@@ -128,11 +128,14 @@ def test_extract_track_info_empty_search_raises(mock_ydl_cls, report):
 
 def test_ydl_options_attaches_cookiefile(tmp_path, monkeypatch, report):
     cookies = tmp_path / "youtube.cookies"
+    runtime = tmp_path / "runtime.cookies"
     cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(cookies))
+    monkeypatch.setattr("cogs.music._RUNTIME_COOKIE_PATH", str(runtime))
     opts = ydl_options()
-    report.record("cookiefile set", str(cookies), opts.get("cookiefile"), section=SECTION_COMMANDS)
-    assert opts["cookiefile"] == str(cookies)
+    report.record("cookiefile set", str(runtime), opts.get("cookiefile"), section=SECTION_COMMANDS)
+    assert opts["cookiefile"] == str(runtime)
+    assert runtime.is_file()
 
 
 def test_ydl_options_skips_missing_cookiefile(tmp_path, monkeypatch, report):

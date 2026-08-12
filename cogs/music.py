@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Dict, Optional
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
 YDL_SOCKET_TIMEOUT = 20
+# Writable copy — secrets mount is read-only and yt-dlp tries to refresh cookies.
+_RUNTIME_COOKIE_PATH = "/tmp/youtube.cookies"
 
 YOUTUBE_HOSTS = frozenset({
     "youtube.com",
@@ -41,19 +44,33 @@ YDL_OPTIONS = {
     "source_address": "0.0.0.0",
     "socket_timeout": YDL_SOCKET_TIMEOUT,
     "cachedir": False,
+    # Allow Deno to fetch EJS challenge scripts when the bundled package is stale.
+    "remote_components": {"ejs:npm"},
 }
+
+
+def _resolved_cookiefile() -> Optional[str]:
+    """Return a writable cookie path, or None if cookies are not configured."""
+    src = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
+    if not src:
+        return None
+    if not os.path.isfile(src):
+        logger.warning("YOUTUBE_COOKIES_FILE set but file missing: %s", src)
+        return None
+    try:
+        shutil.copy2(src, _RUNTIME_COOKIE_PATH)
+    except OSError:
+        logger.exception("Failed to copy YouTube cookies to %s", _RUNTIME_COOKIE_PATH)
+        return None
+    return _RUNTIME_COOKIE_PATH
 
 
 def ydl_options() -> dict:
     """Build yt-dlp options, attaching Netscape cookies when configured."""
     opts = dict(YDL_OPTIONS)
-    cookiefile = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
-    if not cookiefile:
-        return opts
-    if os.path.isfile(cookiefile):
+    cookiefile = _resolved_cookiefile()
+    if cookiefile:
         opts["cookiefile"] = cookiefile
-    else:
-        logger.warning("YOUTUBE_COOKIES_FILE set but file missing: %s", cookiefile)
     return opts
 
 
@@ -211,8 +228,8 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._players: Dict[int, GuildPlayer] = {}
-        cookiefile = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
-        if cookiefile and os.path.isfile(cookiefile):
+        cookiefile = _resolved_cookiefile()
+        if cookiefile:
             logger.info("YouTube cookies enabled (%s)", cookiefile)
         else:
             logger.warning(
