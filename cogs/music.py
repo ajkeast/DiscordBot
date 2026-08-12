@@ -156,11 +156,68 @@ class Music(commands.Cog):
         except Exception:
             logger.debug("Lavalink pool close failed", exc_info=True)
 
+    async def _clear_music_announce(self, player: wavelink.Player) -> None:
+        """Remove any Now playing / Playing instead message for a failed candidate."""
+        status = getattr(player, "music_status_message", None)
+        player.music_status_message = None  # type: ignore[attr-defined]
+        if status is None:
+            return
+        try:
+            await status.delete()
+        except discord.HTTPException:
+            logger.debug("Failed to delete failed-track announce", exc_info=True)
+
+    async def _send_music_message(self, player: wavelink.Player, content: str) -> None:
+        """Reply via the pending /play context when possible, else the text channel."""
+        ctx = getattr(player, "music_pending_ctx", None)
+        if ctx is not None:
+            player.music_pending_ctx = None  # type: ignore[attr-defined]
+            try:
+                msg = await ctx.send(content)
+                player.music_status_message = msg  # type: ignore[attr-defined]
+                return
+            except discord.HTTPException:
+                logger.debug("Failed to send music message via play context", exc_info=True)
+
+        text_channel = getattr(player, "music_text_channel", None)
+        if text_channel is None:
+            return
+        try:
+            msg = await text_channel.send(content)
+            player.music_status_message = msg  # type: ignore[attr-defined]
+        except discord.HTTPException:
+            logger.debug("Failed to send music message to channel", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(
+        self, payload: wavelink.TrackStartEventPayload
+    ) -> None:
+        """Announce only after a track actually starts (skip silent fallback attempts)."""
+        player = payload.player
+        if player is None:
+            return
+
+        pending = getattr(player, "music_pending_ctx", None) is not None
+        as_fallback = bool(getattr(player, "music_announce_fallback", False))
+        # Queue autoplay / skip advances: no interactive play request to announce.
+        if not pending and not as_fallback:
+            return
+
+        track = payload.track
+        requester = getattr(player, "music_requester", None) or "someone"
+        player.music_announce_fallback = False  # type: ignore[attr-defined]
+        prefix = (
+            "▶️ **Playing instead:** " if as_fallback else "▶️ **Now playing:** "
+        )
+        await self._send_music_message(
+            player, self._track_line(track, requester, prefix=prefix)
+        )
+
     @commands.Cog.listener()
     async def on_wavelink_track_exception(
         self, payload: wavelink.TrackExceptionEventPayload
     ) -> None:
-        """Try the next search candidate; only complain if nothing else will play."""
+        """Try the next search candidate quietly; announce only when one starts."""
         exc = payload.exception or {}
         message = str(exc.get("message") or exc.get("cause") or exc)
         logger.error("Track exception for %r: %s", getattr(payload.track, "title", None), message)
@@ -168,8 +225,8 @@ class Music(commands.Cog):
         if player is None:
             return
 
-        text_channel = getattr(player, "music_text_channel", None)
-        requester = getattr(player, "music_requester", None) or "someone"
+        await self._clear_music_announce(player)
+
         fallbacks: list[wavelink.Playable] = list(
             getattr(player, "music_fallbacks", None) or []
         )
@@ -179,6 +236,7 @@ class Music(commands.Cog):
             if is_preview_track(next_track):
                 continue
             player.music_fallbacks = fallbacks  # type: ignore[attr-defined]
+            player.music_announce_fallback = True  # type: ignore[attr-defined]
             try:
                 await player.play(next_track)
             except Exception:
@@ -187,28 +245,14 @@ class Music(commands.Cog):
                     getattr(next_track, "title", None),
                 )
                 continue
-            if text_channel is not None:
-                try:
-                    await text_channel.send(
-                        self._track_line(
-                            next_track,
-                            requester,
-                            prefix="▶️ **Playing instead:** ",
-                        )
-                    )
-                except discord.HTTPException:
-                    logger.debug("Failed to notify channel of fallback play", exc_info=True)
             return
 
         player.music_fallbacks = []  # type: ignore[attr-defined]
-        if text_channel is None:
-            return
-        try:
-            await text_channel.send(
-                "Couldn't play a full version of that. Try another SoundCloud search or URL."
-            )
-        except discord.HTTPException:
-            logger.debug("Failed to notify channel of track exception", exc_info=True)
+        player.music_announce_fallback = False  # type: ignore[attr-defined]
+        await self._send_music_message(
+            player,
+            "Couldn't play a full version of that. Try another SoundCloud search or URL.",
+        )
 
     def _track_line(self, track: wavelink.Playable, requester: str, *, prefix: str = "") -> str:
         title = safe_title(getattr(track, "title", None) or "Unknown title")
@@ -224,11 +268,15 @@ class Music(commands.Cog):
         player: wavelink.Player,
         candidates: list[wavelink.Playable],
         requester: str,
+        ctx: commands.Context,
     ) -> wavelink.Playable:
-        """Play/queue the best candidate and keep the rest for exception fallback."""
+        """Play the best candidate; keep the rest for quiet exception fallback."""
         track = candidates[0]
         player.music_fallbacks = candidates[1:]  # type: ignore[attr-defined]
         player.music_requester = requester  # type: ignore[attr-defined]
+        player.music_pending_ctx = ctx  # type: ignore[attr-defined]
+        player.music_announce_fallback = False  # type: ignore[attr-defined]
+        player.music_status_message = None  # type: ignore[attr-defined]
         return track
 
     async def _ensure_player(self, ctx: commands.Context) -> wavelink.Player:
@@ -332,11 +380,15 @@ class Music(commands.Cog):
                 )
                 return
 
-            track = self._arm_play_candidates(player, candidates, requester)
-            await player.play(track)
-            await ctx.send(
-                self._track_line(track, requester, prefix="▶️ **Now playing:** ")
-            )
+            track = self._arm_play_candidates(player, candidates, requester, ctx)
+            try:
+                await player.play(track)
+            except Exception as exc:
+                player.music_pending_ctx = None  # type: ignore[attr-defined]
+                logger.exception("Failed to start track for query %r", query)
+                await ctx.send(_lavalink_user_message(exc))
+                return
+            # Announce happens in on_wavelink_track_start once a candidate actually plays.
 
     @commands.hybrid_command(brief="Skip the current track")
     async def skip(self, ctx: commands.Context):

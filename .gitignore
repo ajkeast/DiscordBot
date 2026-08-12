@@ -119,12 +119,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# Local secrets (never commit) — cookies leftover from old yt-dlp path
-secrets/*
-!secrets/.gitkeep
-*.cookies
-cookies.txt
-
 # Spyder project settings
 .spyderproject
 .spyproject
