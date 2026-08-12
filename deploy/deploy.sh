@@ -15,7 +15,8 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "==> Building and starting discord-bot"
-docker compose -f docker-compose.prod.yml up --build -d
+# Force-recreate so bind-mounted Lavalink config (application.yml) is picked up.
+docker compose -f docker-compose.prod.yml up --build -d --force-recreate
 
 echo "==> Container status"
 docker compose -f docker-compose.prod.yml ps
