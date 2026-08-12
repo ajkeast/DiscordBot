@@ -156,8 +156,13 @@ class Music(commands.Cog):
         except Exception:
             logger.debug("Lavalink pool close failed", exc_info=True)
 
+    def _discard_search_fallbacks(self, player: wavelink.Player) -> None:
+        """Drop leftover search candidates so skip/stop never walks the result list."""
+        player.music_fallbacks = []  # type: ignore[attr-defined]
+        player.music_announce_fallback = False  # type: ignore[attr-defined]
+
     async def _clear_music_announce(self, player: wavelink.Player) -> None:
-        """Remove any Now playing / Playing instead message for a failed candidate."""
+        """Remove a Now playing message for a candidate that failed to stream."""
         status = getattr(player, "music_status_message", None)
         player.music_status_message = None  # type: ignore[attr-defined]
         if status is None:
@@ -188,29 +193,40 @@ class Music(commands.Cog):
         except discord.HTTPException:
             logger.debug("Failed to send music message to channel", exc_info=True)
 
+    async def _play_next_from_queue(self, player: wavelink.Player) -> bool:
+        """Start the next queued track if any. Returns True when playback was started."""
+        if not player.queue:
+            return False
+        try:
+            track = player.queue.get()
+        except wavelink.QueueEmpty:
+            return False
+        await player.play(track)
+        return True
+
     @commands.Cog.listener()
     async def on_wavelink_track_start(
         self, payload: wavelink.TrackStartEventPayload
     ) -> None:
-        """Announce only after a track actually starts (skip silent fallback attempts)."""
+        """Announce only after a track actually starts (failed candidates stay silent)."""
         player = payload.player
         if player is None:
             return
 
         pending = getattr(player, "music_pending_ctx", None) is not None
-        as_fallback = bool(getattr(player, "music_announce_fallback", False))
+        # True when a prior candidate 404'd and we swapped in another search hit.
+        from_fallback = bool(getattr(player, "music_announce_fallback", False))
         # Queue autoplay / skip advances: no interactive play request to announce.
-        if not pending and not as_fallback:
+        if not pending and not from_fallback:
             return
 
         track = payload.track
         requester = getattr(player, "music_requester", None) or "someone"
         player.music_announce_fallback = False  # type: ignore[attr-defined]
-        prefix = (
-            "▶️ **Playing instead:** " if as_fallback else "▶️ **Now playing:** "
-        )
+        # Always "Now playing" — users shouldn't see the failed candidates we walked.
         await self._send_music_message(
-            player, self._track_line(track, requester, prefix=prefix)
+            player,
+            self._track_line(track, requester, prefix="▶️ **Now playing:** "),
         )
 
     @commands.Cog.listener()
@@ -236,6 +252,7 @@ class Music(commands.Cog):
             if is_preview_track(next_track):
                 continue
             player.music_fallbacks = fallbacks  # type: ignore[attr-defined]
+            # Announce on the eventual track_start (still as Now playing).
             player.music_announce_fallback = True  # type: ignore[attr-defined]
             try:
                 await player.play(next_track)
@@ -247,8 +264,7 @@ class Music(commands.Cog):
                 continue
             return
 
-        player.music_fallbacks = []  # type: ignore[attr-defined]
-        player.music_announce_fallback = False  # type: ignore[attr-defined]
+        self._discard_search_fallbacks(player)
         await self._send_music_message(
             player,
             "Couldn't play a full version of that. Try another SoundCloud search or URL.",
@@ -399,7 +415,12 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player) or not player.playing:
             await ctx.send("Nothing is playing.")
             return
+        # Drop search-result fallbacks first so a late 404/exception can't steal skip.
+        self._discard_search_fallbacks(player)
+        # Wavelink skip replaces the track (end reason "replaced"), which does NOT
+        # trigger AutoPlay — advance the real queue ourselves.
         await player.skip(force=True)
+        await self._play_next_from_queue(player)
         await ctx.send("Skipped.")
 
     @commands.hybrid_command(brief="Stop playback and clear the queue")
@@ -411,6 +432,7 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player):
             await ctx.send("I'm not in a voice channel.")
             return
+        self._discard_search_fallbacks(player)
         player.queue.clear()
         await player.stop()
         await ctx.send("Stopped and cleared the queue.")
@@ -492,6 +514,7 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player):
             await ctx.send("I'm not in a voice channel.")
             return
+        self._discard_search_fallbacks(player)
         player.queue.clear()
         await player.disconnect()
         await ctx.send("Left the voice channel.")

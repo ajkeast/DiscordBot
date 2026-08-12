@@ -336,8 +336,9 @@ async def test_track_exception_plays_next_full_stream(report, mock_bot):
     await cog.on_wavelink_track_start(start)
 
     sent = channel.send.await_args.args[0]
-    report.record("fallback message", True, "Playing instead" in sent, section=SECTION_COMMANDS)
-    assert "Playing instead" in sent
+    report.record("fallback message", True, "Now playing" in sent, section=SECTION_COMMANDS)
+    assert "Now playing" in sent
+    assert "Playing instead" not in sent
     assert "Full Backup" in sent
 
 
@@ -404,6 +405,33 @@ async def test_skip_when_idle(report, mock_bot, mock_ctx):
     actual = mock_ctx.send.call_args.args[0]
     report.record("skip idle", "Nothing is playing", actual, section=SECTION_COMMANDS)
     assert "Nothing is playing" in actual
+
+
+async def test_skip_clears_fallbacks_and_plays_queue(report, mock_bot, mock_ctx):
+    mock_ctx.guild = MagicMock()
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = True
+    queued = MagicMock()
+    queued.title = "Queued Song"
+    player.queue = MagicMock()
+    player.queue.__bool__ = MagicMock(return_value=True)
+    player.queue.get = MagicMock(return_value=queued)
+    player.skip = AsyncMock()
+    player.play = AsyncMock()
+    player.music_fallbacks = [MagicMock(title="Search Hit B"), MagicMock(title="Search Hit C")]
+    player.music_announce_fallback = True
+    mock_ctx.voice_client = player
+
+    cog = Music(mock_bot)
+    await cog.skip.callback(cog, mock_ctx)
+
+    assert player.music_fallbacks == []
+    assert player.music_announce_fallback is False
+    player.skip.assert_awaited_once_with(force=True)
+    player.play.assert_awaited_once_with(queued)
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("skip advances queue", "Skipped.", actual, section=SECTION_COMMANDS)
+    assert actual == "Skipped."
 
 
 def test_max_queue_size_constant(report):
