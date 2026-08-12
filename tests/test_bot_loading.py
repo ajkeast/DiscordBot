@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import discord.voice_client as voice_client
+
 from cogs.ai import AI
 from cogs.dinkcoin import DinkCoin
 from cogs.first import First
@@ -14,6 +16,14 @@ from tests.conftest import EXPECTED_COMMANDS
 from tests.reporting import SECTION_WIRING
 
 COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc, Sentiment, Music)
+
+
+def test_discord_voice_deps_installed(report):
+    """discord.py 2.7+ needs PyNaCl and davey before VoiceClient can connect."""
+    report.record("has_nacl", True, voice_client.has_nacl, section=SECTION_WIRING)
+    report.record("has_dave", True, voice_client.has_dave, section=SECTION_WIRING)
+    assert voice_client.has_nacl, "PyNaCl missing; install requirements.txt voice deps"
+    assert voice_client.has_dave, "davey missing; install requirements.txt voice deps"
 
 
 def _server_init_without_tasks(self, bot):
