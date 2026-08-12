@@ -65,19 +65,8 @@ async def _ensure_message_row(ctx, content: str = "") -> None:
     await loop.run_in_executor(None, db_ops.update_messages, message_data)
 
 
-def _format_prompt_context(author, prompt: str) -> str:
-    """Blockquote the prompt so slash /voice invocations are visible in-channel."""
-    attribution = f"\n— {author.mention}"
-    max_body = 2000 - len(attribution)
-    body = (prompt or "").strip() or "…"
-    if len(body) > max_body - 2:
-        body = body[: max_body - 5] + "..."
-    quoted = "\n".join(f"> {line}" if line else ">" for line in body.splitlines())
-    return f"{quoted}{attribution}"
-
-
 def _format_slash_ask_message(author, prompt: str, response: str) -> str:
-    """Format slash /ask as '@user: prompt\\n\\nresponse' (Discord 2000-char limit)."""
+    """Format slash /ask and /voice as '@user: prompt\\n\\nresponse' (Discord 2000-char limit)."""
     header = f"{author.mention}: "
     sep = "\n\n"
     prompt_body = (prompt or "").strip() or "…"
@@ -94,33 +83,12 @@ def _format_slash_ask_message(author, prompt: str, response: str) -> str:
     return f"{header}{prompt_body}{sep}{answer}"
 
 
-async def _send_slash_prompt_context(ctx, prompt: str):
-    """Post a visible prompt quote for slash /voice; no-op for prefix."""
-    if ctx.interaction is None:
-        return None
-    return await ctx.send(_format_prompt_context(ctx.author, prompt))
-
-
-async def _send_answer(ctx, context_msg, content=None, **kwargs):
-    """Reply to the slash /voice prompt quote when present; otherwise send normally."""
-    if context_msg is not None:
-        if content is not None:
-            await context_msg.reply(content, mention_author=False, **kwargs)
-        else:
-            await context_msg.reply(mention_author=False, **kwargs)
-    else:
-        if content is not None:
-            await ctx.send(content, **kwargs)
-        else:
-            await ctx.send(**kwargs)
-
-
-async def _send_ask_answer(ctx, prompt: str, content: str):
-    """Send /ask answer; slash includes '@user: prompt' in one message."""
+async def _send_ask_answer(ctx, prompt: str, content: str, **kwargs):
+    """Send /ask or /voice answer; slash includes '@user: prompt' in one message."""
     if ctx.interaction is not None:
-        await ctx.send(_format_slash_ask_message(ctx.author, prompt, content))
+        await ctx.send(_format_slash_ask_message(ctx.author, prompt, content), **kwargs)
     else:
-        await ctx.send(content)
+        await ctx.send(content, **kwargs)
 
 
 class AI(commands.Cog):
@@ -335,7 +303,6 @@ class AI(commands.Cog):
             return
 
         async with acknowledge(ctx):
-            context_msg = await _send_slash_prompt_context(ctx, prompt)
             try:
                 if self._session_turns >= MAX_GROK_SESSION_TURNS:
                     self._reset_session()
@@ -354,9 +321,9 @@ class AI(commands.Cog):
                     self._session_turns += 1
 
                 if not response_text:
-                    await _send_answer(
+                    await _send_ask_answer(
                         ctx,
-                        context_msg,
+                        prompt,
                         "Sorry, I couldn't generate a spoken response. Please try again.",
                     )
                     return
@@ -380,20 +347,25 @@ class AI(commands.Cog):
                     filename="voice.mp3"
                 )
 
-                await _send_answer(ctx, context_msg, file=audio_file)
+                # Slash: one message like /ask ('@user: prompt\\n\\nanswer' + audio).
+                # Prefix: audio only (prompt is already visible in the invoking message).
+                if ctx.interaction is not None:
+                    await _send_ask_answer(ctx, prompt, response_text, file=audio_file)
+                else:
+                    await ctx.send(file=audio_file)
 
             except requests.exceptions.RequestException:
                 logger.exception("/voice TTS request failed for user %s", ctx.author.id)
-                await _send_answer(
+                await _send_ask_answer(
                     ctx,
-                    context_msg,
+                    prompt,
                     "Something broke generating speech. Check the bot logs and try again.",
                 )
             except Exception:
                 logger.exception("/voice failed for user %s", ctx.author.id)
-                await _send_answer(
+                await _send_ask_answer(
                     ctx,
-                    context_msg,
+                    prompt,
                     "Something broke on my end, dude. Check the bot logs and try again.",
                 )
 

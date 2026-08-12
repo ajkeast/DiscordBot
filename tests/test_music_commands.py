@@ -156,6 +156,9 @@ async def test_play_queues_when_busy(report, mock_bot, mock_ctx):
     actual = mock_ctx.send.call_args.args[0]
     report.record("queued while busy", True, "Queued" in actual, section=SECTION_COMMANDS)
     assert "Queued" in actual
+    assert " — " not in actual
+    assert "Alex" not in actual
+    report.record("queued without requester", True, True, section=SECTION_COMMANDS)
 
 
 async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
@@ -200,7 +203,10 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     report.record("now playing", True, "Now playing" in actual, section=SECTION_COMMANDS)
     assert "Now playing" in actual
     assert "<https://soundcloud.com/artist/lofi-beat>" in actual
+    assert " — " not in actual
+    assert "Alex" not in actual
     report.record("url wrapped to hide embed", True, True, section=SECTION_COMMANDS)
+    report.record("no requester name", True, True, section=SECTION_COMMANDS)
 
 
 async def test_play_skips_preview_and_keeps_full_fallbacks(report, mock_bot, mock_ctx):
@@ -300,7 +306,6 @@ async def test_track_exception_plays_next_full_stream(report, mock_bot):
     channel = MagicMock()
     channel.send = AsyncMock()
     player.music_text_channel = channel
-    player.music_requester = "Alex"
     player.music_pending_ctx = None
     player.music_status_message = None
     player.music_announce_fallback = False
@@ -340,6 +345,8 @@ async def test_track_exception_plays_next_full_stream(report, mock_bot):
     assert "Now playing" in sent
     assert "Playing instead" not in sent
     assert "Full Backup" in sent
+    assert " — " not in sent
+    report.record("no requester suffix", True, True, section=SECTION_COMMANDS)
 
 
 async def test_track_exception_hides_failed_announce(report, mock_bot):
@@ -348,7 +355,6 @@ async def test_track_exception_hides_failed_announce(report, mock_bot):
     channel = MagicMock()
     channel.send = AsyncMock()
     player.music_text_channel = channel
-    player.music_requester = "Alex"
     player.music_pending_ctx = None
     failed_msg = MagicMock()
     failed_msg.delete = AsyncMock()
