@@ -19,6 +19,7 @@ from utils.interactions import acknowledge
 logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
+MAX_PLAY_CANDIDATES = 8
 
 SOUNDCLOUD_HOSTS = frozenset({
     "soundcloud.com",
@@ -95,16 +96,19 @@ def is_preview_track(track: wavelink.Playable) -> bool:
     return False
 
 
-def pick_playable_track(tracks) -> Optional[wavelink.Playable]:
-    """Prefer a full stream over a SoundCloud preview clip."""
+def full_stream_tracks(tracks) -> list[wavelink.Playable]:
+    """Return only fully streamable uploads (no Go+ preview clips)."""
     if isinstance(tracks, wavelink.Playlist):
         candidates = list(tracks.tracks)
     else:
         candidates = list(tracks)
-    for track in candidates:
-        if not is_preview_track(track):
-            return track
-    return candidates[0] if candidates else None
+    return [t for t in candidates if not is_preview_track(t)]
+
+
+def pick_playable_track(tracks) -> Optional[wavelink.Playable]:
+    """First fully streamable SoundCloud result, if any."""
+    full = full_stream_tracks(tracks)
+    return full[0] if full else None
 
 
 def _track_url(track: wavelink.Playable) -> str:
@@ -156,17 +160,52 @@ class Music(commands.Cog):
     async def on_wavelink_track_exception(
         self, payload: wavelink.TrackExceptionEventPayload
     ) -> None:
-        """Surface stream failures instead of silent 'playing'."""
+        """Try the next search candidate; only complain if nothing else will play."""
         exc = payload.exception or {}
         message = str(exc.get("message") or exc.get("cause") or exc)
         logger.error("Track exception for %r: %s", getattr(payload.track, "title", None), message)
         player = payload.player
-        text_channel = getattr(player, "music_text_channel", None) if player is not None else None
+        if player is None:
+            return
+
+        text_channel = getattr(player, "music_text_channel", None)
+        requester = getattr(player, "music_requester", None) or "someone"
+        fallbacks: list[wavelink.Playable] = list(
+            getattr(player, "music_fallbacks", None) or []
+        )
+
+        while fallbacks:
+            next_track = fallbacks.pop(0)
+            if is_preview_track(next_track):
+                continue
+            player.music_fallbacks = fallbacks  # type: ignore[attr-defined]
+            try:
+                await player.play(next_track)
+            except Exception:
+                logger.exception(
+                    "Failed starting fallback track %r",
+                    getattr(next_track, "title", None),
+                )
+                continue
+            if text_channel is not None:
+                try:
+                    await text_channel.send(
+                        self._track_line(
+                            next_track,
+                            requester,
+                            prefix="▶️ **Playing instead:** ",
+                        )
+                    )
+                except discord.HTTPException:
+                    logger.debug("Failed to notify channel of fallback play", exc_info=True)
+            return
+
+        player.music_fallbacks = []  # type: ignore[attr-defined]
         if text_channel is None:
             return
         try:
             await text_channel.send(
-                "Couldn't play that track. Try another SoundCloud search or URL."
+                "Couldn't play a full version of that. Try another SoundCloud search or URL."
             )
         except discord.HTTPException:
             logger.debug("Failed to notify channel of track exception", exc_info=True)
@@ -179,6 +218,18 @@ class Music(commands.Cog):
             f"{prefix}**{title}** ({duration})\n"
             f"<{_track_url(track)}> — {requester}"
         )
+
+    def _arm_play_candidates(
+        self,
+        player: wavelink.Player,
+        candidates: list[wavelink.Playable],
+        requester: str,
+    ) -> wavelink.Playable:
+        """Play/queue the best candidate and keep the rest for exception fallback."""
+        track = candidates[0]
+        player.music_fallbacks = candidates[1:]  # type: ignore[attr-defined]
+        player.music_requester = requester  # type: ignore[attr-defined]
+        return track
 
     async def _ensure_player(self, ctx: commands.Context) -> wavelink.Player:
         if ctx.guild is None:
@@ -253,26 +304,23 @@ class Music(commands.Cog):
                 )
                 return
 
-            track = pick_playable_track(tracks)
-            if track is None:
+            # Skip Go+ previews; only fully streamable uploads (try several if one 404s).
+            candidates = full_stream_tracks(tracks)[:MAX_PLAY_CANDIDATES]
+            if not candidates:
                 await ctx.send(
-                    "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
+                    "Couldn't find a full streamable version on SoundCloud "
+                    "(that result is preview-only). Try another search or URL."
                 )
                 return
 
             requester = ctx.author.display_name
-            preview_note = ""
-            if is_preview_track(track):
-                # Direct URL (or all search hits) may still be preview-only.
-                preview_note = (
-                    "\n⚠️ SoundCloud only allows a short preview of this track "
-                    "(full stream needs Go+). Try another upload or search."
-                )
 
             if player.current is not None or len(player.queue) > 0:
                 if len(player.queue) >= MAX_QUEUE_SIZE:
                     await ctx.send(f"Queue is full ({MAX_QUEUE_SIZE} tracks).")
                     return
+                # Queue only the best hit — fallbacks are armed when a track starts.
+                track = candidates[0]
                 await player.queue.put_wait(track)
                 position = len(player.queue)
                 await ctx.send(
@@ -281,14 +329,13 @@ class Music(commands.Cog):
                         requester,
                         prefix=f"Queued **#{position}:** ",
                     )
-                    + preview_note
                 )
                 return
 
+            track = self._arm_play_candidates(player, candidates, requester)
             await player.play(track)
             await ctx.send(
                 self._track_line(track, requester, prefix="▶️ **Now playing:** ")
-                + preview_note
             )
 
     @commands.hybrid_command(brief="Skip the current track")

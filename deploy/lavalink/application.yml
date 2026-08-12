@@ -23,7 +23,7 @@ lavalink:
     useSeekGhosting: true
     playerUpdateInterval: 5
     soundcloudSearchEnabled: true
-    # Skip ~30s Go+ preview streams so /play doesn't cut songs short.
+    # Drop Go+ ~30s previews; /play only uses fully streamable uploads.
     soundcloudFilterOutPreviewTracks: true
     gc-warnings: true
 
