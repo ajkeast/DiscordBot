@@ -9,7 +9,9 @@ from cogs.music import (
     Music,
     _lavalink_user_message,
     format_duration,
+    is_preview_track,
     is_soundcloud_url,
+    pick_playable_track,
     safe_title,
     to_search_query,
 )
@@ -55,6 +57,35 @@ def test_safe_title(report):
     actual = safe_title("Song [Live] *wow*")
     report.record("safe_title strips brackets", True, "[" not in actual and "]" not in actual, section=SECTION_COMMANDS)
     assert "[" not in actual and "]" not in actual
+
+
+def test_is_preview_track(report):
+    preview = MagicMock()
+    preview.identifier = (
+        "https://api-v2.soundcloud.com/media/soundcloud:tracks:1/abc/preview/hls"
+    )
+    preview.uri = "https://soundcloud.com/artist/song"
+    full = MagicMock()
+    full.identifier = (
+        "https://api-v2.soundcloud.com/media/soundcloud:tracks:1/abc/stream/hls"
+    )
+    full.uri = "https://soundcloud.com/artist/song"
+    report.record("preview detected", True, is_preview_track(preview), section=SECTION_COMMANDS)
+    report.record("full stream not preview", False, is_preview_track(full), section=SECTION_COMMANDS)
+    assert is_preview_track(preview) is True
+    assert is_preview_track(full) is False
+
+
+def test_pick_playable_track_skips_preview(report):
+    preview = MagicMock()
+    preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
+    preview.uri = "https://soundcloud.com/a/preview-song"
+    full = MagicMock()
+    full.identifier = "https://api-v2.soundcloud.com/media/x/stream/hls"
+    full.uri = "https://soundcloud.com/a/full-song"
+    chosen = pick_playable_track([preview, full])
+    report.record("picks full over preview", full, chosen, section=SECTION_COMMANDS)
+    assert chosen is full
 
 
 def test_lavalink_user_message_offline(report):
@@ -105,7 +136,7 @@ async def test_play_queues_when_busy(report, mock_bot, mock_ctx):
     track.title = "Song"
     track.length = 120000
     track.uri = "https://soundcloud.com/artist/song"
-    track.identifier = "123"
+    track.identifier = "https://api-v2.soundcloud.com/media/x/stream/hls"
 
     cog = Music(mock_bot)
     with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
@@ -142,7 +173,7 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     track.title = "Lofi Beat"
     track.length = 213000
     track.uri = "https://soundcloud.com/artist/lofi-beat"
-    track.identifier = "456"
+    track.identifier = "https://api-v2.soundcloud.com/media/x/stream/hls"
 
     cog = Music(mock_bot)
     with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
@@ -153,6 +184,85 @@ async def test_play_starts_when_idle(report, mock_bot, mock_ctx):
     actual = mock_ctx.send.call_args.args[0]
     report.record("now playing", True, "Now playing" in actual, section=SECTION_COMMANDS)
     assert "Now playing" in actual
+    assert "<https://soundcloud.com/artist/lofi-beat>" in actual
+    report.record("url wrapped to hide embed", True, True, section=SECTION_COMMANDS)
+
+
+async def test_play_skips_preview_for_full_stream(report, mock_bot, mock_ctx):
+    mock_ctx.guild = MagicMock()
+    mock_ctx.guild.id = 4
+    mock_ctx.guild.me = None
+    mock_ctx.author.voice = MagicMock()
+    mock_ctx.author.display_name = "Alex"
+
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = False
+    player.paused = False
+    player.current = None
+    player.queue = MagicMock()
+    player.queue.__bool__ = MagicMock(return_value=False)
+    player.queue.__len__ = MagicMock(return_value=0)
+    player.play = AsyncMock()
+    mock_ctx.voice_client = player
+
+    preview = MagicMock()
+    preview.title = "Official Preview"
+    preview.length = 180000
+    preview.uri = "https://soundcloud.com/label/official"
+    preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
+    full = MagicMock()
+    full.title = "Fan Upload Full"
+    full.length = 180000
+    full.uri = "https://soundcloud.com/fan/full"
+    full.identifier = "https://api-v2.soundcloud.com/media/y/stream/hls"
+
+    cog = Music(mock_bot)
+    with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
+        with patch(
+            "cogs.music.wavelink.Playable.search",
+            AsyncMock(return_value=[preview, full]),
+        ):
+            await cog.play.callback(cog, mock_ctx, query="tubthumping")
+
+    player.play.assert_awaited_once_with(full)
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("skipped preview hit", True, "Fan Upload Full" in actual, section=SECTION_COMMANDS)
+    assert "Fan Upload Full" in actual
+    assert "preview" not in actual.lower()
+
+
+async def test_play_warns_when_only_preview(report, mock_bot, mock_ctx):
+    mock_ctx.guild = MagicMock()
+    mock_ctx.guild.id = 5
+    mock_ctx.guild.me = None
+    mock_ctx.author.voice = MagicMock()
+    mock_ctx.author.display_name = "Alex"
+
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = False
+    player.paused = False
+    player.current = None
+    player.queue = MagicMock()
+    player.queue.__bool__ = MagicMock(return_value=False)
+    player.queue.__len__ = MagicMock(return_value=0)
+    player.play = AsyncMock()
+    mock_ctx.voice_client = player
+
+    preview = MagicMock()
+    preview.title = "Safety Dance"
+    preview.length = 30000
+    preview.uri = "https://soundcloud.com/men-without-hats/safety-dance-1"
+    preview.identifier = "https://api-v2.soundcloud.com/media/x/preview/hls"
+
+    cog = Music(mock_bot)
+    with patch.object(cog, "_ensure_player", AsyncMock(return_value=player)):
+        with patch("cogs.music.wavelink.Playable.search", AsyncMock(return_value=[preview])):
+            await cog.play.callback(cog, mock_ctx, query="safety dance")
+
+    player.play.assert_awaited_once_with(preview)
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("preview warning", True, "preview" in actual.lower(), section=SECTION_COMMANDS)
+    assert "preview" in actual.lower()
 
 
 async def test_queue_empty_message(report, mock_bot, mock_ctx):
