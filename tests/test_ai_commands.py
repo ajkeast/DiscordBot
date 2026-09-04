@@ -2,10 +2,11 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 from discord.ext import commands
 
 from bot import DinkBot
-from cogs.ai import AI
+from cogs.ai import ImagineEditModal, ImagineResultView, _CooldownMessage
 from tests.reporting import SECTION_COMMANDS
 from utils.constants import (
     IMAGINE_RATE_LIMIT,
@@ -138,38 +139,58 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
     await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="a red circle")
 
     sent_file = mock_ctx.send.call_args.kwargs.get("file")
+    view = mock_ctx.send.call_args.kwargs.get("view")
     report.record("imagine status", "success", mock_imagine.return_value["status"], section=SECTION_COMMANDS)
     report.record("attachment sent", True, sent_file is not None, section=SECTION_COMMANDS)
+    report.record("edit view", True, isinstance(view, ImagineResultView), section=SECTION_COMMANDS)
     report.record("db write", "write_dalle_entry called", mock_db_ops.write_dalle_entry.called, section=SECTION_COMMANDS)
 
     mock_db_ops.write_dalle_entry.assert_called_once()
-    mock_imagine.assert_called_once_with("a red circle", input_image_urls=None)
+    mock_imagine.assert_called_once_with("a red circle", input_image_url=None)
     mock_ctx.send.assert_awaited_once()
     assert sent_file is not None
+    assert isinstance(view, ImagineResultView)
+    assert view.timeout is None
 
 
 @patch("cogs.ai.call_grok_imagine")
-async def test_imagine_with_multiple_input_images(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
-    urls = [
-        "https://cdn.discordapp.com/attachments/1/a.png",
-        "https://cdn.discordapp.com/attachments/1/b.png",
-    ]
-    mock_ctx.message.attachments = [_image_attachment(u) for u in urls]
+async def test_imagine_with_one_input_image(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
+    url = "https://cdn.discordapp.com/attachments/1/a.png"
+    mock_ctx.message.attachments = [_image_attachment(url)]
     mock_imagine.return_value = {
         "status": "success",
         "image_bytes": b"fake-jpeg-bytes",
         "revised_prompt": None,
     }
 
-    prompt = "Put the person from <IMAGE_0> into the scene from <IMAGE_1>"
-    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt=prompt)
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="make it night")
 
-    mock_imagine.assert_called_once_with(prompt, input_image_urls=urls)
+    mock_imagine.assert_called_once_with("make it night", input_image_url=url)
     embed = mock_ctx.send.call_args.kwargs["embed"]
-    input_field = next(f for f in embed.fields if f.name == "Input images")
-    report.record("input image count", "2 attached", input_field.value, section=SECTION_COMMANDS)
-    assert input_field.value == "2 attached"
+    input_field = next(f for f in embed.fields if f.name == "Input image")
+    report.record("input image", "1 attached", input_field.value, section=SECTION_COMMANDS)
+    assert input_field.value == "1 attached"
     mock_ctx.send.assert_awaited_once()
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_uses_replied_image(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
+    url = "https://cdn.discordapp.com/attachments/1/replied.png"
+    resolved = MagicMock(spec=discord.Message)
+    resolved.attachments = [_image_attachment(url)]
+    resolved.embeds = []
+    mock_ctx.message.reference = MagicMock()
+    mock_ctx.message.reference.resolved = resolved
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+
+    await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="add a hat")
+
+    mock_imagine.assert_called_once_with("add a hat", input_image_url=url)
+    report.record("reply image url", url, mock_imagine.call_args.kwargs["input_image_url"], section=SECTION_COMMANDS)
 
 
 @patch("cogs.ai.call_grok_imagine")
@@ -181,7 +202,7 @@ async def test_imagine_rejects_too_many_images(mock_imagine, report, mock_db_ops
 
     await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="combine these")
 
-    expected = f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `/imagine`."
+    expected = f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} image for `/imagine`."
     actual = mock_ctx.send.call_args.args[0]
     report.record("too many images message", expected, actual, section=SECTION_COMMANDS)
     mock_imagine.assert_not_called()
@@ -203,6 +224,133 @@ async def test_imagine_failure(mock_imagine, report, ai_cog, mock_ctx):
     assert embed.title == "❌ Error"
     assert embed.description == expected_desc
     assert "rate limited" not in (embed.description or "")
+
+
+def test_imagine_image_option_is_optional(report, ai_cog):
+    param = ai_cog.imagine.clean_params["image"]
+    report.record("image required", False, param.required, section=SECTION_COMMANDS)
+    assert param.required is False
+    assert "image1" not in ai_cog.imagine.clean_params
+    assert "image2" not in ai_cog.imagine.clean_params
+    assert "image3" not in ai_cog.imagine.clean_params
+
+
+def test_imagine_result_view_is_persistent(report):
+    view = ImagineResultView()
+    button = view.children[0]
+    report.record("timeout", None, view.timeout, section=SECTION_COMMANDS)
+    report.record("custom_id", "imagine:edit", button.custom_id, section=SECTION_COMMANDS)
+    assert view.timeout is None
+    assert button.custom_id == "imagine:edit"
+    assert button.label == "Edit"
+
+
+async def test_imagine_edit_button_opens_modal(report):
+    view = ImagineResultView()
+    interaction = AsyncMock()
+    interaction.message = MagicMock()
+    interaction.message.attachments = [
+        _image_attachment("https://cdn.discordapp.com/attachments/1/out.jpg")
+    ]
+    interaction.message.embeds = []
+    interaction.response.send_modal = AsyncMock()
+
+    await view.children[0].callback(interaction)
+
+    interaction.response.send_modal.assert_awaited_once()
+    modal = interaction.response.send_modal.call_args.args[0]
+    report.record("modal type", "ImagineEditModal", type(modal).__name__, section=SECTION_COMMANDS)
+    assert isinstance(modal, ImagineEditModal)
+    assert modal.image_url == "https://cdn.discordapp.com/attachments/1/out.jpg"
+
+
+async def test_imagine_edit_button_without_image(report):
+    view = ImagineResultView()
+    interaction = AsyncMock()
+    interaction.message = MagicMock()
+    interaction.message.attachments = []
+    interaction.message.embeds = []
+    interaction.response.send_message = AsyncMock()
+
+    await view.children[0].callback(interaction)
+
+    actual = interaction.response.send_message.call_args.args[0]
+    expected = "Couldn't find an image on that message to edit."
+    report.record("missing image message", expected, actual, section=SECTION_COMMANDS)
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_edit_modal_submits(mock_imagine, report, mock_author):
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+    modal = ImagineEditModal(image_url="https://cdn.example.com/a.png")
+    modal.prompt_input._value = "make it night"
+
+    interaction = AsyncMock()
+    interaction.user = mock_author
+    interaction.client = MagicMock()
+    interaction.client.get_cog.return_value = None
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    mock_imagine.assert_called_once_with(
+        "make it night",
+        input_image_url="https://cdn.example.com/a.png",
+    )
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    view = interaction.followup.send.call_args.kwargs.get("view")
+    report.record("followup has edit view", True, isinstance(view, ImagineResultView), section=SECTION_COMMANDS)
+    assert isinstance(view, ImagineResultView)
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_edit_modal_on_cooldown(mock_imagine, report, ai_cog, mock_author):
+    buckets = ai_cog.imagine._buckets
+    for _ in range(IMAGINE_RATE_LIMIT):
+        retry = buckets.update_rate_limit(_CooldownMessage(mock_author))
+        assert retry is None
+
+    modal = ImagineEditModal(image_url="https://cdn.example.com/a.png")
+    modal.prompt_input._value = "make it night"
+    interaction = AsyncMock()
+    interaction.user = mock_author
+    interaction.client = MagicMock()
+    interaction.client.get_cog.return_value = ai_cog
+    interaction.response = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    mock_imagine.assert_not_called()
+    actual = interaction.response.send_message.call_args.args[0]
+    report.record("cooldown blocks edit", True, "limit" in actual, section=SECTION_COMMANDS)
+    assert "limit" in actual
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+    interaction.response.defer.assert_not_called()
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_slash_image_option(mock_imagine, report, mock_db_ops, ai_cog, mock_ctx):
+    url = "https://cdn.discordapp.com/attachments/1/slash.png"
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+
+    await ai_cog.imagine.callback(
+        ai_cog, mock_ctx, prompt="make it a sketch", image=_image_attachment(url)
+    )
+
+    mock_imagine.assert_called_once_with("make it a sketch", input_image_url=url)
+    report.record("slash image url", url, mock_imagine.call_args.kwargs["input_image_url"], section=SECTION_COMMANDS)
 
 
 def test_imagine_has_hourly_rate_limit(report, ai_cog):

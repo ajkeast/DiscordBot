@@ -13,6 +13,7 @@ from utils.interactions import acknowledge
 from datetime import datetime, timedelta
 from typing import List, Optional
 import asyncio
+import math
 import discord
 import pytz
 import requests
@@ -26,12 +27,16 @@ EASTERN = pytz.timezone("US/Eastern")
 DAILY_CLEAR_HOUR = 3  # 3am US/Eastern
 
 
+def _is_image_attachment(attachment) -> bool:
+    content_type = getattr(attachment, "content_type", None) or ""
+    if content_type.startswith("image/"):
+        return True
+    filename = (getattr(attachment, "filename", None) or "").lower()
+    return filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+
+
 def _image_urls_from_message(ctx) -> List[str]:
-    return [
-        a.url
-        for a in ctx.message.attachments
-        if a.content_type and a.content_type.startswith("image/")
-    ]
+    return [a.url for a in ctx.message.attachments if _is_image_attachment(a)]
 
 
 def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List[str]:
@@ -39,11 +44,181 @@ def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List
     urls = [
         a.url
         for a in attachments
-        if a is not None and a.content_type and a.content_type.startswith("image/")
+        if a is not None and _is_image_attachment(a)
     ]
     if urls:
         return urls
     return _image_urls_from_message(ctx)
+
+
+def _first_image_url_from_discord_message(message) -> Optional[str]:
+    if message is None:
+        return None
+    for attachment in getattr(message, "attachments", None) or []:
+        if _is_image_attachment(attachment):
+            return attachment.url
+    for embed in getattr(message, "embeds", None) or []:
+        image = getattr(embed, "image", None)
+        url = getattr(image, "url", None) if image is not None else None
+        if url:
+            return url
+    return None
+
+
+def _image_url_from_reply(ctx) -> Optional[str]:
+    message = getattr(ctx, "message", None)
+    if message is None:
+        return None
+    ref = getattr(message, "reference", None)
+    if ref is None:
+        return None
+    resolved = getattr(ref, "resolved", None)
+    if not isinstance(resolved, discord.Message):
+        return None
+    return _first_image_url_from_discord_message(resolved)
+
+
+def _collect_imagine_source(
+    ctx, image: Optional[discord.Attachment]
+) -> tuple[Optional[str], Optional[str]]:
+    """Return (image_url, error_message) for a single /imagine source image."""
+    if image is not None:
+        if not _is_image_attachment(image):
+            return None, "That attachment isn't an image."
+        return image.url, None
+
+    message_urls = _image_urls_from_message(ctx)
+    if len(message_urls) > MAX_IMAGINE_INPUT_IMAGES:
+        noun = "image" if MAX_IMAGINE_INPUT_IMAGES == 1 else "images"
+        return (
+            None,
+            f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} {noun} for `/imagine`.",
+        )
+    if message_urls:
+        return message_urls[0], None
+    return _image_url_from_reply(ctx), None
+
+
+def _embed_prompt(prompt: str) -> str:
+    text = (prompt or "").strip() or "…"
+    if len(text) > 1024:
+        return text[:1021] + "..."
+    return text
+
+
+class _CooldownMessage:
+    __slots__ = ("author",)
+
+    def __init__(self, author):
+        self.author = author
+
+
+def _imagine_cooldown_message(retry_after: float) -> str:
+    minutes = max(1, math.ceil(retry_after / 60))
+    return (
+        f"You've hit the `/imagine` limit ({IMAGINE_RATE_LIMIT} per hour). "
+        f"Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
+    )
+
+
+async def _consume_imagine_cooldown(interaction: discord.Interaction) -> bool:
+    """Take one /imagine token for this user. Reply ephemerally if they are limited."""
+    cog = interaction.client.get_cog("AI")
+    command = getattr(cog, "imagine", None) if cog is not None else None
+    buckets = getattr(command, "_buckets", None)
+    if buckets is None:
+        return True
+    retry_after = buckets.update_rate_limit(_CooldownMessage(interaction.user))
+    if not retry_after:
+        return True
+    await interaction.response.send_message(
+        _imagine_cooldown_message(retry_after),
+        ephemeral=True,
+    )
+    return False
+
+
+async def _send_imagine_result(*, send, prompt: str, image_url: Optional[str], author) -> None:
+    loop = asyncio.get_running_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: call_grok_imagine(prompt, input_image_url=image_url),
+    )
+    if response["status"] != "success":
+        logger.error("/imagine failed: %s", response.get("error"))
+        await send(
+            embed=discord.Embed(
+                title="❌ Error",
+                description="Failed to generate image. Check the bot logs and try again.",
+                color=EMBED_COLOR,
+            )
+        )
+        return
+
+    image_file = discord.File(
+        io.BytesIO(response["image_bytes"]),
+        filename=GROK_IMAGINE_FILENAME,
+    )
+    embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
+    embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
+    embed.add_field(name="Prompt", value=_embed_prompt(prompt), inline=False)
+    if image_url:
+        embed.add_field(name="Input image", value="1 attached", inline=False)
+    embed.set_footer(text=f"Requested by {author.display_name}")
+    await send(embed=embed, file=image_file, view=ImagineResultView())
+
+
+class ImagineEditModal(discord.ui.Modal, title="Edit image"):
+    prompt_input = discord.ui.TextInput(
+        label="What should we change?",
+        style=discord.TextStyle.paragraph,
+        max_length=1000,
+        required=True,
+    )
+
+    def __init__(self, image_url: str):
+        super().__init__()
+        self.image_url = image_url
+
+    async def on_submit(self, interaction: discord.Interaction):
+        prompt = str(self.prompt_input.value).strip()
+        if not prompt:
+            await interaction.response.send_message(
+                "Please describe what to change.",
+                ephemeral=True,
+            )
+            return
+        if not await _consume_imagine_cooldown(interaction):
+            return
+        await interaction.response.defer()
+        await _send_imagine_result(
+            send=interaction.followup.send,
+            prompt=prompt,
+            image_url=self.image_url,
+            author=interaction.user,
+        )
+
+
+class ImagineResultView(discord.ui.View):
+    """Persistent Edit button on /imagine results."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Edit",
+        style=discord.ButtonStyle.primary,
+        custom_id="imagine:edit",
+    )
+    async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        image_url = _first_image_url_from_discord_message(interaction.message)
+        if not image_url:
+            await interaction.response.send_message(
+                "Couldn't find an image on that message to edit.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(ImagineEditModal(image_url=image_url))
 
 
 async def _ensure_message_row(ctx, content: str = "") -> None:
@@ -119,10 +294,12 @@ class AI(commands.Cog):
         )
 
     async def cog_load(self):
+        self.bot.add_view(ImagineResultView())
         self.daily_chat_clear.start()
 
     def cog_unload(self):
         self.daily_chat_clear.cancel()
+        self.bot.remove_view(ImagineResultView())
 
     def _reset_session(self):
         self.last_response_id = None
@@ -215,67 +392,31 @@ class AI(commands.Cog):
     @commands.cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS, commands.BucketType.user)
     @app_commands.describe(
         prompt="Describe the image to generate or edit",
-        image1="Optional first reference image",
-        image2="Optional second reference image",
-        image3="Optional third reference image",
+        image="Optional image to edit",
     )
     async def imagine(
         self,
         ctx,
         *,
         prompt: str,
-        image1: Optional[discord.Attachment] = None,
-        image2: Optional[discord.Attachment] = None,
-        image3: Optional[discord.Attachment] = None,
+        image: Optional[discord.Attachment] = None,
     ):
-        """Generate an AI image based on a prompt and optional input images.
+        """Generate an AI image, or edit one attached image / a replied-to image."""
 
-        Attach up to 3 images to edit or combine them; refer to them in the prompt
-        as <IMAGE_0>, <IMAGE_1>, <IMAGE_2> (attachment order).
-        """
-
-        input_image_urls = _collect_image_urls(ctx, image1, image2, image3)
-        if len(input_image_urls) > MAX_IMAGINE_INPUT_IMAGES:
-            await ctx.send(
-                f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} images for `/imagine`."
-            )
+        image_url, error = _collect_imagine_source(ctx, image)
+        if error:
+            await ctx.send(error)
             return
 
         async with acknowledge(ctx):
             await _ensure_message_row(ctx, content=prompt)
             db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
-
-            response = call_grok_imagine(
-                prompt,
-                input_image_urls=input_image_urls or None,
+            await _send_imagine_result(
+                send=ctx.send,
+                prompt=prompt,
+                image_url=image_url,
+                author=ctx.author,
             )
-
-            if response["status"] == "success":
-                image_file = discord.File(
-                    io.BytesIO(response["image_bytes"]),
-                    filename=GROK_IMAGINE_FILENAME,
-                )
-                embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
-                embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
-                embed.add_field(name="Prompt", value=prompt, inline=False)
-                if input_image_urls:
-                    count = len(input_image_urls)
-                    embed.add_field(
-                        name="Input images",
-                        value=f"{count} attached",
-                        inline=False,
-                    )
-                embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-                await ctx.send(embed=embed, file=image_file)
-            else:
-                logger.error("/imagine failed: %s", response.get("error"))
-                await ctx.send(
-                    embed=discord.Embed(
-                        title="❌ Error",
-                        description="Failed to generate image. Check the bot logs and try again.",
-                        color=EMBED_COLOR,
-                    )
-                )
 
     @commands.hybrid_command(brief="Clear the shared chat")
     async def clear(self, ctx):
