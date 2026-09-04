@@ -19,8 +19,8 @@ These are your AI-powered features. When explaining them to members, focus on
 - Describe what you want and the bot generates an image.
 - Attach **one image** to edit it, or reply to a message that has a picture and
   run `_imagine` with what to change.
-- After an image is posted, use the **Edit** button to tweak it (describe the
-  change in the popup). You can keep editing the new result the same way.
+- After an image is posted, use **Edit** to tweak it or **Retry** to generate
+  another take from the same prompt. You can keep editing the new result.
 
 ## Voice — `/voice`
 

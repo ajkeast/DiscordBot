@@ -138,6 +138,16 @@ async def _consume_imagine_cooldown(interaction: discord.Interaction) -> bool:
     return False
 
 
+def _prompt_from_imagine_message(message) -> Optional[str]:
+    for embed in getattr(message, "embeds", None) or []:
+        for field in getattr(embed, "fields", None) or []:
+            if getattr(field, "name", None) == "Prompt":
+                value = (getattr(field, "value", None) or "").strip()
+                if value:
+                    return value
+    return None
+
+
 async def _send_imagine_result(*, send, prompt: str, image_url: Optional[str], author) -> None:
     loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(
@@ -159,11 +169,9 @@ async def _send_imagine_result(*, send, prompt: str, image_url: Optional[str], a
         io.BytesIO(response["image_bytes"]),
         filename=GROK_IMAGINE_FILENAME,
     )
-    embed = discord.Embed(title="🎨 AI Generated Image", color=EMBED_COLOR)
+    embed = discord.Embed(color=EMBED_COLOR)
     embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
     embed.add_field(name="Prompt", value=_embed_prompt(prompt), inline=False)
-    if image_url:
-        embed.add_field(name="Input image", value="1 attached", inline=False)
     embed.set_footer(text=f"Requested by {author.display_name}")
     await send(embed=embed, file=image_file, view=ImagineResultView())
 
@@ -200,7 +208,7 @@ class ImagineEditModal(discord.ui.Modal, title="Edit image"):
 
 
 class ImagineResultView(discord.ui.View):
-    """Persistent Edit button on /imagine results."""
+    """Persistent Edit and Retry buttons on /imagine results."""
 
     def __init__(self):
         super().__init__(timeout=None)
@@ -219,6 +227,29 @@ class ImagineResultView(discord.ui.View):
             )
             return
         await interaction.response.send_modal(ImagineEditModal(image_url=image_url))
+
+    @discord.ui.button(
+        label="Retry",
+        style=discord.ButtonStyle.secondary,
+        custom_id="imagine:retry",
+    )
+    async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        prompt = _prompt_from_imagine_message(interaction.message)
+        if not prompt:
+            await interaction.response.send_message(
+                "Couldn't find the original prompt to retry.",
+                ephemeral=True,
+            )
+            return
+        if not await _consume_imagine_cooldown(interaction):
+            return
+        await interaction.response.defer()
+        await _send_imagine_result(
+            send=interaction.followup.send,
+            prompt=prompt,
+            image_url=None,
+            author=interaction.user,
+        )
 
 
 async def _ensure_message_row(ctx, content: str = "") -> None:

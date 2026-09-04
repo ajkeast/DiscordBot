@@ -21,6 +21,10 @@ def _image_attachment(url: str) -> MagicMock:
     return attachment
 
 
+def _view_button(view, custom_id: str):
+    return next(item for item in view.children if item.custom_id == custom_id)
+
+
 async def test_ask_success(report, ai_cog, mock_ctx):
     expected = "Grok says hi"
     ai_cog.grok.send_message.return_value = ("new-id", expected)
@@ -151,6 +155,9 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
     assert sent_file is not None
     assert isinstance(view, ImagineResultView)
     assert view.timeout is None
+    embed = mock_ctx.send.call_args.kwargs["embed"]
+    report.record("embed title", None, embed.title, section=SECTION_COMMANDS)
+    assert embed.title is None
 
 
 @patch("cogs.ai.call_grok_imagine")
@@ -167,9 +174,10 @@ async def test_imagine_with_one_input_image(mock_imagine, report, mock_db_ops, a
 
     mock_imagine.assert_called_once_with("make it night", input_image_url=url)
     embed = mock_ctx.send.call_args.kwargs["embed"]
-    input_field = next(f for f in embed.fields if f.name == "Input image")
-    report.record("input image", "1 attached", input_field.value, section=SECTION_COMMANDS)
-    assert input_field.value == "1 attached"
+    field_names = [f.name for f in embed.fields]
+    report.record("input image field", False, "Input image" in field_names, section=SECTION_COMMANDS)
+    assert "Input image" not in field_names
+    assert embed.title is None
     mock_ctx.send.assert_awaited_once()
 
 
@@ -237,12 +245,15 @@ def test_imagine_image_option_is_optional(report, ai_cog):
 
 def test_imagine_result_view_is_persistent(report):
     view = ImagineResultView()
-    button = view.children[0]
+    edit = _view_button(view, "imagine:edit")
+    retry = _view_button(view, "imagine:retry")
     report.record("timeout", None, view.timeout, section=SECTION_COMMANDS)
-    report.record("custom_id", "imagine:edit", button.custom_id, section=SECTION_COMMANDS)
+    report.record("edit custom_id", "imagine:edit", edit.custom_id, section=SECTION_COMMANDS)
+    report.record("retry custom_id", "imagine:retry", retry.custom_id, section=SECTION_COMMANDS)
     assert view.timeout is None
-    assert button.custom_id == "imagine:edit"
-    assert button.label == "Edit"
+    assert edit.label == "Edit"
+    assert retry.label == "Retry"
+    assert len(view.children) == 2
 
 
 async def test_imagine_edit_button_opens_modal(report):
@@ -255,7 +266,7 @@ async def test_imagine_edit_button_opens_modal(report):
     interaction.message.embeds = []
     interaction.response.send_modal = AsyncMock()
 
-    await view.children[0].callback(interaction)
+    await _view_button(view, "imagine:edit").callback(interaction)
 
     interaction.response.send_modal.assert_awaited_once()
     modal = interaction.response.send_modal.call_args.args[0]
@@ -272,11 +283,60 @@ async def test_imagine_edit_button_without_image(report):
     interaction.message.embeds = []
     interaction.response.send_message = AsyncMock()
 
-    await view.children[0].callback(interaction)
+    await _view_button(view, "imagine:edit").callback(interaction)
 
     actual = interaction.response.send_message.call_args.args[0]
     expected = "Couldn't find an image on that message to edit."
     report.record("missing image message", expected, actual, section=SECTION_COMMANDS)
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_retry_regenerates_prompt(mock_imagine, report, mock_author):
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+    prompt_field = MagicMock()
+    prompt_field.name = "Prompt"
+    prompt_field.value = "a red circle"
+    embed = MagicMock()
+    embed.fields = [prompt_field]
+
+    view = ImagineResultView()
+    interaction = AsyncMock()
+    interaction.user = mock_author
+    interaction.client = MagicMock()
+    interaction.client.get_cog.return_value = None
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+    interaction.message = MagicMock()
+    interaction.message.embeds = [embed]
+
+    await _view_button(view, "imagine:retry").callback(interaction)
+
+    mock_imagine.assert_called_once_with("a red circle", input_image_url=None)
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    result_embed = interaction.followup.send.call_args.kwargs["embed"]
+    report.record("retry title", None, result_embed.title, section=SECTION_COMMANDS)
+    assert result_embed.title is None
+
+
+async def test_imagine_retry_without_prompt(report):
+    view = ImagineResultView()
+    interaction = AsyncMock()
+    interaction.message = MagicMock()
+    interaction.message.embeds = []
+    interaction.response.send_message = AsyncMock()
+
+    await _view_button(view, "imagine:retry").callback(interaction)
+
+    actual = interaction.response.send_message.call_args.args[0]
+    expected = "Couldn't find the original prompt to retry."
+    report.record("missing prompt message", expected, actual, section=SECTION_COMMANDS)
     interaction.response.send_message.assert_awaited_once()
     assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
 
@@ -307,8 +367,12 @@ async def test_imagine_edit_modal_submits(mock_imagine, report, mock_author):
     interaction.response.defer.assert_awaited_once()
     interaction.followup.send.assert_awaited_once()
     view = interaction.followup.send.call_args.kwargs.get("view")
+    embed = interaction.followup.send.call_args.kwargs["embed"]
     report.record("followup has edit view", True, isinstance(view, ImagineResultView), section=SECTION_COMMANDS)
+    report.record("followup title", None, embed.title, section=SECTION_COMMANDS)
     assert isinstance(view, ImagineResultView)
+    assert embed.title is None
+    assert "Input image" not in [f.name for f in embed.fields]
 
 
 @patch("cogs.ai.call_grok_imagine")
