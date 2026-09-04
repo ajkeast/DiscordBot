@@ -138,6 +138,21 @@ async def _consume_imagine_cooldown(interaction: discord.Interaction) -> bool:
     return False
 
 
+def _imagining_text(source) -> str:
+    """Channel status while Grok Imagine is running (replaces Discord's 'thinking')."""
+    name = None
+    me = getattr(source, "me", None)
+    if me is not None:
+        name = getattr(me, "display_name", None)
+    if not isinstance(name, str) or not name:
+        bot = getattr(source, "bot", None) or getattr(source, "client", None)
+        user = getattr(bot, "user", None) if bot is not None else None
+        name = getattr(user, "display_name", None)
+    if not isinstance(name, str) or not name:
+        name = "Peter Dinklage"
+    return f"{name} is imagining…"
+
+
 def _prompt_from_imagine_message(message) -> Optional[str]:
     for embed in getattr(message, "embeds", None) or []:
         for field in getattr(embed, "fields", None) or []:
@@ -148,7 +163,34 @@ def _prompt_from_imagine_message(message) -> Optional[str]:
     return None
 
 
-async def _send_imagine_result(*, send, prompt: str, image_url: Optional[str], author) -> None:
+def _source_image_url_from_imagine_message(message) -> Optional[str]:
+    """Original edit source URL, stored on the embed so Retry can reuse it."""
+    for embed in getattr(message, "embeds", None) or []:
+        url = getattr(embed, "url", None)
+        if isinstance(url, str) and url:
+            return url
+    return None
+
+
+def _imagine_result_embed(prompt: str, author, source_image_url: Optional[str]) -> discord.Embed:
+    embed = discord.Embed(color=EMBED_COLOR, url=source_image_url or None)
+    embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
+    embed.add_field(name="Prompt", value=_embed_prompt(prompt), inline=False)
+    embed.set_footer(text=f"Requested by {author.display_name}")
+    return embed
+
+
+def _imagine_error_embed() -> discord.Embed:
+    return discord.Embed(
+        title="❌ Error",
+        description="Failed to generate image. Check the bot logs and try again.",
+        color=EMBED_COLOR,
+    )
+
+
+async def _complete_imagine(
+    message, prompt: str, image_url: Optional[str], author
+) -> None:
     loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(
         None,
@@ -156,24 +198,26 @@ async def _send_imagine_result(*, send, prompt: str, image_url: Optional[str], a
     )
     if response["status"] != "success":
         logger.error("/imagine failed: %s", response.get("error"))
-        await send(
-            embed=discord.Embed(
-                title="❌ Error",
-                description="Failed to generate image. Check the bot logs and try again.",
-                color=EMBED_COLOR,
-            )
-        )
+        await message.edit(content=None, embed=_imagine_error_embed(), view=None)
         return
 
     image_file = discord.File(
         io.BytesIO(response["image_bytes"]),
         filename=GROK_IMAGINE_FILENAME,
     )
-    embed = discord.Embed(color=EMBED_COLOR)
-    embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
-    embed.add_field(name="Prompt", value=_embed_prompt(prompt), inline=False)
-    embed.set_footer(text=f"Requested by {author.display_name}")
-    await send(embed=embed, file=image_file, view=ImagineResultView())
+    await message.edit(
+        content=None,
+        embed=_imagine_result_embed(prompt, author, image_url),
+        attachments=[image_file],
+        view=ImagineResultView(),
+    )
+
+
+async def _start_imagine(source, send, prompt: str, image_url: Optional[str], author) -> None:
+    sent = await send(_imagining_text(source))
+    if sent is None:
+        sent = await source.original_response()
+    await _complete_imagine(sent, prompt, image_url, author)
 
 
 class ImagineEditModal(discord.ui.Modal, title="Edit image"):
@@ -198,12 +242,12 @@ class ImagineEditModal(discord.ui.Modal, title="Edit image"):
             return
         if not await _consume_imagine_cooldown(interaction):
             return
-        await interaction.response.defer()
-        await _send_imagine_result(
-            send=interaction.followup.send,
-            prompt=prompt,
-            image_url=self.image_url,
-            author=interaction.user,
+        await _start_imagine(
+            interaction,
+            interaction.response.send_message,
+            prompt,
+            self.image_url,
+            interaction.user,
         )
 
 
@@ -243,12 +287,13 @@ class ImagineResultView(discord.ui.View):
             return
         if not await _consume_imagine_cooldown(interaction):
             return
-        await interaction.response.defer()
-        await _send_imagine_result(
-            send=interaction.followup.send,
-            prompt=prompt,
-            image_url=None,
-            author=interaction.user,
+        source_url = _source_image_url_from_imagine_message(interaction.message)
+        await _start_imagine(
+            interaction,
+            interaction.response.send_message,
+            prompt,
+            source_url,
+            interaction.user,
         )
 
 
@@ -439,15 +484,9 @@ class AI(commands.Cog):
             await ctx.send(error)
             return
 
-        async with acknowledge(ctx):
-            await _ensure_message_row(ctx, content=prompt)
-            db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
-            await _send_imagine_result(
-                send=ctx.send,
-                prompt=prompt,
-                image_url=image_url,
-                author=ctx.author,
-            )
+        await _ensure_message_row(ctx, content=prompt)
+        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
+        await _start_imagine(ctx, ctx.send, prompt, image_url, ctx.author)
 
     @commands.hybrid_command(brief="Clear the shared chat")
     async def clear(self, ctx):
