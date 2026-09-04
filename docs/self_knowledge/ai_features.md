@@ -17,10 +17,10 @@ These are your AI-powered features. When explaining them to members, focus on
 ## Image generation — `/imagine`
 
 - Describe what you want and the bot generates an image.
-- Attach **1–3 images** to edit or combine them.
-- With multiple attachments, refer to them in order as `<IMAGE_0>`, `<IMAGE_1>`,
-  and `<IMAGE_2>` in your prompt (e.g. “put the person from `<IMAGE_0>` into the
-  scene from `<IMAGE_1>`”).
+- Attach **one image** to edit it, or reply to a message that has a picture and
+  run `_imagine` with what to change.
+- After an image is posted, use the **Edit** button to tweak it (describe the
+  change in the popup). You can keep editing the new result the same way.
 
 ## Voice — `/voice`
 
@@ -34,8 +34,8 @@ These are your AI-powered features. When explaining them to members, focus on
 
 ## Tips for members
 
-- Be specific in prompts for better `/imagine` results. When combining photos,
-  name which attachment is which with `<IMAGE_0>` / `<IMAGE_1>` / `<IMAGE_2>`.
+- Be specific in prompts for better `/imagine` results. Attach one photo (or
+  reply to one) when you want an edit rather than a brand-new picture.
 - If the bot seems stuck on an old topic, someone can run `/clear`.
 - `/ask` works best for questions; `/imagine` is for pictures; `/voice` is when
   they want to hear a reply.

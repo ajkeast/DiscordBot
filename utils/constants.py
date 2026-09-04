@@ -17,8 +17,8 @@ BOT_USER_ID = 908765514753531934
 # Limits context growth and cost; each turn adds more tokens to the stored session.
 MAX_GROK_SESSION_TURNS = 20
 
-# Grok Imagine multi-reference edit limit (xAI API: up to 3 source images).
-MAX_IMAGINE_INPUT_IMAGES = 3
+# Grok Imagine: one optional source image per /imagine (edit or reply-to-image).
+MAX_IMAGINE_INPUT_IMAGES = 1
 
 # Per-user /imagine rate limit (discord.py cooldown: rate uses per period seconds).
 IMAGINE_RATE_LIMIT = 30
