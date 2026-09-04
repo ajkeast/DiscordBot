@@ -25,6 +25,29 @@ def _view_button(view, custom_id: str):
     return next(item for item in view.children if item.custom_id == custom_id)
 
 
+def _completed_imagine_kwargs(mock_send):
+    """Kwargs used to replace the 'is imagining…' placeholder with the result."""
+    return mock_send.return_value.edit.call_args.kwargs
+
+
+def _interaction_for_imagine(mock_author, *, embeds, send_return=None):
+    placeholder = AsyncMock()
+    interaction = AsyncMock()
+    interaction.user = mock_author
+    interaction.client = MagicMock()
+    interaction.client.user = MagicMock()
+    interaction.client.user.display_name = "Peter Dinklage"
+    interaction.client.get_cog.return_value = None
+    interaction.me = None
+    interaction.response = AsyncMock()
+    interaction.response.send_message = AsyncMock(return_value=send_return)
+    interaction.original_response = AsyncMock(return_value=placeholder)
+    interaction.message = MagicMock()
+    interaction.message.embeds = embeds
+    interaction.message.attachments = []
+    return interaction, placeholder
+
+
 async def test_ask_success(report, ai_cog, mock_ctx):
     expected = "Grok says hi"
     ai_cog.grok.send_message.return_value = ("new-id", expected)
@@ -142,9 +165,13 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
 
     await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="a red circle")
 
-    sent_file = mock_ctx.send.call_args.kwargs.get("file")
-    view = mock_ctx.send.call_args.kwargs.get("view")
+    status = mock_ctx.send.call_args.args[0]
+    kwargs = _completed_imagine_kwargs(mock_ctx.send)
+    sent_file = kwargs.get("attachments", [None])[0]
+    view = kwargs.get("view")
+    embed = kwargs["embed"]
     report.record("imagine status", "success", mock_imagine.return_value["status"], section=SECTION_COMMANDS)
+    report.record("imagining text", True, "is imagining" in status, section=SECTION_COMMANDS)
     report.record("attachment sent", True, sent_file is not None, section=SECTION_COMMANDS)
     report.record("edit view", True, isinstance(view, ImagineResultView), section=SECTION_COMMANDS)
     report.record("db write", "write_dalle_entry called", mock_db_ops.write_dalle_entry.called, section=SECTION_COMMANDS)
@@ -152,12 +179,14 @@ async def test_imagine_success(mock_imagine, report, mock_db_ops, ai_cog, mock_c
     mock_db_ops.write_dalle_entry.assert_called_once()
     mock_imagine.assert_called_once_with("a red circle", input_image_url=None)
     mock_ctx.send.assert_awaited_once()
+    mock_ctx.send.return_value.edit.assert_awaited_once()
+    assert "is imagining" in status
     assert sent_file is not None
     assert isinstance(view, ImagineResultView)
     assert view.timeout is None
-    embed = mock_ctx.send.call_args.kwargs["embed"]
     report.record("embed title", None, embed.title, section=SECTION_COMMANDS)
     assert embed.title is None
+    assert embed.url is None
 
 
 @patch("cogs.ai.call_grok_imagine")
@@ -173,11 +202,13 @@ async def test_imagine_with_one_input_image(mock_imagine, report, mock_db_ops, a
     await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="make it night")
 
     mock_imagine.assert_called_once_with("make it night", input_image_url=url)
-    embed = mock_ctx.send.call_args.kwargs["embed"]
+    embed = _completed_imagine_kwargs(mock_ctx.send)["embed"]
     field_names = [f.name for f in embed.fields]
     report.record("input image field", False, "Input image" in field_names, section=SECTION_COMMANDS)
+    report.record("stored source url", url, embed.url, section=SECTION_COMMANDS)
     assert "Input image" not in field_names
     assert embed.title is None
+    assert embed.url == url
     mock_ctx.send.assert_awaited_once()
 
 
@@ -223,12 +254,14 @@ async def test_imagine_failure(mock_imagine, report, ai_cog, mock_ctx):
 
     await ai_cog.imagine.callback(ai_cog, mock_ctx, prompt="a red circle")
 
-    embed = mock_ctx.send.call_args.kwargs["embed"]
+    embed = _completed_imagine_kwargs(mock_ctx.send)["embed"]
     expected_desc = "Failed to generate image. Check the bot logs and try again."
     report.record("embed title", "Error", embed.title, section=SECTION_COMMANDS)
     report.record("embed description", expected_desc, embed.description, section=SECTION_COMMANDS)
+    report.record("imagining then error", True, "is imagining" in mock_ctx.send.call_args.args[0], section=SECTION_COMMANDS)
 
     mock_ctx.send.assert_awaited_once()
+    mock_ctx.send.return_value.edit.assert_awaited_once()
     assert embed.title == "❌ Error"
     assert embed.description == expected_desc
     assert "rate limited" not in (embed.description or "")
@@ -304,25 +337,48 @@ async def test_imagine_retry_regenerates_prompt(mock_imagine, report, mock_autho
     prompt_field.value = "a red circle"
     embed = MagicMock()
     embed.fields = [prompt_field]
+    embed.url = None
 
     view = ImagineResultView()
-    interaction = AsyncMock()
-    interaction.user = mock_author
-    interaction.client = MagicMock()
-    interaction.client.get_cog.return_value = None
-    interaction.response = AsyncMock()
-    interaction.followup = AsyncMock()
-    interaction.message = MagicMock()
-    interaction.message.embeds = [embed]
+    interaction, placeholder = _interaction_for_imagine(mock_author, embeds=[embed])
 
     await _view_button(view, "imagine:retry").callback(interaction)
 
     mock_imagine.assert_called_once_with("a red circle", input_image_url=None)
-    interaction.response.defer.assert_awaited_once()
-    interaction.followup.send.assert_awaited_once()
-    result_embed = interaction.followup.send.call_args.kwargs["embed"]
+    interaction.response.send_message.assert_awaited_once()
+    status = interaction.response.send_message.call_args.args[0]
+    report.record("retry imagining", True, "is imagining" in status, section=SECTION_COMMANDS)
+    assert "is imagining" in status
+    placeholder.edit.assert_awaited_once()
+    result_embed = placeholder.edit.call_args.kwargs["embed"]
     report.record("retry title", None, result_embed.title, section=SECTION_COMMANDS)
     assert result_embed.title is None
+
+
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_retry_reuses_source_image(mock_imagine, report, mock_author):
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+    source = "https://cdn.discordapp.com/attachments/1/source.png"
+    prompt_field = MagicMock()
+    prompt_field.name = "Prompt"
+    prompt_field.value = "make it night"
+    embed = MagicMock()
+    embed.fields = [prompt_field]
+    embed.url = source
+
+    view = ImagineResultView()
+    interaction, placeholder = _interaction_for_imagine(mock_author, embeds=[embed])
+
+    await _view_button(view, "imagine:retry").callback(interaction)
+
+    mock_imagine.assert_called_once_with("make it night", input_image_url=source)
+    report.record("retry source url", source, mock_imagine.call_args.kwargs["input_image_url"], section=SECTION_COMMANDS)
+    result_embed = placeholder.edit.call_args.kwargs["embed"]
+    assert result_embed.url == source
 
 
 async def test_imagine_retry_without_prompt(report):
@@ -351,12 +407,7 @@ async def test_imagine_edit_modal_submits(mock_imagine, report, mock_author):
     modal = ImagineEditModal(image_url="https://cdn.example.com/a.png")
     modal.prompt_input._value = "make it night"
 
-    interaction = AsyncMock()
-    interaction.user = mock_author
-    interaction.client = MagicMock()
-    interaction.client.get_cog.return_value = None
-    interaction.response = AsyncMock()
-    interaction.followup = AsyncMock()
+    interaction, placeholder = _interaction_for_imagine(mock_author, embeds=[])
 
     await modal.on_submit(interaction)
 
@@ -364,14 +415,17 @@ async def test_imagine_edit_modal_submits(mock_imagine, report, mock_author):
         "make it night",
         input_image_url="https://cdn.example.com/a.png",
     )
-    interaction.response.defer.assert_awaited_once()
-    interaction.followup.send.assert_awaited_once()
-    view = interaction.followup.send.call_args.kwargs.get("view")
-    embed = interaction.followup.send.call_args.kwargs["embed"]
+    status = interaction.response.send_message.call_args.args[0]
+    report.record("edit imagining", True, "is imagining" in status, section=SECTION_COMMANDS)
+    assert "is imagining" in status
+    placeholder.edit.assert_awaited_once()
+    view = placeholder.edit.call_args.kwargs.get("view")
+    embed = placeholder.edit.call_args.kwargs["embed"]
     report.record("followup has edit view", True, isinstance(view, ImagineResultView), section=SECTION_COMMANDS)
     report.record("followup title", None, embed.title, section=SECTION_COMMANDS)
     assert isinstance(view, ImagineResultView)
     assert embed.title is None
+    assert embed.url == "https://cdn.example.com/a.png"
     assert "Input image" not in [f.name for f in embed.fields]
 
 
