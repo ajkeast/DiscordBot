@@ -381,6 +381,36 @@ async def test_imagine_retry_reuses_source_image(mock_imagine, report, mock_auth
     assert result_embed.url == source
 
 
+@patch("cogs.ai.call_grok_imagine")
+async def test_imagine_retry_edits_after_callback_response(mock_imagine, report, mock_author):
+    """discord.py 2.5+ send_message returns InteractionCallbackResponse, not a Message."""
+    mock_imagine.return_value = {
+        "status": "success",
+        "image_bytes": b"fake-jpeg-bytes",
+        "revised_prompt": None,
+    }
+    prompt_field = MagicMock()
+    prompt_field.name = "Prompt"
+    prompt_field.value = "a red circle"
+    embed = MagicMock()
+    embed.fields = [prompt_field]
+    embed.url = None
+
+    class CallbackResponse:
+        pass
+
+    view = ImagineResultView()
+    interaction, placeholder = _interaction_for_imagine(
+        mock_author, embeds=[embed], send_return=CallbackResponse()
+    )
+
+    await _view_button(view, "imagine:retry").callback(interaction)
+
+    interaction.original_response.assert_awaited_once()
+    placeholder.edit.assert_awaited_once()
+    report.record("callback response used original_response", True, True, section=SECTION_COMMANDS)
+
+
 async def test_imagine_retry_without_prompt(report):
     view = ImagineResultView()
     interaction = AsyncMock()

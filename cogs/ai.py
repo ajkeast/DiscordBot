@@ -213,11 +213,29 @@ async def _complete_imagine(
     )
 
 
+def _editable_message(sent):
+    """Resolve a Message from ctx.send or interaction.response.send_message."""
+    if hasattr(sent, "edit") and callable(getattr(sent, "edit", None)):
+        return sent
+    resource = getattr(sent, "resource", None)
+    if hasattr(resource, "edit") and callable(getattr(resource, "edit", None)):
+        return resource
+    return None
+
+
 async def _start_imagine(source, send, prompt: str, image_url: Optional[str], author) -> None:
     sent = await send(_imagining_text(source))
-    if sent is None:
-        sent = await source.original_response()
-    await _complete_imagine(sent, prompt, image_url, author)
+    message = _editable_message(sent)
+    if message is None:
+        message = await source.original_response()
+    try:
+        await _complete_imagine(message, prompt, image_url, author)
+    except Exception:
+        logger.exception("Failed to finish /imagine result")
+        try:
+            await message.edit(content=None, embed=_imagine_error_embed(), view=None)
+        except Exception:
+            logger.exception("Failed to update imagining placeholder")
 
 
 class ImagineEditModal(discord.ui.Modal, title="Edit image"):
