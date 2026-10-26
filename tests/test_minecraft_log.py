@@ -1,8 +1,4 @@
-"""Unit tests for the Minecraft log parser.
-
-The full-day checks read sample logs from ``tests/fixtures/minecraft/`` when
-those files are on disk. They are server logs, so they are not committed.
-"""
+"""Unit tests for the Minecraft log parser, using the sample log fixtures."""
 
 from __future__ import annotations
 
@@ -10,8 +6,6 @@ import gzip
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
-
-import pytest
 
 from utils.minecraft_log import (
     AFK_SESSION_SECONDS,
@@ -51,8 +45,6 @@ REFERENCE_SESSIONS = {
 
 
 def _load(as_of=WINDOW_END):
-    if not (FIXTURES / "2026-10-25-1.log").is_file() or not (FIXTURES / "latest.log").is_file():
-        pytest.skip("Sample Minecraft logs are kept out of git")
     return parse_log_directory(FIXTURES, as_of=as_of)
 
 

@@ -1,0 +1,85 @@
+[00:12:35] [Server thread/INFO]: InHABitoRS74916 (/x.x.x.x:53012) lost connection: Disconnected
+[00:27:36] [User Authenticator #60/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[00:27:37] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[00:27:37] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52709] logged in with entity id 468801 at ([minecraft:overworld]-260.8729427727261, -6.0, -18.30000001192093)
+[00:37:17] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[A Terrible Fortress][0m
+[00:38:25] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[Into Fire][0m
+[00:38:28] [Server thread/INFO]: System chat: EpicPigz has made the advancement [92m[Into Fire][0m
+[00:44:24] [Server thread/INFO]: jphelps lost connection: Disconnected
+[00:44:24] [Server thread/INFO]: System chat: [93mjphelps left the game[0m
+[00:49:56] [Server thread/INFO]: EpicPigz lost connection: Timed out
+[00:49:56] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[00:56:20] [User Authenticator #61/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[00:56:20] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[00:56:20] [Server thread/INFO]: EpicPigz[/x.x.x.x:62684] logged in with entity id 476994 at ([minecraft:the_nether]81.69999998807907, 38.568915992131494, 140.01380363832303)
+[00:56:22] [Server thread/INFO]: System chat: EpicPigz fell from a high place
+[01:11:13] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[01:11:13] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[01:38:44] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[01:38:44] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[05:10:02] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:02] [Server thread/INFO]: System chat: [3m[37m[Rcon: Automatic saving is now disabled][0m
+[05:10:02] [RCON Client /0:0:0:0:0:0:0:1 #11/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[05:10:02] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:02] [Server thread/INFO]: System chat: [3m[37m[Rcon: Saved the game][0m
+[05:10:02] [RCON Client /0:0:0:0:0:0:0:1 #12/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[05:10:21] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:21] [Server thread/INFO]: System chat: [3m[37m[Rcon: Automatic saving is now enabled][0m
+[05:10:21] [RCON Client /0:0:0:0:0:0:0:1 #13/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[09:43:38] [Server thread/INFO]: Villager Villager['Villager'/495125, uuid='dad24692-f02f-4adf-9511-d86367c2b04c', l='ServerLevel[world]', x=-225.81, y=64.00, z=-6.15, cpos=[-15, -1], tl=455027, v=true] died, message: 'Villager was squished too much'
+[09:50:36] [Server thread/INFO]: Villager Villager['Villager'/512435, uuid='ada29405-bc5e-4763-b8d1-5f443e0c075b', l='ServerLevel[world]', x=-225.73, y=64.00, z=-6.12, cpos=[-15, -1], tl=82765, v=true] died, message: 'Villager was squished too much'
+[09:54:00] [Server thread/INFO]: Villager Villager['Villager'/487877, uuid='f822e627-40ce-48fa-a9e7-bab84dd21fc0', l='ServerLevel[world]', x=-225.89, y=64.00, z=-6.26, cpos=[-15, -1], tl=586297, v=true] died, message: 'Villager was squished too much'
+[10:00:36] [Server thread/INFO]: Villager Villager['Villager'/505391, uuid='c0a38365-48b8-4252-981f-401af04f0b3c', l='ServerLevel[world]', x=-225.84, y=64.00, z=-6.24, cpos=[-15, -1], tl=259244, v=true] died, message: 'Villager was squished too much'
+[10:05:51] [Server thread/INFO]: Villager Villager['Villager'/405022, uuid='b2ce6b1c-d638-40aa-8f56-1b4c22a94da2', l='ServerLevel[world]', x=-225.78, y=64.00, z=-6.13, cpos=[-15, -1], tl=900035, v=true] died, message: 'Villager was squished too much'
+[10:07:30] [Server thread/INFO]: Villager Villager['Villager'/493528, uuid='761fb3b7-f7fe-4800-9fa2-602ca776341c', l='ServerLevel[world]', x=-225.89, y=64.00, z=-6.70, cpos=[-15, -1], tl=506632, v=true] died, message: 'Villager was squished too much'
+[10:08:13] [Server thread/INFO]: Villager Villager['Villager'/396821, uuid='487434c0-b3b0-4462-a463-c0e25ee30180', l='ServerLevel[world]', x=-225.86, y=64.00, z=-6.11, cpos=[-15, -1], tl=927408, v=true] died, message: 'Villager was squished too much'
+[10:12:31] [Server thread/INFO]: Villager Villager['Villager'/514510, uuid='bd115611-0456-434a-9d2d-00dc38d5ada2', l='ServerLevel[world]', x=-225.84, y=64.00, z=-6.12, cpos=[-15, -1], tl=51137, v=true] died, message: 'Villager was squished too much'
+[10:14:27] [Server thread/INFO]: Villager Villager['Villager'/467723, uuid='f7a08977-6215-4536-9d63-91036e58ac90', l='ServerLevel[world]', x=-225.87, y=64.00, z=-6.21, cpos=[-15, -1], tl=699025, v=true] died, message: 'Villager was squished too much'
+[10:23:48] [Server thread/INFO]: Villager Villager['Villager'/489053, uuid='d6c32093-03c2-4b0d-b406-ae3c554f0003', l='ServerLevel[world]', x=-225.86, y=64.00, z=-6.27, cpos=[-15, -1], tl=588015, v=true] died, message: 'Villager was squished too much'
+[10:25:32] [Server thread/INFO]: Villager Villager['Villager'/515934, uuid='ced7e1ce-ad4a-4002-962e-8054c30e312c', l='ServerLevel[world]', x=-225.79, y=64.00, z=-6.14, cpos=[-15, -1], tl=33824, v=true] died, message: 'Villager was squished too much'
+[10:29:45] [Server thread/INFO]: Villager Villager['Villager'/396824, uuid='a4fbcf70-46ca-4925-98d1-90226fd12ca7', l='ServerLevel[world]', x=-225.84, y=64.00, z=-6.17, cpos=[-15, -1], tl=942594, v=true] died, message: 'Villager was squished too much'
+[10:33:19] [Server thread/INFO]: Villager Villager['Villager'/396815, uuid='1c8d1762-65eb-47b8-afd2-115ba1bec666', l='ServerLevel[world]', x=-225.90, y=64.00, z=-6.14, cpos=[-15, -1], tl=946880, v=true] died, message: 'Villager was squished too much'
+[10:33:55] [Server thread/INFO]: Villager Villager['Villager'/396830, uuid='a96bb6b7-2a2d-4b1d-b30c-0d3e22a5d0ac', l='ServerLevel[world]', x=-225.90, y=64.00, z=-6.10, cpos=[-15, -1], tl=947605, v=true] died, message: 'Villager was squished too much'
+[10:40:44] [Server thread/INFO]: Villager Villager['Villager'/396828, uuid='8a6ba9ee-1bf1-41f5-8c10-ab77e3881bf6', l='ServerLevel[world]', x=-225.88, y=64.00, z=-6.14, cpos=[-15, -1], tl=951867, v=true] died, message: 'Villager was squished too much'
+[10:41:03] [Server thread/INFO]: Villager Villager['Villager'/511680, uuid='988e238b-7fef-4cc5-9578-68b676bc3c2f', l='ServerLevel[world]', x=-225.88, y=64.00, z=-6.70, cpos=[-15, -1], tl=142996, v=true] died, message: 'Villager was squished too much'
+[10:41:50] [Server thread/INFO]: Villager Villager['Villager'/435584, uuid='9fbaa3f4-37d9-457e-ab39-51c657c1f7c3', l='ServerLevel[world]', x=-225.88, y=64.00, z=-6.16, cpos=[-15, -1], tl=835612, v=true] died, message: 'Villager was squished too much'
+[10:46:22] [Server thread/INFO]: Villager Villager['Villager'/398914, uuid='e96e0b58-6248-470c-8e64-01c7260391a5', l='ServerLevel[world]', x=-225.30, y=64.00, z=-6.18, cpos=[-15, -1], tl=955915, v=true] died, message: 'Villager was squished too much'
+[10:47:53] [Server thread/INFO]: Villager Villager['Villager'/517390, uuid='d56b659e-ff86-4825-af4a-c1e5a4d4216d', l='ServerLevel[world]', x=-225.87, y=64.00, z=-6.12, cpos=[-15, -1], tl=39676, v=true] died, message: 'Villager was squished too much'
+[10:50:17] [Server thread/INFO]: System chat: Conkeastador has made the advancement [92m[Voluntary Exile][0m
+[11:03:50] [Server thread/INFO]: Villager Villager['Villager'/509313, uuid='6c981d06-69e9-47a0-8ae8-d2b5ec043368', l='ServerLevel[world]', x=-225.82, y=64.00, z=-6.70, cpos=[-15, -1], tl=223775, v=true] died, message: 'Villager was squished too much'
+[11:10:46] [Server thread/INFO]: Villager Villager['Villager'/514169, uuid='0c4dd82d-e3b8-4171-b84a-32e210162abe', l='ServerLevel[world]', x=-225.30, y=64.00, z=-6.18, cpos=[-15, -1], tl=109247, v=true] died, message: 'Villager was squished too much'
+[11:18:29] [User Authenticator #62/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[11:18:30] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[11:18:30] [Server thread/INFO]: EpicPigz[/x.x.x.x:55554] logged in with entity id 528800 at ([minecraft:overworld]-211.37803877078673, 64.0, -25.307663801619565)
+[11:18:53] [Server thread/INFO]: Villager Villager['Villager'/524070, uuid='b3ff9c9c-e41f-4a14-b67e-7e8c2cc85620', l='ServerLevel[world]', x=-225.83, y=64.00, z=-6.12, cpos=[-15, -1], tl=29252, v=true] died, message: 'Villager was squished too much'
+[11:22:57] [Async Chat Thread - #74/INFO]: <Conkeastador> noob
+[11:23:29] [Async Chat Thread - #75/INFO]: <EpicPigz> mornin
+[11:23:36] [Async Chat Thread - #75/INFO]: <Conkeastador> morning
+[11:28:18] [Async Chat Thread - #76/INFO]: <Conkeastador> slepp with me
+[11:29:37] [Async Chat Thread - #78/INFO]: <Conkeastador> i want to do a ocean adventure
+[11:29:43] [Async Chat Thread - #78/INFO]: <Conkeastador> to get get us all tridents
+[11:30:27] [Async Chat Thread - #78/INFO]: <EpicPigz> NEED SCUBA GEAR
+[11:30:38] [Async Chat Thread - #78/INFO]: <Conkeastador> aqua affinity?
+[11:30:42] [Async Chat Thread - #78/INFO]: <EpicPigz> idk but i got that
+[11:30:57] [Async Chat Thread - #78/INFO]: <Conkeastador> that lets breathe underwater
+[11:31:12] [Server thread/INFO]: Villager Villager['Villager'/525872, uuid='3cf03713-dcc8-4dd2-8dc6-6255d9cca652', l='ServerLevel[world]', x=-225.77, y=64.00, z=-6.21, cpos=[-15, -1], tl=25927, v=true] died, message: 'Villager was squished too much'
+[11:31:12] [Async Chat Thread - #78/INFO]: <EpicPigz> villager sells aqua affinity + respiration helmet which im wearing
+[11:31:15] [Async Chat Thread - #78/INFO]: <EpicPigz> but still can drown
+[11:37:04] [Server thread/INFO]: Villager Villager['Villager'/500716, uuid='8885f210-d11e-4ddb-bdb6-4f09df9da764', l='ServerLevel[world]', x=-225.88, y=64.00, z=-6.70, cpos=[-15, -1], tl=440319, v=true] died, message: 'Villager was squished too much'
+[11:38:54] [Async Chat Thread - #80/INFO]: <EpicPigz> gotta go to work :(
+[11:39:02] [Async Chat Thread - #81/INFO]: <Conkeastador> have funn
+[11:39:04] [Async Chat Thread - #81/INFO]: <Conkeastador> gg
+[11:40:20] [Server thread/INFO]: EpicPigz lost connection: Timed out
+[11:40:20] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[11:57:31] [Server thread/INFO]: Villager Villager['Villager'/526627, uuid='8063dd51-0882-489b-b0af-bab172ea7689', l='ServerLevel[world]', x=-225.81, y=64.00, z=-6.11, cpos=[-15, -1], tl=49539, v=true] died, message: 'Villager was squished too much'
+[12:06:16] [Server thread/INFO]: Villager Villager['Villager'/533303, uuid='7c2d7407-6a0b-4db1-bc64-8e88821f99db', l='ServerLevel[world]', x=-225.90, y=64.00, z=-6.15, cpos=[-15, -1], tl=35458, v=true] died, message: 'Villager was squished too much'
+[12:30:54] [Server thread/INFO]: Villager Villager['Villager'/538092, uuid='8e862688-c1ab-4bc0-af61-1a32fb7dbce5', l='ServerLevel[world]', x=-225.88, y=64.00, z=-6.12, cpos=[-15, -1], tl=24746, v=true] died, message: 'Villager was squished too much'
+[12:37:40] [Server thread/INFO]: Villager Villager['Villager'/535117, uuid='827627fe-554d-44f6-9c00-d2fa73abf87a', l='ServerLevel[world]', x=-225.30, y=64.00, z=-6.15, cpos=[-15, -1], tl=63349, v=true] died, message: 'Villager was squished too much'
+[13:20:53] [Server thread/INFO]: Villager Villager['Villager'/539930, uuid='c7f75c73-c684-4351-81a3-2afbb8562bb8', l='ServerLevel[world]', x=-225.87, y=64.00, z=-6.11, cpos=[-15, -1], tl=60730, v=true] died, message: 'Villager was squished too much'
+[13:22:29] [Server thread/INFO]: Villager Villager['Villager'/541686, uuid='e577f094-1475-4fb5-ac31-6affa791d9b5', l='ServerLevel[world]', x=-225.87, y=64.00, z=-6.10, cpos=[-15, -1], tl=38504, v=true] died, message: 'Villager was squished too much'
+[13:38:35] [Server thread/INFO]: Villager Villager['Villager'/396827, uuid='0ec6c37e-40d4-4831-8e4a-0bfa4a677291', l='ServerLevel[world]', x=-225.89, y=64.00, z=-6.11, cpos=[-15, -1], tl=1148556, v=true] died, message: 'Villager was squished too much'
+[13:43:50] [Server thread/INFO]: Villager Villager['Villager'/542961, uuid='d5355f00-6324-46b7-81a3-0f71022ea31c', l='ServerLevel[world]', x=-225.30, y=64.00, z=-6.13, cpos=[-15, -1], tl=45347, v=true] died, message: 'Villager was squished too much'
+[14:22:25] [Server thread/INFO]: Villager Villager['Villager'/546750, uuid='93511b25-e8f9-44e1-866c-7d93f42c9932', l='ServerLevel[world]', x=-225.87, y=64.00, z=-6.13, cpos=[-15, -1], tl=38409, v=true] died, message: 'Villager was squished too much'
+[14:26:02] [Server thread/INFO]: Villager Villager['Villager'/547707, uuid='147d411e-68c1-4857-8483-e758481ae2a6', l='ServerLevel[world]', x=-225.89, y=64.00, z=-6.12, cpos=[-15, -1], tl=27944, v=true] died, message: 'Villager was squished too much'
+[14:38:05] [Server thread/INFO]: Villager Villager['Villager'/548200, uuid='f9529ca5-4301-4719-8f3a-a171ab004ced', l='ServerLevel[world]', x=-225.90, y=64.00, z=-6.12, cpos=[-15, -1], tl=36051, v=true] died, message: 'Villager was squished too much'
+[14:52:14] [Server thread/INFO]: Villager Villager['Villager'/550023, uuid='b5d76afa-6397-4543-9482-5e0715c2c064', l='ServerLevel[world]', x=-225.89, y=64.00, z=-6.14, cpos=[-15, -1], tl=26331, v=true] died, message: 'Villager was squished too much'

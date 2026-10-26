@@ -31,8 +31,6 @@ WINDOW_END = datetime(2026, 10, 26, 15, 0, tzinfo=EASTERN)
 
 
 def _reference_stats():
-    if not (FIXTURES / "2026-10-25-1.log").is_file() or not (FIXTURES / "latest.log").is_file():
-        pytest.skip("Sample Minecraft logs are kept out of git")
     parsed = parse_log_directory(FIXTURES, as_of=WINDOW_END)
     return summarize_window(parsed, WINDOW_START, WINDOW_END)
 

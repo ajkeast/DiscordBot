@@ -1,0 +1,217 @@
+[00:12:35] [Server thread/INFO]: InHABitoRS74916 (/x.x.x.x:14578) lost connection: Disconnected
+[00:38:55] [Server thread/INFO]: QuietComet2939 (/x.x.x.x:34731) lost connection: Disconnected
+[01:42:17] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[02:30:14] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[03:41:17] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[04:51:03] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[05:10:01] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:01] [Server thread/INFO]: System chat: [3m[37m[Rcon: Automatic saving is now disabled][0m
+[05:10:01] [RCON Client /0:0:0:0:0:0:0:1 #8/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[05:10:01] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:01] [Server thread/INFO]: System chat: [3m[37m[Rcon: Saved the game][0m
+[05:10:01] [RCON Client /0:0:0:0:0:0:0:1 #9/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[05:10:17] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[05:10:17] [Server thread/INFO]: System chat: [3m[37m[Rcon: Automatic saving is now enabled][0m
+[05:10:17] [RCON Client /0:0:0:0:0:0:0:1 #10/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[05:26:20] [Server thread/INFO]: FuzzyElk1518 (/x.x.x.x:34117) lost connection: Disconnected
+[07:11:31] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[08:42:55] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[08:53:53] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[09:03:10] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[09:48:03] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[10:15:52] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[11:48:35] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[12:23:36] [Server thread/INFO]: JollyMango4018 (/x.x.x.x:41893) lost connection: Disconnected
+[12:32:51] [Server thread/INFO]: o99qxf30 (/x.x.x.x:55008) lost connection: Disconnected
+[13:53:25] [User Authenticator #31/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[13:53:26] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[13:53:26] [Server thread/INFO]: EpicPigz[/x.x.x.x:62631] logged in with entity id 235959 at ([minecraft:overworld]-166.41263709369633, 114.0, 131.63402309375738)
+[13:57:19] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[13:57:19] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[14:09:05] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[15:14:03] [Server thread/INFO]: NiftyNarwhalz (/x.x.x.x:52049) lost connection: Disconnected
+[15:14:07] [Server thread/INFO]: NiftyNarwhalz (/x.x.x.x:52054) lost connection: Disconnected
+[15:15:06] [User Authenticator #32/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[15:15:07] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[15:15:07] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52105] logged in with entity id 238108 at ([minecraft:overworld]-114.04431176001086, 64.0, 3.519608986852493)
+[15:28:00] [Server thread/INFO]: FishNet (/x.x.x.x:61000) lost connection: Disconnected
+[15:28:42] [User Authenticator #33/INFO]: UUID of player LeNelli is 22df0076-bf42-4578-a777-995f5e0b51ed
+[15:28:42] [Server thread/INFO]: System chat: [93mLeNelli joined the game[0m
+[15:28:42] [Server thread/INFO]: LeNelli[/x.x.x.x:58605] logged in with entity id 241325 at ([minecraft:overworld]3.5, 78.0, 10.5)
+[15:28:48] [User Authenticator #34/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[15:28:48] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[15:28:48] [Server thread/INFO]: EpicPigz[/x.x.x.x:49827] logged in with entity id 241382 at ([minecraft:overworld]-163.19177298391682, 114.0, 138.79069228061755)
+[15:30:31] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Acquire Hardware][0m
+[15:30:52] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Suit Up][0m
+[15:33:13] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Isn't It Iron Pick?][0m
+[15:35:06] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[A Seedy Place][0m
+[15:38:23] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[We Need to Go Deeper][0m
+[15:38:24] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Sweet Dreams][0m
+[15:59:33] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Stone Age][0m
+[16:05:23] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[Monster Hunter][0m
+[16:14:59] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[16:14:59] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[16:15:06] [User Authenticator #35/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[16:15:07] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[16:15:07] [Server thread/INFO]: EpicPigz[/x.x.x.x:64149] logged in with entity id 258060 at ([minecraft:overworld]-107.1733243549579, 122.0, 105.69699175179487)
+[16:17:21] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[16:17:21] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[16:24:02] [User Authenticator #36/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[16:24:03] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[16:24:03] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52258] logged in with entity id 261229 at ([minecraft:overworld]-182.19803449935205, 64.0, -32.407494429306865)
+[16:29:19] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[16:29:19] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[16:30:17] [User Authenticator #37/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[16:30:17] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[16:30:17] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52268] logged in with entity id 263087 at ([minecraft:overworld]-263.36697803266725, 71.0, 101.43255595011178)
+[16:39:58] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[16:39:58] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[16:40:02] [User Authenticator #38/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[16:40:02] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[16:40:02] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52280] logged in with entity id 270118 at ([minecraft:overworld]-937.115008192286, 67.0, 1401.8757661174286)
+[16:40:06] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[16:40:06] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[16:40:24] [Server thread/INFO]: EpicPigz lost connection: Timed out
+[16:40:24] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[16:40:28] [User Authenticator #39/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[16:40:29] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[16:40:29] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52290] logged in with entity id 270332 at ([minecraft:overworld]-937.115008192286, 67.0, 1401.8757661174286)
+[16:51:41] [User Authenticator #40/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[16:51:41] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[16:51:41] [Server thread/INFO]: EpicPigz[/x.x.x.x:62936] logged in with entity id 280343 at ([minecraft:overworld]-161.34383371002696, 69.0, -33.69999998807907)
+[16:53:19] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[16:53:19] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[16:53:22] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[16:53:22] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[16:53:27] [User Authenticator #41/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[16:53:28] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[16:53:28] [Server thread/INFO]: EpicPigz[/x.x.x.x:60311] logged in with entity id 281542 at ([minecraft:overworld]-208.89151477188668, 64.0, -21.848679883940527)
+[17:00:12] [User Authenticator #42/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[17:00:13] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[17:00:13] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52311] logged in with entity id 283366 at ([minecraft:overworld]-1893.1117450519596, 46.0, 2315.699999988079)
+[17:27:40] [Server thread/INFO]: System chat: LeNelli has made the advancement [92m[The Parrots and the Bats][0m
+[17:43:03] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[17:43:03] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[17:44:12] [User Authenticator #43/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[17:44:13] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[17:44:13] [Server thread/INFO]: EpicPigz[/x.x.x.x:53063] logged in with entity id 307082 at ([minecraft:overworld]-107.23530894383663, 70.0, 80.6385814944791)
+[17:49:57] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[17:49:57] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[17:50:18] [Server thread/INFO]: System chat: LeNelli was slain by Zombie
+[17:51:41] [User Authenticator #44/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[17:51:42] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[17:51:42] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52360] logged in with entity id 312438 at ([minecraft:overworld]-2200.5778677167978, -25.0, 2780.5572734104267)
+[17:52:21] [Server thread/INFO]: System chat: LeNelli fell from a high place
+[18:06:38] [Server thread/INFO]: Villager Villager['Villager'/307373, uuid='186ee1b5-4b76-4493-ac91-2c746dfe8a41', l='ServerLevel[world]', x=-219.30, y=73.00, z=81.70, cpos=[-14, 5], tl=26310, v=true] died, message: 'Villager was slain by EpicPigz'
+[18:07:06] [Server thread/INFO]: System chat: NiftyNarwhalz was blown up by Creeper
+[18:22:27] [User Authenticator #45/INFO]: UUID of player Conkeastador is fb831543-2cc9-4929-b7da-34bd2aed5daa
+[18:22:27] [Server thread/INFO]: System chat: [93mConkeastador joined the game[0m
+[18:22:27] [Server thread/INFO]: Conkeastador[/x.x.x.x:58288] logged in with entity id 330948 at ([minecraft:overworld]-119.94207290419787, 69.0, -79.43724634334332)
+[18:38:04] [Server thread/INFO]: Conkeastador lost connection: Disconnected
+[18:38:04] [Server thread/INFO]: System chat: [93mConkeastador left the game[0m
+[18:39:21] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[18:39:21] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[18:42:18] [User Authenticator #46/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[18:42:18] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[18:42:18] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52405] logged in with entity id 340867 at ([minecraft:overworld]-1693.8735384379063, 72.0, 2190.8013571245237)
+[18:49:08] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[18:49:08] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[18:55:09] [User Authenticator #47/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[18:55:10] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[18:55:10] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52420] logged in with entity id 346565 at ([minecraft:overworld]-1131.6326926457587, 79.0, 1745.3073613143438)
+[18:55:28] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[18:55:28] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[18:55:30] [User Authenticator #48/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[18:55:31] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[18:55:31] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52426] logged in with entity id 347624 at ([minecraft:overworld]-1120.4746407210475, 82.0, 1756.5435312530797)
+[19:04:07] [Server thread/INFO]: Villager Villager['Villager'/307371, uuid='69074c86-4112-4369-a999-eef6b1e43ecf', l='ServerLevel[world]', x=-218.51, y=73.00, z=73.70, cpos=[-14, 4], tl=92041, v=true] died, message: 'Villager was slain by EpicPigz'
+[19:18:50] [Server thread/INFO]: Goated (/x.x.x.x:64744) lost connection: Disconnected
+[19:20:23] [User Authenticator #49/INFO]: UUID of player Goated is 9e87a4ac-0be5-4548-906f-bd15e3a37b44
+[19:20:24] [Server thread/INFO]: System chat: [93mGoated joined the game[0m
+[19:20:24] [Server thread/INFO]: Goated[/x.x.x.x:64919] logged in with entity id 359370 at ([minecraft:overworld]-214.2381884623773, 67.0, -19.324512383545645)
+[19:25:07] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[19:25:07] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[19:25:45] [Server thread/INFO]: System chat: EpicPigz has made the advancement [92m[Surge Protector][0m
+[19:27:43] [User Authenticator #50/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[19:27:44] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[19:27:44] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52455] logged in with entity id 361491 at ([minecraft:overworld]-122.15683411851556, 63.0, 3.089090806180461)
+[19:51:11] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[What a Deal!][0m
+[19:56:02] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[19:56:02] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[19:56:04] [User Authenticator #51/INFO]: UUID of player NiftyNarwhalz is 30bd0049-6903-4690-afb5-4c4b72e426f7
+[19:56:05] [Server thread/INFO]: System chat: [93mNiftyNarwhalz joined the game[0m
+[19:56:05] [Server thread/INFO]: NiftyNarwhalz[/x.x.x.x:52480] logged in with entity id 370366 at ([minecraft:overworld]-219.43921601679145, 69.0, -19.329304583021553)
+[19:57:16] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[Cover Me with Diamonds][0m
+[20:01:23] [Server thread/INFO]: System chat: Goated has made the advancement [92m[We Need to Go Deeper][0m
+[20:04:36] [Server thread/INFO]: System chat: NiftyNarwhalz has made the advancement [92m[Those Were the Days][0m
+[20:04:40] [Server thread/INFO]: System chat: Goated has made the advancement [92m[Those Were the Days][0m
+[20:16:26] [Server thread/INFO]: LeNelli lost connection: Disconnected
+[20:16:26] [Server thread/INFO]: System chat: [93mLeNelli left the game[0m
+[20:18:13] [Server thread/INFO]: System chat: Goated has made the advancement [92m[Ice Bucket Challenge][0m
+[20:18:20] [Server thread/INFO]: System chat: Goated has made the advancement [92m[Who is Cutting Onions?][0m
+[20:18:45] [User Authenticator #52/INFO]: UUID of player LeNelli is 22df0076-bf42-4578-a777-995f5e0b51ed
+[20:18:45] [Server thread/INFO]: System chat: [93mLeNelli joined the game[0m
+[20:18:45] [Server thread/INFO]: LeNelli[/x.x.x.x:59041] logged in with entity id 378624 at ([minecraft:overworld]-90.11224618886814, 68.0, -6.485983916619143)
+[20:35:00] [Server thread/INFO]: System chat: NiftyNarwhalz has completed the challenge [35m[Hot Tourist Destinations][0m
+[20:35:00] [Server thread/INFO]: System chat: EpicPigz has completed the challenge [35m[Hot Tourist Destinations][0m
+[20:35:07] [Server thread/INFO]: System chat: Goated has completed the challenge [35m[Hot Tourist Destinations][0m
+[21:04:01] [Server thread/INFO]: LeNelli lost connection: Disconnected
+[21:04:01] [Server thread/INFO]: System chat: [93mLeNelli left the game[0m
+[21:22:19] [User Authenticator #53/INFO]: UUID of player Conkeastador is fb831543-2cc9-4929-b7da-34bd2aed5daa
+[21:22:19] [Server thread/INFO]: System chat: [93mConkeastador joined the game[0m
+[21:22:19] [Server thread/INFO]: Conkeastador[/x.x.x.x:62644] logged in with entity id 402987 at ([minecraft:overworld]-228.34520546439902, 74.5, 62.25161104539593)
+[21:24:22] [Async Chat Thread - #62/INFO]: <Goated> zz or dc
+[21:27:16] [Server thread/INFO]: EpicPigz lost connection: Timed out
+[21:27:16] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[21:32:28] [Server thread/INFO]: Goated lost connection: Disconnected
+[21:32:28] [Server thread/INFO]: System chat: [93mGoated left the game[0m
+[21:34:46] [User Authenticator #54/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[21:34:46] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[21:34:46] [Server thread/INFO]: EpicPigz[/x.x.x.x:59223] logged in with entity id 407202 at ([minecraft:overworld]-221.38901255734626, 69.0, -22.763458001043222)
+[21:52:22] [Server thread/INFO]: System chat: EpicPigz has made the advancement [92m[This Boat Has Legs][0m
+[21:53:03] [Server thread/INFO]: System chat: Conkeastador has made the advancement [92m[This Boat Has Legs][0m
+[21:54:58] [Server thread/INFO]: System chat: Conkeastador tried to swim in lava
+[22:02:07] [Server thread/INFO]: System chat: Conkeastador was doomed to fall by Ghast
+[22:06:04] [Server thread/INFO]: System chat: Conkeastador tried to swim in lava to escape Magma Cube
+[22:08:33] [Server thread/INFO]: System chat: Conkeastador tried to swim in lava to escape Magma Cube
+[22:11:36] [Server thread/INFO]: System chat: Conkeastador tried to swim in lava
+[22:14:10] [Server thread/INFO]: System chat: Conkeastador discovered the floor was lava
+[22:15:04] [Server thread/INFO]: System chat: EpicPigz tried to swim in lava
+[22:15:12] [Server thread/INFO]: System chat: Conkeastador was slain by Magma Cube
+[22:15:27] [User Authenticator #55/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[22:15:27] [Server thread/INFO]: EpicPigz lost connection: You logged in from another location
+[22:15:27] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[22:15:27] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[22:15:27] [Server thread/INFO]: EpicPigz[/x.x.x.x:59970] logged in with entity id 421292 at ([minecraft:the_nether]95.34096991145914, 29.382527540185375, 78.06743067110088)
+[22:15:53] [Server thread/INFO]: Villager Villager['Villager'/396801, uuid='fa99b9ac-2206-4c67-b1fb-2a2f984384af', l='ServerLevel[world]', x=-195.41, y=79.00, z=92.70, cpos=[-13, 5], tl=35196, v=true] died, message: 'Villager was slain by Zombie'
+[22:16:40] [Server thread/INFO]: System chat: EpicPigz tried to swim in lava to escape Magma Cube
+[22:17:13] [Server thread/INFO]: System chat: EpicPigz was slain by Magma Cube
+[22:18:33] [Server thread/INFO]: System chat: EpicPigz tried to swim in lava to escape Magma Cube
+[22:20:34] [Server thread/INFO]: System chat: EpicPigz was doomed to fall
+[22:22:05] [Server thread/INFO]: System chat: Conkeastador was blown up by Ghast
+[22:23:11] [Server thread/INFO]: System chat: Conkeastador was slain by Piglin
+[22:24:32] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[22:24:32] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[22:25:02] [User Authenticator #56/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[22:25:03] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[22:25:03] [Server thread/INFO]: EpicPigz[/x.x.x.x:62036] logged in with entity id 426310 at ([minecraft:the_nether]93.1840013986309, 27.959828130804482, 61.43397510289479)
+[22:25:05] [Server thread/INFO]: System chat: EpicPigz tried to swim in lava to escape Magma Cube
+[22:37:13] [Server thread/INFO]: System chat: Conkeastador has made the advancement [92m[A Terrible Fortress][0m
+[22:37:28] [Server thread/INFO]: System chat: EpicPigz has made the advancement [92m[A Terrible Fortress][0m
+[23:14:29] [Server thread/INFO]: NiftyNarwhalz lost connection: Disconnected
+[23:14:29] [Server thread/INFO]: System chat: [93mNiftyNarwhalz left the game[0m
+[23:16:04] [Server thread/INFO]: Conkeastador lost connection: Disconnected
+[23:16:04] [Server thread/INFO]: System chat: [93mConkeastador left the game[0m
+[23:16:09] [User Authenticator #57/INFO]: UUID of player Conkeastador is fb831543-2cc9-4929-b7da-34bd2aed5daa
+[23:16:09] [Server thread/INFO]: System chat: [93mConkeastador joined the game[0m
+[23:16:09] [Server thread/INFO]: Conkeastador[/x.x.x.x:65326] logged in with entity id 446409 at ([minecraft:overworld]-261.69999998807907, -7.125, -20.69999998807907)
+[23:20:13] [User Authenticator #58/INFO]: UUID of player jphelps is f3b76f36-1c5b-4299-8c09-5bc935907e29
+[23:20:13] [Server thread/INFO]: System chat: [93mjphelps joined the game[0m
+[23:20:13] [Server thread/INFO]: jphelps[/x.x.x.x:61021] logged in with entity id 447679 at ([minecraft:overworld]-73.71981401686719, 70.0, 91.61008318610723)
+[23:20:18] [Async Chat Thread - #68/INFO]: <Conkeastador> oooh
+[23:20:22] [Async Chat Thread - #69/INFO]: <Conkeastador> look who it is
+[23:27:48] [Server thread/INFO]: EpicPigz lost connection: Disconnected
+[23:27:48] [Server thread/INFO]: System chat: [93mEpicPigz left the game[0m
+[23:37:40] [User Authenticator #59/INFO]: UUID of player EpicPigz is 2c053059-2f7d-4831-a4c6-c9838af825c7
+[23:37:41] [Server thread/INFO]: System chat: [93mEpicPigz joined the game[0m
+[23:37:41] [Server thread/INFO]: EpicPigz[/x.x.x.x:58882] logged in with entity id 452309 at ([minecraft:overworld]-114.61018026002685, 97.0, 88.39754057396695)
