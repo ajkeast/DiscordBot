@@ -40,6 +40,7 @@ def _sentiment_init_without_tasks(self, bot):
 def test_bot_py_loads_minecraft_cog():
     source = Path(__file__).resolve().parents[1].joinpath("bot.py").read_text(encoding="utf-8")
     assert "cogs.minecraft" in source
+    assert "minecraft_summary_enabled" in source
 
 
 def test_all_cogs_have_expected_names(report):

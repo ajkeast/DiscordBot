@@ -110,22 +110,22 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small Discord server.
 You are given JSON computed from server logs and, when the world save was readable, from player stats and advancement files. Use only that JSON.
-Write like a friend in the channel: tease the deaths, celebrate the advancements, and nudge people who came up empty. Not a leaderboard.
+Write like a friend in the channel, briefly. One line per player. Tease a death, name an advancement, nudge someone who came up empty.
 
 Rules:
 - Do not invent players, deaths, advancements, places, times, or events.
 - Mention every player. Use each playtime string and session count exactly as given.
 - If likely_afk is true, say that long session looks AFK. Say "mostly" only when mostly_afk is true.
-- Tease the exact death_lines you were given. If death_lines is empty, you can say they stayed alive.
-- Name advancement_titles they earned. If there are a lot, name a handful and say there were more.
+- Name at most two death_lines per player. Skip the death sentence when death_lines is empty.
+- Name at most two advancement_titles per player. You may say there were more.
 - If missed_advancements is non-empty, say you noticed they missed those exact titles. Those are the only titles you may call missed.
-- If no_advancements is true and missed_advancements is empty, say they didn't earn an advancement. You may point at one title someone else actually earned today as a place to start. Do not say they missed that title.
-- If new_player is true, welcome them. Welcome nobody else. Do not call someone new just because they played.
-- If server_notes is non-empty, add one short sentence about those repeated entity deaths. If it is empty, do not mention entities.
+- If no_advancements is true and missed_advancements is empty, say they earned no advancement and point at one title someone else actually earned, as a place to start. Do not say they missed that title.
+- If new_player is true, welcome them in a few words. Welcome nobody else.
+- If server_notes is non-empty, add one short sentence. If it is empty, do not mention entities.
 - If partial_day is true, say the day is still in progress.
 - Close with the exact integers totals.deaths and totals.advancements.
-- Friendly Discord markdown. No title line, no code fence, no preamble.
-- Stay under 1600 characters.
+- Discord markdown. No title line, no code fence, no preamble.
+- Stay under 1000 characters.
 """
 
 
@@ -136,6 +136,12 @@ class PreparedPost:
     source: str
     nobody_played: bool
     persisted: bool
+
+
+def minecraft_summary_enabled() -> bool:
+    """On unless ``MINECRAFT_SUMMARY_ENABLED`` is false, 0, no, or off."""
+    raw = os.getenv("MINECRAFT_SUMMARY_ENABLED", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def minecraft_model() -> str:
@@ -580,38 +586,32 @@ def _player_needs_nudge(player: dict) -> bool:
 
 
 def _compose_template(stats: dict, *, title_cap: int, death_cap: int) -> str:
-    paragraphs: list[str] = [f"{stats['pretty_date']} on the Minecraft server."]
+    lines: list[str] = []
     if stats.get("partial_day"):
-        paragraphs.append("The day is still in progress.")
+        lines.append("Still in progress.")
 
     for player in stats["players"]:
         name = f"**{_md(player['name'])}**"
         noun = "session" if player["sessions"] == 1 else "sessions"
         longest = player.get("longest_session")
-        played = f"{name} played {player['playtime']} across {player['sessions']} {noun}"
+        head = f"{name} — {player['playtime']}, {player['sessions']} {noun}"
         if player.get("mostly_afk") and longest:
-            played += f", mostly one {longest} session, likely AFK."
+            head += f", mostly one {longest} session, likely AFK"
         elif player.get("likely_afk") and longest:
             # The long session can span midnight, so its length may exceed this day's total.
-            played += f". A {longest} session looks likely AFK."
-        else:
-            played += "."
-        sentences = [played]
+            head += f", likely AFK ({longest} session)"
+        sentences = [head + "."]
         if player.get("new_player"):
-            sentences.append("Welcome — this looks like your first time on the server.")
+            sentences.append("Welcome, first time on the server.")
 
         death_lines = _death_lines(player, stats)
         death_count = int(player.get("deaths") or 0)
         if death_lines:
             shown = [_md(line) for line in death_lines[:death_cap]]
-            extra = len(death_lines) - len(shown)
-            more = f", plus {extra} more" if extra else ""
             if death_count == 1:
-                sentences.append(f"Died once: {_and_join(shown)}{more}.")
+                sentences.append(f"Died once: {_and_join(shown)}.")
             else:
-                sentences.append(f"Died {death_count} times: {_and_join(shown)}{more}.")
-        elif death_count == 0:
-            sentences.append("Stayed alive.")
+                sentences.append(f"Died {death_count} times: {_and_join(shown)}.")
 
         titles = _advancement_titles(player, stats)
         missed = [_md(title) for title in (player.get("missed_advancements") or [])[:2]]
@@ -619,33 +619,25 @@ def _compose_template(stats: dict, *, title_cap: int, death_cap: int) -> str:
             shown = [_md(title) for title in titles[:title_cap]]
             extra = len(titles) - len(shown)
             more = f", plus {extra} more" if extra else ""
-            sentences.append(f"Earned {_and_join(shown)}{more}.")
+            sentences.append(f"{_and_join(shown)}{more}.")
         elif missed:
-            sentences.append(
-                f"No advancement today. Hey, I saw you missed {_and_join(missed)}."
-            )
+            sentences.append(f"Hey, I saw you missed {_and_join(missed)}.")
         elif _player_needs_nudge(player):
             suggestion = titles_earned_by_others(stats, player["name"])
             if suggestion:
-                sentences.append(
-                    "No advancement today. "
-                    f"{_md(suggestion[0])} was earned by someone else "
-                    "if you want a place to start."
-                )
+                sentences.append(f"No advancement. {_md(suggestion[0])} is a place to start.")
             else:
-                sentences.append("No advancement today.")
-        paragraphs.append(" ".join(sentences))
+                sentences.append("No advancement.")
+        lines.append(" ".join(sentences))
 
     for note in (stats.get("server_notes") or [])[:1]:
-        paragraphs.append(
-            f"{_md(note['entity'])} {_md(note['message'])} ×{note['count']}."
-        )
+        lines.append(f"{_md(note['entity'])} {_md(note['message'])} ×{note['count']}.")
 
     totals = stats["totals"]
     death_word = "death" if totals["deaths"] == 1 else "deaths"
     adv_word = "advancement" if totals["advancements"] == 1 else "advancements"
-    paragraphs.append(f"{totals['deaths']} {death_word}, {totals['advancements']} {adv_word}.")
-    return "\n\n".join(paragraphs)
+    lines.append(f"{totals['deaths']} {death_word}, {totals['advancements']} {adv_word}.")
+    return "\n".join(lines)
 
 
 def render_template(stats: dict) -> str:
@@ -653,7 +645,7 @@ def render_template(stats: dict) -> str:
     if stats["nobody_played"]:
         return nobody_line(stats)
 
-    text = _compose_template(stats, title_cap=4, death_cap=3)
+    text = _compose_template(stats, title_cap=2, death_cap=2)
     if len(text) > 1900:
         text = _compose_template(stats, title_cap=2, death_cap=2)
     if len(text) > 1900:

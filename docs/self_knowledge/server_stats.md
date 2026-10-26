@@ -20,8 +20,9 @@ leaderboards, graphs, and the monthly report — not through raw data.
   person earned. You'll tease a death, nudge someone who earned no
   advancement, and welcome a new player. Long sessions over 6 hours are
   called out as likely AFK. Admins can preview a date with
-  `/minecraft_summary`; that preview is only visible to them and is not posted
-  in the channel.
+  `/minecraft_summary`, or post a finished day early with
+  `/minecraft_summary post:True`. The preview and the confirmation are only
+  visible to them. The morning schedule still runs at 8:00 AM.
 - **Dashboard** — https://dinkscord.com shows server trends like message counts
   and first-game stats over time. Members can get a link with `/dashboard`.
 

@@ -18,6 +18,7 @@ from utils.minecraft_job import (
     grok_payload,
     minecraft_channel_id,
     minecraft_model,
+    minecraft_summary_enabled,
     narrative_ok,
     prepare_post,
     render_narrative,
@@ -123,6 +124,15 @@ def test_activity_date_is_due_at_and_after_8am():
     assert activity_date_due(afternoon) == date(2026, 10, 25)
     assert DAILY_AT.hour == 8
     assert DAILY_AT.minute == 0
+
+
+def test_summary_is_on_unless_the_env_flag_disables_it(monkeypatch):
+    monkeypatch.delenv("MINECRAFT_SUMMARY_ENABLED", raising=False)
+    assert minecraft_summary_enabled() is True
+    monkeypatch.setenv("MINECRAFT_SUMMARY_ENABLED", "false")
+    assert minecraft_summary_enabled() is False
+    monkeypatch.setenv("MINECRAFT_SUMMARY_ENABLED", "off")
+    assert minecraft_summary_enabled() is False
 
 
 def test_channel_and_model_defaults(monkeypatch):
@@ -254,7 +264,7 @@ def test_template_names_a_confirmed_miss_and_welcomes_a_new_player():
     text = render_template(stats)
     assert "Welcome" in text
     assert "Hey, I saw you missed Stone Age." in text
-    assert "Stayed alive." in text
+    assert "Died" not in text
 
 
 def test_narrative_requires_the_death_and_the_title():
@@ -451,6 +461,75 @@ async def test_preview_is_rejected_for_non_admins(mock_bot, mock_ctx):
     await cog.minecraft_summary.callback(cog, mock_ctx, day="2026-10-25")
     sent = mock_ctx.send.call_args.args[0]
     assert "admins" in sent.lower()
+
+
+def _finished_post():
+    prepared = MagicMock()
+    prepared.nobody_played = False
+    prepared.narrative = "Steve fell from a high place and earned Stone Age."
+    prepared.stats = {"pretty_date": "Sunday, October 25, 2026", "partial_day": False}
+    prepared.source = "template"
+    return prepared
+
+
+async def test_post_flag_sends_the_recap_to_the_channel(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    channel = AsyncMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=99))
+    mock_bot.get_channel.return_value = channel
+    with patch("cogs.minecraft.claim_daily_post", return_value="claimed"):
+        with patch("cogs.minecraft.prepare_post", return_value=_finished_post()):
+            with patch("cogs.minecraft.mark_posted") as mark:
+                await cog.minecraft_summary.callback(
+                    cog, mock_ctx, day="2026-10-25", post=True
+                )
+    channel.send.assert_awaited()
+    mark.assert_called_once()
+    assert "Posted" in mock_ctx.send.call_args.args[0]
+    assert mock_ctx.channel.send.await_count == 0
+
+
+async def test_post_flag_skips_a_day_already_in_the_channel(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    with patch("cogs.minecraft.claim_daily_post", return_value="already_posted"):
+        with patch("cogs.minecraft.prepare_post") as prepare:
+            await cog.minecraft_summary.callback(
+                cog, mock_ctx, day="2026-10-25", post=True
+            )
+    prepare.assert_not_called()
+    assert "already" in mock_ctx.send.call_args.args[0].lower()
+
+
+async def test_post_flag_refuses_a_day_still_in_progress(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    frozen = datetime(2026, 10, 26, 15, 0, tzinfo=EASTERN)
+    with patch("cogs.minecraft.datetime") as clock:
+        clock.now.return_value = frozen
+        with patch("cogs.minecraft.claim_daily_post") as claim:
+            await cog.minecraft_summary.callback(
+                cog, mock_ctx, day="2026-10-26", post=True
+            )
+    claim.assert_not_called()
+    assert "in progress" in mock_ctx.send.call_args.args[0].lower()
+
+
+async def test_post_flag_defaults_to_yesterday(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    frozen = datetime(2026, 10, 26, 15, 0, tzinfo=EASTERN)
+    with patch("cogs.minecraft.datetime") as clock:
+        clock.now.return_value = frozen
+        with patch("cogs.minecraft.claim_daily_post", return_value="already_posted") as claim:
+            await cog.minecraft_summary.callback(cog, mock_ctx, post=True)
+    claim.assert_called_once()
+    assert claim.call_args.args[0] == date(2026, 10, 25)
 
 
 async def test_preview_sends_an_embed_without_posting(mock_bot, mock_ctx):

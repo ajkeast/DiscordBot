@@ -124,13 +124,20 @@ The numbers are parsed from the Minecraft server logs (and the world save, when 
 
 Sessions, deaths, and advancements are stored per day (`scripts/minecraft_schema.sql`, also created on startup). That history survives log rotation.
 
-Server admins (and the bot owner) can preview a day without posting it:
+Server admins (and the bot owner) can preview a day, or post a finished day without waiting for 8:00 AM. Both replies to you are ephemeral. A channel post uses the same ledger as the morning job, so 8:00 AM will not post that day again.
 
 ```
+/minecraft_summary
 /minecraft_summary day:2026-10-25
+/minecraft_summary post:True
+/minecraft_summary day:2026-10-25 post:True
 ```
 
-The reply is ephemeral. Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.7`). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
+Leave the date off to use yesterday. `post` defaults to false, so the command previews until you set it. A day that is still in progress can be previewed and is not posted to the channel.
+
+This is a temporary feature. `MINECRAFT_SUMMARY_ENABLED=false` stops the schedule and unloads the cog. Deleting it later is the cog, `utils/minecraft_log.py`, `utils/minecraft_job.py`, the schema and tests, the `cogs.minecraft` load in `bot.py`, and the bot's read-only `minecraft_data` mount. That volume is the Minecraft server's data, so the volume stays. The `minecraft_*` tables are unused by anything else.
+
+Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.7`), `MINECRAFT_SUMMARY_ENABLED` (default on). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
 
 Deploy on the VPS:
 
