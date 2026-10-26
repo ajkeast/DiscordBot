@@ -7,6 +7,9 @@ import os
 # Channel ID for #general
 GENERAL_CHANNEL_ID = 94235299445493760
 
+# Channel ID for #minecraft. Override with MINECRAFT_CHANNEL_ID.
+MINECRAFT_CHANNEL_ID = 581136950074015761
+
 # Universal embed color
 EMBED_COLOR = 0x4d4170
 

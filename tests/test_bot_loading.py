@@ -1,5 +1,6 @@
 """Verify bot wiring: all cogs load and expected commands register."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import discord.voice_client as voice_client
@@ -9,13 +10,14 @@ from cogs.dinkcoin import DinkCoin
 from cogs.first import First
 from cogs.misc import Misc
 from cogs.music import Music
+from cogs.minecraft import Minecraft
 from cogs.sentiment import Sentiment
 from cogs.server import Server
 from cogs.utility import Utility
 from tests.conftest import EXPECTED_COMMANDS
 from tests.reporting import SECTION_WIRING
 
-COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc, Sentiment, Music)
+COG_CLASSES = (First, DinkCoin, Server, AI, Utility, Misc, Sentiment, Music, Minecraft)
 
 
 def test_discord_voice_deps_installed(report):
@@ -35,8 +37,15 @@ def _sentiment_init_without_tasks(self, bot):
     self._enabled = False
 
 
+def test_bot_py_loads_minecraft_cog():
+    source = Path(__file__).resolve().parents[1].joinpath("bot.py").read_text(encoding="utf-8")
+    assert "cogs.minecraft" in source
+
+
 def test_all_cogs_have_expected_names(report):
-    expected = {"First", "DinkCoin", "Server", "AI", "Utility", "Misc", "Sentiment", "Music"}
+    expected = {
+        "First", "DinkCoin", "Server", "AI", "Utility", "Misc", "Sentiment", "Music", "Minecraft",
+    }
     actual = {cls.__name__ for cls in COG_CLASSES}
     report.record("cog class names", sorted(expected), sorted(actual), section=SECTION_WIRING)
     assert actual == expected
@@ -62,4 +71,4 @@ def test_all_commands_registered(report):
     )
     report.record("command count", len(EXPECTED_COMMANDS), len(registered), section=SECTION_WIRING)
     assert EXPECTED_COMMANDS <= registered
-    assert len(EXPECTED_COMMANDS) == 30
+    assert len(EXPECTED_COMMANDS) == 31

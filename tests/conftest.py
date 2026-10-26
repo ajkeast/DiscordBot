@@ -20,6 +20,7 @@ EXPECTED_COMMANDS = frozenset({
     "hello", "ping", "simonsays", "dashboard",
     "donation",
     "play", "skip", "stop", "queue", "np", "pause", "resume", "leave",
+    "minecraft_summary",
 })
 
 

@@ -110,6 +110,38 @@ Locally: run Lavalink (same `deploy/lavalink/application.yml`), set `LAVALINK_UR
 
 Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/postgres/init.sql` on the dinkboard VPS); `scripts/dinkcoin_schema.sql` is the same DDL for local use.
 
+### Minecraft daily summary
+
+Every morning at **8:00 AM America/New_York** the bot posts the previous calendar day's Minecraft activity to **#minecraft**:
+
+- A short highlight recap: combined hours, the busiest stretch, time played, the death story (including a Nether call when the logs support it), the advancements that stood out, and a server note when something repeats.
+- Playtime is clipped to midnight–midnight Eastern. A server stop or restart ends a session. An unbroken session over 6 hours is called likely AFK.
+- A new player is welcomed only when world `play_time` matches the sessions in the logs. A missed advancement is named only when that player's advancement file still has it undone.
+
+The numbers are computed in Python from the logs (and the world save, when it is mounted). Grok 4.7 phrases those highlights. If Grok is unavailable, the same sectioned template is posted. A day with no players gets a one-line note. The job records the post in Postgres, so a restart after 8:00 AM does not double-post, and a start later that same day catches up a missed morning post.
+
+Sessions, deaths, and advancements are stored per day (`scripts/minecraft_schema.sql`, also created on startup). That history survives log rotation.
+
+Server admins (and the bot owner) can preview a day, or post a finished day without waiting for 8:00 AM. Both replies to you are ephemeral. A channel post uses the same ledger as the morning job, so 8:00 AM will not post that day again.
+
+```
+/minecraft_summary
+/minecraft_summary day:2026-10-25
+/minecraft_summary post:True
+/minecraft_summary day:2026-10-25 post:True
+```
+
+Leave the date off to use yesterday. `post` defaults to false, so the command previews until you set it. A day that is still in progress can be previewed and is not posted to the channel.
+
+Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.7`). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
+
+Deploy on the VPS:
+
+```bash
+cd /opt/apps/discordbot
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
 ## Project Structure
 
 - `bot.py`: Discord bot entrypoint; loads cogs.
@@ -120,8 +152,9 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
   - `dinkcoin.py`: DINK balance, ledger, pay, request
   - `music.py`: SoundCloud `/play` via Lavalink + Wavelink
   - `sentiment.py`: Nightly + manual message sentiment scoring
+  - `minecraft.py`: Daily Minecraft log summary for #minecraft
   - `server.py` / `utility.py` / `misc.py`: server stats and misc commands
-- `utils/`: DB, self-knowledge docs loader, sentiment helpers, shared constants
+- `utils/`: DB, self-knowledge docs loader, sentiment helpers, Minecraft log parser, shared constants
 - `docs/self_knowledge/`: Topic docs exposed to Grok tool calls
 - `deploy/`: VPS deploy script + Lavalink `application.yml`
 - `Dockerfile` / `docker-compose.prod.yml`: Production bot + Lavalink
