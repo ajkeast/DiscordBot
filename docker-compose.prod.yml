@@ -32,6 +32,10 @@ services:
       SQL_PORT: "5432"
       LAVALINK_URI: http://lavalink:2333
       LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
+      # itzg minecraft-server data volume, read-only. Logs live in /minecraft/logs.
+      MINECRAFT_DATA_DIR: /minecraft
+    volumes:
+      - minecraft_data:/minecraft:ro
     networks:
       - dinkboard
 
@@ -39,3 +43,8 @@ networks:
   dinkboard:
     external: true
     name: dinkboard_dinkboard
+
+volumes:
+  minecraft_data:
+    external: true
+    name: minecraft_data

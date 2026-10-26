@@ -110,6 +110,33 @@ Locally: run Lavalink (same `deploy/lavalink/application.yml`), set `LAVALINK_UR
 
 Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/postgres/init.sql` on the dinkboard VPS); `scripts/dinkcoin_schema.sql` is the same DDL for local use.
 
+### Minecraft daily summary
+
+Every morning at **8:00 AM America/New_York** the bot posts the previous calendar day's Minecraft activity to **#minecraft**:
+
+- Playtime and session counts per player. A session still open at midnight is clipped to the day; a server stop or restart ends it. Unbroken sessions over 6 hours are flagged as likely AFK.
+- Deaths (vanilla death messages for players who joined) and advancements, challenges, and goals.
+- A short server note only when something repeats, such as a pile of villager deaths.
+
+The numbers are parsed from the Minecraft server logs. Grok writes a short Discord message from that JSON only. If Grok is unavailable, a plain template is posted instead. A day with no players gets a one-line note. The job records the post in Postgres, so a restart after 8:00 AM does not double-post, and a start later that same day catches up a missed morning post.
+
+Sessions, deaths, and advancements are stored per day (`scripts/minecraft_schema.sql`, also created on startup). That history survives log rotation.
+
+Server admins (and the bot owner) can preview a day without posting it:
+
+```
+/minecraft_summary day:2026-10-25
+```
+
+The reply is ephemeral. Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.3`). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
+
+Deploy on the VPS:
+
+```bash
+cd /opt/apps/discordbot
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
 ## Project Structure
 
 - `bot.py`: Discord bot entrypoint; loads cogs.
@@ -120,8 +147,9 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
   - `dinkcoin.py`: DINK balance, ledger, pay, request
   - `music.py`: SoundCloud `/play` via Lavalink + Wavelink
   - `sentiment.py`: Nightly + manual message sentiment scoring
+  - `minecraft.py`: Daily Minecraft log summary for #minecraft
   - `server.py` / `utility.py` / `misc.py`: server stats and misc commands
-- `utils/`: DB, self-knowledge docs loader, sentiment helpers, shared constants
+- `utils/`: DB, self-knowledge docs loader, sentiment helpers, Minecraft log parser, shared constants
 - `docs/self_knowledge/`: Topic docs exposed to Grok tool calls
 - `deploy/`: VPS deploy script + Lavalink `application.yml`
 - `Dockerfile` / `docker-compose.prod.yml`: Production bot + Lavalink
