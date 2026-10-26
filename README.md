@@ -115,10 +115,12 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
 Every morning at **8:00 AM America/New_York** the bot posts the previous calendar day's Minecraft activity to **#minecraft**:
 
 - Playtime and session counts per player. A session still open at midnight is clipped to the day; a server stop or restart ends it. Unbroken sessions over 6 hours are flagged as likely AFK.
-- Deaths (vanilla death messages for players who joined) and advancements, challenges, and goals.
+- Deaths, using the vanilla death messages, and the advancements, challenges, and goals each player earned.
+- A nudge when someone played and earned nothing. If their advancement file is on the data volume, the recap can name a title someone else earned that day and that file still has undone. Otherwise it only points at a title someone else earned, as a place to start.
+- A welcome when the world stats `play_time` matches the sessions in the logs, which is how a brand-new player is recognized. A first join line in a short log is not treated as new.
 - A short server note only when something repeats, such as a pile of villager deaths.
 
-The numbers are parsed from the Minecraft server logs. Grok writes a short Discord message from that JSON only. If Grok is unavailable, a plain template is posted instead. A day with no players gets a one-line note. The job records the post in Postgres, so a restart after 8:00 AM does not double-post, and a start later that same day catches up a missed morning post.
+The numbers are parsed from the Minecraft server logs (and the world save, when it is mounted). Grok 4.7 writes a short Discord message from that JSON only. If Grok is unavailable, a plain template in the same voice is posted instead. A day with no players gets a one-line note. The job records the post in Postgres, so a restart after 8:00 AM does not double-post, and a start later that same day catches up a missed morning post.
 
 Sessions, deaths, and advancements are stored per day (`scripts/minecraft_schema.sql`, also created on startup). That history survives log rotation.
 
@@ -128,7 +130,7 @@ Server admins (and the bot owner) can preview a day without posting it:
 /minecraft_summary day:2026-10-25
 ```
 
-The reply is ephemeral. Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.3`). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
+The reply is ephemeral. Production reads logs from the external Docker volume `minecraft_data`, mounted read-only at `/minecraft` (`MINECRAFT_DATA_DIR`). Optional env vars: `MINECRAFT_CHANNEL_ID` (default `581136950074015761`), `GROK_MINECRAFT_MODEL` (default `grok-4.7`). `XAI_API_KEY` is the same key the nightly sentiment job already uses.
 
 Deploy on the VPS:
 

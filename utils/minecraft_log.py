@@ -15,6 +15,7 @@ day is clipped to midnight–midnight Eastern.
 from __future__ import annotations
 
 import gzip
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -29,6 +30,15 @@ AFK_SESSION_SECONDS = 6 * 60 * 60
 ENTITY_NOTE_MIN_COUNT = 5
 # If the newest log line is this recent, an open session is still live.
 LIVE_GRACE = timedelta(minutes=15)
+# Played at least this long with zero advancements: the recap may nudge them.
+NO_ADVANCEMENT_NUDGE_SECONDS = 20 * 60
+# Lifetime play_time (from the world stats file) counts as "new" when it is
+# within this slack of every session we could see in the logs. A first join
+# in a short log file is not enough — that would greet the whole server.
+NEW_PLAYER_UNDER_SECONDS = 10 * 60
+NEW_PLAYER_OVER_SECONDS = 30 * 60
+# How many confirmed misses to name. Early story titles come first.
+MISSED_ADVANCEMENT_CAP = 2
 # Clock going backwards by more than this means the file crossed midnight.
 # One hour ignores thread reordering and the DST fall-back hour.
 MIDNIGHT_ROLLBACK = timedelta(hours=1)
@@ -225,6 +235,44 @@ def format_duration(seconds: int) -> str:
 
 def pretty_date(day: date) -> str:
     return f"{day.strftime('%A, %B')} {day.day}, {day.year}"
+
+
+# Vanilla title → advancement id. Order is the nudge priority: story first,
+# then other titles that show up in a normal early world. A title is only
+# called "missed" when this map, someone else's earn that day, and the
+# player's own advancement file all agree.
+VANILLA_ADVANCEMENTS: tuple[tuple[str, str], ...] = (
+    ("Stone Age", "minecraft:story/mine_stone"),
+    ("Getting an Upgrade", "minecraft:story/upgrade_tools"),
+    ("Acquire Hardware", "minecraft:story/smelt_iron"),
+    ("Suit Up", "minecraft:story/obtain_armor"),
+    ("Hot Stuff", "minecraft:story/lava_bucket"),
+    ("Isn't It Iron Pick?", "minecraft:story/iron_tools"),
+    ("Not Today, Thank You", "minecraft:story/deflect_arrow"),
+    ("Ice Bucket Challenge", "minecraft:story/form_obsidian"),
+    ("Diamonds!", "minecraft:story/mine_diamond"),
+    ("We Need to Go Deeper", "minecraft:story/enter_the_nether"),
+    ("Cover Me with Diamonds", "minecraft:story/shiny_gear"),
+    ("Enchanter", "minecraft:story/enchant_item"),
+    ("Zombie Doctor", "minecraft:story/cure_zombie_villager"),
+    ("Eye Spy", "minecraft:story/follow_ender_eye"),
+    ("The End?", "minecraft:story/enter_the_end"),
+    ("Sweet Dreams", "minecraft:adventure/sleep_in_bed"),
+    ("Monster Hunter", "minecraft:adventure/kill_a_mob"),
+    ("What a Deal!", "minecraft:adventure/trade"),
+    ("Voluntary Exile", "minecraft:adventure/voluntary_exile"),
+    ("Surge Protector", "minecraft:adventure/lightning_rod_with_villager_no_fire"),
+    ("A Seedy Place", "minecraft:husbandry/plant_seed"),
+    ("The Parrots and the Bats", "minecraft:husbandry/breed_an_animal"),
+    ("A Terrible Fortress", "minecraft:nether/find_fortress"),
+    ("Those Were the Days", "minecraft:nether/find_bastion"),
+    ("Who is Cutting Onions?", "minecraft:nether/obtain_crying_obsidian"),
+    ("This Boat Has Legs", "minecraft:nether/ride_strider"),
+    ("Into Fire", "minecraft:nether/obtain_blaze_rod"),
+    ("Hot Tourist Destinations", "minecraft:nether/explore_nether"),
+)
+
+VANILLA_ADVANCEMENT_IDS = {title: adv_id for title, adv_id in VANILLA_ADVANCEMENTS}
 
 
 def is_death_rest(rest: str) -> bool:
@@ -662,6 +710,16 @@ def summarize_window(
     names.update(item["player"] for item in deaths)
     names.update(item["player"] for item in advancements)
 
+    deaths_by_player: dict[str, dict[str, int]] = {}
+    for item in deaths:
+        counts = deaths_by_player.setdefault(item["player"], {})
+        counts[item["message"]] = counts.get(item["message"], 0) + 1
+    titles_by_player: dict[str, list[str]] = {}
+    for item in advancements:
+        titles = titles_by_player.setdefault(item["player"], [])
+        if item["title"] not in titles:
+            titles.append(item["title"])
+
     players: list[dict] = []
     for name in names:
         player_slices = [item for item in slices if item["player_name"] == name]
@@ -670,9 +728,13 @@ def summarize_window(
             item["duration_seconds"] for item in player_slices if item["likely_afk"]
         )
         longest = max((item["full_seconds"] for item in player_slices), default=0)
-        player_deaths = sum(1 for item in deaths if item["player"] == name)
-        player_advs = sum(1 for item in advancements if item["player"] == name)
+        player_deaths = sum(deaths_by_player.get(name, {}).values())
+        player_titles = titles_by_player.get(name, [])
         likely_afk = any(item["likely_afk"] for item in player_slices)
+        death_pairs = sorted(
+            deaths_by_player.get(name, {}).items(),
+            key=lambda pair: (-pair[1], pair[0]),
+        )
         players.append(
             {
                 "name": name,
@@ -685,7 +747,17 @@ def summarize_window(
                 "likely_afk": likely_afk,
                 "mostly_afk": bool(playtime and long_playtime * 2 >= playtime),
                 "deaths": player_deaths,
-                "advancements": player_advs,
+                "death_lines": [
+                    message if count == 1 else f"{message} ×{count}"
+                    for message, count in death_pairs
+                ],
+                "advancements": len(player_titles),
+                "advancement_titles": player_titles,
+                "no_advancements": (
+                    not player_titles and playtime >= NO_ADVANCEMENT_NUDGE_SECONDS
+                ),
+                "new_player": False,
+                "missed_advancements": [],
             }
         )
     players.sort(key=lambda item: (-item["playtime_seconds"], item["name"].lower()))
@@ -723,6 +795,7 @@ def summarize_window(
         "window_end": window_end.isoformat(),
         "partial_day": partial_day,
         "nobody_played": not players,
+        "new_players": [],
         "players": players,
         "totals": {
             "players": len(players),
@@ -737,6 +810,137 @@ def summarize_window(
         "server_notes": server_notes,
         "slices": slices,
     }
+
+
+def titles_earned_by_others(stats: dict, name: str) -> list[str]:
+    """Titles someone else earned in this window, early story first."""
+    earned: list[str] = []
+    seen: set[str] = set()
+    for item in stats.get("advancements", []):
+        title = item["title"]
+        if item["player"] == name or title in seen:
+            continue
+        seen.add(title)
+        earned.append(title)
+    priority = [title for title, _adv_id in VANILLA_ADVANCEMENTS if title in seen]
+    return priority + [title for title in earned if title not in priority]
+
+
+def play_time_looks_new(play_seconds: int, seen_seconds: int) -> bool:
+    """True when world play_time is basically the sessions these logs contain."""
+    if play_seconds <= 0:
+        return False
+    low = seen_seconds - NEW_PLAYER_UNDER_SECONDS
+    high = seen_seconds + NEW_PLAYER_OVER_SECONDS
+    return low <= play_seconds <= high
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
+def _player_file_candidates(data_dir: Path, kind: str, uuid: str) -> list[Path]:
+    filename = f"{uuid.lower()}.json"
+    return [
+        data_dir / "world" / "players" / kind / filename,
+        data_dir / "world" / kind / filename,
+    ]
+
+
+def _first_file(paths: list[Path]) -> Path | None:
+    for path in paths:
+        if path.is_file():
+            return path
+    return None
+
+
+def _play_time_seconds(payload) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    custom = (payload.get("stats") or {}).get("minecraft:custom") or {}
+    if not isinstance(custom, dict):
+        return None
+    ticks = custom.get("minecraft:play_time")
+    if isinstance(ticks, bool) or not isinstance(ticks, (int, float)):
+        return None
+    if ticks < 0:
+        return None
+    return int(ticks) // 20
+
+
+def _completed_advancement_ids(payload) -> set[str] | None:
+    """Done advancement ids, or None when the file is not a usable object."""
+    if not isinstance(payload, dict):
+        return None
+    done: set[str] = set()
+    for key, value in payload.items():
+        if key == "DataVersion" or not isinstance(value, dict):
+            continue
+        if value.get("done") is True:
+            adv_id = key if key.startswith("minecraft:") else f"minecraft:{key}"
+            done.add(adv_id)
+    return done
+
+
+def _lifetime_seconds(parsed: ParsedLogs) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for session in parsed.sessions:
+        totals[session.player] = totals.get(session.player, 0) + session.duration_seconds
+    return totals
+
+
+def apply_world_files(stats: dict, parsed: ParsedLogs, data_dir: Path) -> dict:
+    """Fill ``new_player`` and ``missed_advancements`` from the world save.
+
+    New means the stats file's ``minecraft:play_time`` matches the sessions in
+    these logs, within a few minutes. Missed means someone else earned that
+    title today, we know its vanilla id, this player's advancement file
+    exists, and that id is not done. No file, no claim.
+    """
+    for player in stats["players"]:
+        player["new_player"] = False
+        player["missed_advancements"] = []
+    stats["new_players"] = []
+    if not data_dir.is_dir():
+        return stats
+
+    lifetime = _lifetime_seconds(parsed)
+    for player in stats["players"]:
+        uuid = player.get("uuid")
+        if not uuid:
+            continue
+        stats_path = _first_file(_player_file_candidates(data_dir, "stats", uuid))
+        if stats_path is not None:
+            play_seconds = _play_time_seconds(_read_json(stats_path))
+            if play_seconds is not None and play_time_looks_new(
+                play_seconds, lifetime.get(player["name"], 0)
+            ):
+                player["new_player"] = True
+
+        adv_path = _first_file(_player_file_candidates(data_dir, "advancements", uuid))
+        if adv_path is None:
+            continue
+        done = _completed_advancement_ids(_read_json(adv_path))
+        if done is None:
+            continue
+        others = set(titles_earned_by_others(stats, player["name"]))
+        own_titles = set(player.get("advancement_titles") or [])
+        missed: list[str] = []
+        for title, adv_id in VANILLA_ADVANCEMENTS:
+            if title not in others or title in own_titles or adv_id in done:
+                continue
+            missed.append(title)
+            if len(missed) >= MISSED_ADVANCEMENT_CAP:
+                break
+        player["missed_advancements"] = missed
+
+    stats["new_players"] = [
+        player["name"] for player in stats["players"] if player["new_player"]
+    ]
+    return stats
 
 
 def summarize_day(

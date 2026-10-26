@@ -12,6 +12,7 @@ import pytest
 from cogs.minecraft import DAILY_AT, Minecraft, actor_is_admin_result
 from utils.minecraft_job import (
     SCHEMA_STATEMENTS,
+    SYSTEM_PROMPT,
     activity_date_due,
     claim_daily_post,
     grok_payload,
@@ -128,7 +129,7 @@ def test_channel_and_model_defaults(monkeypatch):
     monkeypatch.delenv("MINECRAFT_CHANNEL_ID", raising=False)
     monkeypatch.delenv("GROK_MINECRAFT_MODEL", raising=False)
     assert minecraft_channel_id() == 581136950074015761
-    assert minecraft_model() == "grok-4.3"
+    assert minecraft_model() == "grok-4.7"
     monkeypatch.setenv("MINECRAFT_CHANNEL_ID", "42")
     monkeypatch.setenv("GROK_MINECRAFT_MODEL", "grok-test")
     assert minecraft_channel_id() == 42
@@ -157,15 +158,34 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
     stats = _reference_stats()
     text = render_template(stats)
     assert len(text) <= 2000
-    assert "Conkeastador" in text
+    for name in (
+        "Conkeastador",
+        "EpicPigz",
+        "NiftyNarwhalz",
+        "LeNelli",
+        "Goated",
+        "jphelps",
+    ):
+        assert name in text
     assert "likely AFK" in text
-    assert "EpicPigz" in text
+    assert "lava" in text
+    assert "Stone Age" in text
+    assert "place to start" in text
+    assert "jphelps" in text
+    assert "missed" not in text.lower()
+    assert "welcome" not in text.lower()
     assert "19" in text
     assert "28" in text
     assert "squished" in text
     payload = grok_payload(stats)
     assert "slices" not in payload
     assert "playtime_seconds" not in payload["players"][0]
+    assert payload["players"][0]["death_lines"]
+    assert payload["players"][0]["advancement_titles"]
+    jphelps = next(player for player in payload["players"] if player["name"] == "jphelps")
+    assert jphelps["no_advancements"] is True
+    assert jphelps["new_player"] is False
+    assert jphelps["missed_advancements"] == []
     assert payload["totals"]["deaths"] == 19
     assert payload["totals"]["advancements"] == 28
 
@@ -187,10 +207,67 @@ def test_nobody_played_is_a_one_liner():
     assert len(text) < 200
 
 
-def test_narrative_rejects_a_reply_that_drops_the_counts():
+def test_prompt_asks_for_deaths_nudges_and_welcomes():
+    assert "death_lines" in SYSTEM_PROMPT
+    assert "missed_advancements" in SYSTEM_PROMPT
+    assert "new_player" in SYSTEM_PROMPT
+    assert "place to start" in SYSTEM_PROMPT
+
+
+def test_narrative_requires_a_nudge_and_a_welcome_when_the_json_says_so():
+    stats = _steve_stats()
+    stats["players"][0]["no_advancements"] = True
+    stats["players"][0]["new_player"] = True
+    stats["players"][0]["advancements"] = 0
+    stats["advancements"] = []
+    stats["totals"]["advancements"] = 0
+    assert narrative_ok("Steve fell from a high place.", stats) is False
+    assert narrative_ok(
+        "Welcome Steve. He fell from a high place. No advancement today.",
+        stats,
+    ) is True
+
+
+def test_template_names_a_confirmed_miss_and_welcomes_a_new_player():
+    stats = _steve_stats()
+    stats["players"][0]["new_player"] = True
+    stats["players"][0]["no_advancements"] = True
+    stats["players"][0]["advancements"] = 0
+    stats["players"][0]["advancement_titles"] = []
+    stats["players"][0]["missed_advancements"] = ["Stone Age"]
+    stats["players"][0]["deaths"] = 0
+    stats["players"][0]["death_lines"] = []
+    stats["deaths"] = []
+    stats["death_counts"] = []
+    stats["advancements"] = [
+        {
+            "player": "Alex",
+            "uuid": None,
+            "at": "2026-10-25T11:00:00-04:00",
+            "time": "11:00:00",
+            "kind": "advancement",
+            "title": "Stone Age",
+        }
+    ]
+    stats["totals"]["deaths"] = 0
+    stats["totals"]["advancements"] = 1
+    text = render_template(stats)
+    assert "Welcome" in text
+    assert "Hey, I saw you missed Stone Age." in text
+    assert "Stayed alive." in text
+
+
+def test_narrative_requires_the_death_and_the_title():
     stats = _steve_stats()
     assert narrative_ok("Steve had a nice day.", stats) is False
-    assert narrative_ok("Steve fell twice. 2 deaths, 1 advancement.", stats) is True
+    assert narrative_ok(
+        "Steve played 1h. He fell from a high place and earned Stone Age.",
+        stats,
+    ) is True
+    assert narrative_ok(
+        "Steve fell from a high place. 2 deaths, 1 advancement.",
+        stats,
+    ) is False
 
 
 def test_grok_text_is_used_when_it_matches_the_json(monkeypatch):
@@ -200,13 +277,18 @@ def test_grok_text_is_used_when_it_matches_the_json(monkeypatch):
     chat = MagicMock()
     client.chat.create.return_value = chat
     chat.sample.return_value = MagicMock(
-        content="```\nSteve was on for 1h. 2 deaths, 1 advancement.\n```"
+        content=(
+            "```\nSteve played 1h across 1 session. "
+            "Died twice: fell from a high place. Earned Stone Age. "
+            "2 deaths, 1 advancement.\n```"
+        )
     )
     text, source = render_narrative(stats, client=client)
     assert source == "grok"
-    assert text == "Steve was on for 1h. 2 deaths, 1 advancement."
-    assert client.chat.create.call_args.kwargs["model"] == "grok-4.3"
-    assert client.chat.create.call_args.kwargs["reasoning_effort"] == "none"
+    assert "Stone Age" in text
+    assert "fell from a high place" in text
+    assert client.chat.create.call_args.kwargs["model"] == "grok-4.7"
+    assert client.chat.create.call_args.kwargs["reasoning_effort"] == "low"
 
 
 def test_grok_failure_falls_back_to_the_template(monkeypatch):

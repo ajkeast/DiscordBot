@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import gzip
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from utils.minecraft_log import (
     AFK_SESSION_SECONDS,
     EASTERN,
+    ParsedLogs,
+    Session,
+    apply_world_files,
     format_duration,
     parse_log_directory,
+    play_time_looks_new,
     strip_codes,
     summarize_day,
     summarize_window,
@@ -380,3 +385,133 @@ def test_format_duration_rounds_minutes():
     assert format_duration(90) == "2m"
     assert format_duration(17 * 3600 + 53 * 60 + 13) == "17h 53m"
     assert format_duration(3600) == "1h"
+
+
+def test_reference_players_carry_death_lines_and_titles():
+    stats = _window_stats()
+    conkeastador = _player(stats, "Conkeastador")
+    assert any("lava" in line for line in conkeastador["death_lines"])
+    assert "This Boat Has Legs" in conkeastador["advancement_titles"]
+    jphelps = _player(stats, "jphelps")
+    assert jphelps["death_lines"] == []
+    assert jphelps["advancement_titles"] == []
+    assert jphelps["no_advancements"] is True
+    assert jphelps["new_player"] is False
+    assert jphelps["missed_advancements"] == []
+    assert stats["new_players"] == []
+
+
+def test_play_time_matches_only_a_short_history():
+    assert play_time_looks_new(3600, 3600) is True
+    assert play_time_looks_new(3600 + 30 * 60, 3600) is True
+    assert play_time_looks_new(3600 + 30 * 60 + 1, 3600) is False
+    assert play_time_looks_new(3600 - 10 * 60, 3600) is True
+    assert play_time_looks_new(3600 - 10 * 60 - 1, 3600) is False
+    assert play_time_looks_new(0, 0) is False
+    assert play_time_looks_new(100 * 3600, 3600) is False
+
+
+def _world_stats():
+    start = datetime(2026, 10, 25, 10, 0, tzinfo=EASTERN)
+    newbie_id = "11111111-1111-1111-1111-111111111111"
+    veteran_id = "22222222-2222-2222-2222-222222222222"
+    parsed = ParsedLogs(
+        sessions=[
+            Session("Newbie", start, start + timedelta(hours=1), "leave"),
+            Session("Veteran", start, start + timedelta(hours=1), "leave"),
+        ],
+        uuids={"Newbie": newbie_id, "Veteran": veteran_id},
+    )
+    stats = summarize_window(
+        parsed,
+        datetime(2026, 10, 25, tzinfo=EASTERN),
+        datetime(2026, 10, 26, tzinfo=EASTERN),
+    )
+    stats["advancements"].append(
+        {
+            "player": "Alex",
+            "uuid": None,
+            "at": start.isoformat(),
+            "time": "10:00:00",
+            "kind": "advancement",
+            "title": "Stone Age",
+        }
+    )
+    stats["advancements"].append(
+        {
+            "player": "Alex",
+            "uuid": None,
+            "at": start.isoformat(),
+            "time": "11:00:00",
+            "kind": "advancement",
+            "title": "Suit Up",
+        }
+    )
+    return stats, newbie_id, veteran_id, parsed
+
+
+def test_world_files_welcome_a_new_player_and_name_a_real_miss(tmp_path):
+    stats, newbie_id, veteran_id, parsed = _world_stats()
+    stats_dir = tmp_path / "world" / "players" / "stats"
+    adv_dir = tmp_path / "world" / "players" / "advancements"
+    stats_dir.mkdir(parents=True)
+    adv_dir.mkdir(parents=True)
+    (stats_dir / f"{newbie_id}.json").write_text(
+        json.dumps(
+            {
+                "stats": {"minecraft:custom": {"minecraft:play_time": 3600 * 20}},
+                "DataVersion": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (stats_dir / f"{veteran_id}.json").write_text(
+        json.dumps(
+            {
+                "stats": {"minecraft:custom": {"minecraft:play_time": 100 * 3600 * 20}},
+                "DataVersion": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (adv_dir / f"{newbie_id}.json").write_text(
+        json.dumps(
+            {
+                "minecraft:story/mine_stone": {"criteria": {}, "done": False},
+                "DataVersion": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (adv_dir / f"{veteran_id}.json").write_text(
+        json.dumps(
+            {
+                "minecraft:story/mine_stone": {"criteria": {"stone": "x"}, "done": True},
+                "DataVersion": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    apply_world_files(stats, parsed, tmp_path)
+    newbie = _player(stats, "Newbie")
+    veteran = _player(stats, "Veteran")
+    assert newbie["new_player"] is True
+    assert newbie["missed_advancements"] == ["Stone Age", "Suit Up"]
+    assert veteran["new_player"] is False
+    assert veteran["missed_advancements"] == ["Suit Up"]
+    assert stats["new_players"] == ["Newbie"]
+
+
+def test_world_stats_fallback_without_an_advancement_file_does_not_invent_a_miss(tmp_path):
+    stats, newbie_id, _veteran_id, parsed = _world_stats()
+    stats_dir = tmp_path / "world" / "stats"
+    stats_dir.mkdir(parents=True)
+    (stats_dir / f"{newbie_id}.json").write_text(
+        json.dumps({"stats": {"minecraft:custom": {"minecraft:play_time": 3600 * 20}}}),
+        encoding="utf-8",
+    )
+    apply_world_files(stats, parsed, tmp_path)
+    newbie = _player(stats, "Newbie")
+    assert newbie["new_player"] is True
+    assert newbie["missed_advancements"] == []

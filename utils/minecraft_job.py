@@ -24,15 +24,18 @@ from utils.constants import MINECRAFT_CHANNEL_ID
 from utils.db import db_ops
 from utils.minecraft_log import (
     EASTERN,
+    MinecraftLogError,
+    apply_world_files,
     parse_data_dir,
     summarize_day,
+    titles_earned_by_others,
 )
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MINECRAFT_MODEL = "grok-4.3"
+DEFAULT_MINECRAFT_MODEL = "grok-4.7"
 DEFAULT_DATA_DIR = "/minecraft"
 MAX_NARRATIVE_CHARS = 1800
 GROK_ATTEMPTS = 2
@@ -106,19 +109,23 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 )
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small Discord server.
-You are given JSON computed from server logs. Use only that JSON.
+You are given JSON computed from server logs and, when the world save was readable, from player stats and advancement files. Use only that JSON.
+Write like a friend in the channel: tease the deaths, celebrate the advancements, and nudge people who came up empty. Not a leaderboard.
 
 Rules:
 - Do not invent players, deaths, advancements, places, times, or events.
-- Mention every player in the players list.
-- Use each player's playtime string and session count exactly as given.
+- Mention every player. Use each playtime string and session count exactly as given.
 - If likely_afk is true, say that long session looks AFK. Say "mostly" only when mostly_afk is true.
-- Include the exact integers totals.deaths and totals.advancements.
-- Mention a few specific deaths and advancements from the JSON, not every single one.
-- If server_notes is non-empty, add one short clause about the repeated entity deaths. If it is empty, do not mention entities.
+- Tease the exact death_lines you were given. If death_lines is empty, you can say they stayed alive.
+- Name advancement_titles they earned. If there are a lot, name a handful and say there were more.
+- If missed_advancements is non-empty, say you noticed they missed those exact titles. Those are the only titles you may call missed.
+- If no_advancements is true and missed_advancements is empty, say they didn't earn an advancement. You may point at one title someone else actually earned today as a place to start. Do not say they missed that title.
+- If new_player is true, welcome them. Welcome nobody else. Do not call someone new just because they played.
+- If server_notes is non-empty, add one short sentence about those repeated entity deaths. If it is empty, do not mention entities.
 - If partial_day is true, say the day is still in progress.
-- Friendly, brief, plain Discord markdown. No title line, no code fence, no preamble.
-- Stay under 1500 characters.
+- Close with the exact integers totals.deaths and totals.advancements.
+- Friendly Discord markdown. No title line, no code fence, no preamble.
+- Stay under 1600 characters.
 """
 
 
@@ -371,6 +378,7 @@ def build_day_stats(
         raise MinecraftLogError(f"Minecraft data directory does not exist: {root}")
     parsed = parse_data_dir(root, as_of=as_of)
     stats = summarize_day(parsed, day, as_of=as_of)
+    apply_world_files(stats, parsed, root)
     logger.info(
         "Minecraft %s: %s players, %s sessions, %s deaths, %s advancements",
         day.isoformat(),
@@ -388,6 +396,7 @@ def grok_payload(stats: dict) -> dict:
         "date": stats["pretty_date"],
         "timezone": stats["timezone"],
         "partial_day": stats["partial_day"],
+        "new_players": list(stats.get("new_players") or []),
         "players": [
             {
                 "name": player["name"],
@@ -397,7 +406,12 @@ def grok_payload(stats: dict) -> dict:
                 "likely_afk": player["likely_afk"],
                 "mostly_afk": player["mostly_afk"],
                 "deaths": player["deaths"],
+                "death_lines": list(player.get("death_lines") or []),
                 "advancements": player["advancements"],
+                "advancement_titles": list(player.get("advancement_titles") or []),
+                "no_advancements": bool(player.get("no_advancements")),
+                "new_player": bool(player.get("new_player")),
+                "missed_advancements": list(player.get("missed_advancements") or []),
             }
             for player in stats["players"]
         ],
@@ -420,22 +434,87 @@ def nobody_line(stats: dict) -> str:
     return f"Nobody played Minecraft on {stats['pretty_date']}."
 
 
-def _contains_count(text: str, count: int) -> bool:
-    return re.search(rf"\b{count}\b", text) is not None
+# Words that show the reply actually used a death message, not just a count.
+_DEATH_HINTS = (
+    "lava",
+    "slain",
+    "fell",
+    "blown",
+    "creeper",
+    "zombie",
+    "ghast",
+    "piglin",
+    "magma",
+    "doomed",
+    "drowned",
+    "burned",
+    "burnt",
+    "shot",
+    "fireball",
+    "void",
+    "cactus",
+    "anvil",
+    "suffocat",
+    "starv",
+    "pricked",
+    "frozen",
+    "lightning",
+    "wither",
+    "explosion",
+    "crammed",
+    "kinetic",
+    "skewered",
+    "impaled",
+    "sting",
+    "arrow",
+    "trident",
+    "shriek",
+    "berry",
+)
+
+_NUDGE_MARKERS = (
+    "no advancement",
+    "didn't earn",
+    "did not earn",
+    "without an advancement",
+    "zero advancement",
+    "missed",
+    "place to start",
+)
+
+
+def _death_fact_present(text: str, stats: dict) -> bool:
+    blob = " ".join(item["message"].lower() for item in stats.get("deaths") or [])
+    if not blob:
+        return True
+    lowered = text.lower()
+    hints = [hint for hint in _DEATH_HINTS if hint in blob]
+    if any(hint in lowered for hint in hints):
+        return True
+    words = re.findall(r"[a-z]{5,}", blob)
+    return any(word in lowered for word in words)
 
 
 def narrative_ok(text: str, stats: dict) -> bool:
+    """Accept a reply that names everyone and uses the deaths and titles."""
     cleaned = text.strip()
     if not cleaned or len(cleaned) > MAX_NARRATIVE_CHARS:
         return False
-    if stats["players"] and stats["players"][0]["name"] not in cleaned:
+    for player in stats["players"]:
+        if player["name"] not in cleaned:
+            return False
+    if stats["totals"]["deaths"] and not _death_fact_present(cleaned, stats):
         return False
-    deaths = stats["totals"]["deaths"]
-    advancements = stats["totals"]["advancements"]
-    if deaths and not _contains_count(cleaned, deaths):
+    titles = [item["title"] for item in stats.get("advancements") or [] if item.get("title")]
+    if titles and not any(title.lower() in cleaned.lower() for title in titles):
         return False
-    if advancements and not _contains_count(cleaned, advancements):
-        return False
+    lowered = cleaned.lower()
+    if any(player.get("no_advancements") for player in stats["players"]):
+        if not any(marker in lowered for marker in _NUDGE_MARKERS):
+            return False
+    if any(player.get("new_player") for player in stats["players"]):
+        if "welcome" not in lowered:
+            return False
     return True
 
 
@@ -457,49 +536,128 @@ def _md(text: str) -> str:
     )
 
 
-def render_template(stats: dict) -> str:
-    """Plain recap used when Grok is unavailable. Stays under Discord's limit."""
-    if stats["nobody_played"]:
-        return nobody_line(stats)
+def _and_join(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + ", and " + items[-1]
 
-    lines: list[str] = []
-    if stats["partial_day"]:
-        lines.append(f"_{stats['pretty_date']} is still in progress._")
+
+def _death_lines(player: dict, stats: dict) -> list[str]:
+    lines = player.get("death_lines")
+    if lines:
+        return list(lines)
+    built: list[str] = []
+    for item in stats.get("death_counts") or []:
+        if item["player"] != player["name"]:
+            continue
+        count = int(item["count"])
+        message = item["message"]
+        built.append(message if count == 1 else f"{message} ×{count}")
+    return built
+
+
+def _advancement_titles(player: dict, stats: dict) -> list[str]:
+    if "advancement_titles" in player:
+        return list(player["advancement_titles"])
+    seen: list[str] = []
+    for item in stats.get("advancements") or []:
+        if item["player"] == player["name"] and item["title"] not in seen:
+            seen.append(item["title"])
+    return seen
+
+
+def _player_needs_nudge(player: dict) -> bool:
+    if "no_advancements" in player:
+        return bool(player["no_advancements"])
+    return (
+        player.get("advancements", 0) == 0
+        and player.get("playtime_seconds", 0) >= 20 * 60
+    )
+
+
+def _compose_template(stats: dict, *, title_cap: int, death_cap: int) -> str:
+    paragraphs: list[str] = [f"{stats['pretty_date']} on the Minecraft server."]
+    if stats.get("partial_day"):
+        paragraphs.append("The day is still in progress.")
+
     for player in stats["players"]:
+        name = f"**{_md(player['name'])}**"
         noun = "session" if player["sessions"] == 1 else "sessions"
-        if player["mostly_afk"] and player["longest_session"]:
-            afk = f" (likely AFK — longest {player['longest_session']})"
-        elif player["likely_afk"] and player["longest_session"]:
-            afk = f" (includes a {player['longest_session']} session, likely AFK)"
+        longest = player.get("longest_session")
+        played = f"{name} played {player['playtime']} across {player['sessions']} {noun}"
+        if player.get("mostly_afk") and longest:
+            played += f", mostly one {longest} session, likely AFK."
+        elif player.get("likely_afk") and longest:
+            # The long session can span midnight, so its length may exceed this day's total.
+            played += f". A {longest} session looks likely AFK."
         else:
-            afk = ""
-        lines.append(
-            f"**{_md(player['name'])}** — {player['playtime']} across {player['sessions']} {noun}{afk}"
+            played += "."
+        sentences = [played]
+        if player.get("new_player"):
+            sentences.append("Welcome — this looks like your first time on the server.")
+
+        death_lines = _death_lines(player, stats)
+        death_count = int(player.get("deaths") or 0)
+        if death_lines:
+            shown = [_md(line) for line in death_lines[:death_cap]]
+            extra = len(death_lines) - len(shown)
+            more = f", plus {extra} more" if extra else ""
+            if death_count == 1:
+                sentences.append(f"Died once: {_and_join(shown)}{more}.")
+            else:
+                sentences.append(f"Died {death_count} times: {_and_join(shown)}{more}.")
+        elif death_count == 0:
+            sentences.append("Stayed alive.")
+
+        titles = _advancement_titles(player, stats)
+        missed = [_md(title) for title in (player.get("missed_advancements") or [])[:2]]
+        if titles:
+            shown = [_md(title) for title in titles[:title_cap]]
+            extra = len(titles) - len(shown)
+            more = f", plus {extra} more" if extra else ""
+            sentences.append(f"Earned {_and_join(shown)}{more}.")
+        elif missed:
+            sentences.append(
+                f"No advancement today. Hey, I saw you missed {_and_join(missed)}."
+            )
+        elif _player_needs_nudge(player):
+            suggestion = titles_earned_by_others(stats, player["name"])
+            if suggestion:
+                sentences.append(
+                    "No advancement today. "
+                    f"{_md(suggestion[0])} was earned by someone else "
+                    "if you want a place to start."
+                )
+            else:
+                sentences.append("No advancement today.")
+        paragraphs.append(" ".join(sentences))
+
+    for note in (stats.get("server_notes") or [])[:1]:
+        paragraphs.append(
+            f"{_md(note['entity'])} {_md(note['message'])} ×{note['count']}."
         )
 
     totals = stats["totals"]
-    lines.append("")
-    lines.append(
-        f"**{totals['deaths']}** deaths, **{totals['advancements']}** advancements."
-    )
-    if stats["death_counts"]:
-        bits = [
-            f"{_md(item['player'])} {_md(item['message'])} ×{item['count']}"
-            for item in stats["death_counts"][:6]
-        ]
-        lines.append("Deaths: " + "; ".join(bits))
-    if stats["advancements"]:
-        shown = stats["advancements"][:8]
-        bits = [f"{_md(item['player'])} [{_md(item['title'])}]" for item in shown]
-        extra = len(stats["advancements"]) - len(shown)
-        suffix = f" (+{extra} more)" if extra else ""
-        lines.append("Advancements: " + ", ".join(bits) + suffix)
-    for note in stats["server_notes"][:2]:
-        lines.append(
-            f"Note: {_md(note['entity'])} {_md(note['message'])} ×{note['count']}."
-        )
+    death_word = "death" if totals["deaths"] == 1 else "deaths"
+    adv_word = "advancement" if totals["advancements"] == 1 else "advancements"
+    paragraphs.append(f"{totals['deaths']} {death_word}, {totals['advancements']} {adv_word}.")
+    return "\n\n".join(paragraphs)
 
-    text = "\n".join(lines)
+
+def render_template(stats: dict) -> str:
+    """Prose recap used when Grok is unavailable. Stays under Discord's limit."""
+    if stats["nobody_played"]:
+        return nobody_line(stats)
+
+    text = _compose_template(stats, title_cap=4, death_cap=3)
+    if len(text) > 1900:
+        text = _compose_template(stats, title_cap=2, death_cap=2)
+    if len(text) > 1900:
+        text = _compose_template(stats, title_cap=1, death_cap=1)
     if len(text) > 1900:
         text = text[:1890].rstrip() + "…"
     return text
@@ -521,10 +679,12 @@ def ask_grok(stats: dict, *, client: Client | None = None, model: str | None = N
     last_error: Exception | None = None
     for attempt in range(GROK_ATTEMPTS):
         try:
+            # grok-4.7 reasons by default. "low" keeps this short recap cheap;
+            # "none" is not in that model's documented efforts.
             chat = client.chat.create(
                 model=model_name,
                 temperature=0.3,
-                reasoning_effort="none",
+                reasoning_effort="low",
                 store_messages=False,
             )
             chat.append(system(SYSTEM_PROMPT))
