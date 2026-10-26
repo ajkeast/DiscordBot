@@ -41,10 +41,7 @@ class DinkBot(commands.Bot):
         await self.load_extension('cogs.misc')
         await self.load_extension('cogs.sentiment')
         await self.load_extension('cogs.music')
-        # Temporary. MINECRAFT_SUMMARY_ENABLED=false leaves this unloaded.
-        from utils.minecraft_job import minecraft_summary_enabled
-        if minecraft_summary_enabled():
-            await self.load_extension('cogs.minecraft')
+        await self.load_extension('cogs.minecraft')
 
         await self._sync_app_commands()
         self.loop.create_task(self._console_post_loop())

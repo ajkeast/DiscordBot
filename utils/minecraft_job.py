@@ -28,7 +28,6 @@ from utils.minecraft_log import (
     apply_world_files,
     parse_data_dir,
     summarize_day,
-    titles_earned_by_others,
 )
 
 load_dotenv()
@@ -109,23 +108,17 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 )
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small Discord server.
-You are given JSON computed from server logs and, when the world save was readable, from player stats and advancement files. Use only that JSON.
-Write like a friend in the channel, briefly. One line per player. Tease a death, name an advancement, nudge someone who came up empty.
+You are given JSON of highlights computed from the logs. Use only that JSON.
+Write the way a friend would recap the night: a couple of sentences of context, then short sections. A list of every death or every title is not what anyone wants.
 
-Rules:
-- Do not invent players, deaths, advancements, places, times, or events.
-- Mention every player. Use each playtime string and session count exactly as given.
-- If likely_afk is true, say that long session looks AFK. Say "mostly" only when mostly_afk is true.
-- Name at most two death_lines per player. Skip the death sentence when death_lines is empty.
-- Name at most two advancement_titles per player. You may say there were more.
-- If missed_advancements is non-empty, say you noticed they missed those exact titles. Those are the only titles you may call missed.
-- If no_advancements is true and missed_advancements is empty, say they earned no advancement and point at one title someone else actually earned, as a place to start. Do not say they missed that title.
-- If new_player is true, welcome them in a few words. Welcome nobody else.
-- If server_notes is non-empty, add one short sentence. If it is empty, do not mention entities.
-- If partial_day is true, say the day is still in progress.
-- Close with the exact integers totals.deaths and totals.advancements.
-- Discord markdown. No title line, no code fence, no preamble.
-- Stay under 1000 characters.
+Sections, with a blank line between them:
+1. Opening: how many players, the combined string, and the busiest stretch when busiest is set. Use its start_label and end_label. Say people were mostly in the Nether only when busiest.mostly_nether is true.
+2. Time played — a heading, then one line per person. Use the playtime string and session count. Mention still online, the AFK stretch, or a welcome only when those fields say so.
+3. Deaths (the total) — skip when the total is 0. When deaths.nether is true, open with the Nether trip going badly. Then one sentence for the cluster: who died how many times, between the two clock labels, mostly to the causes, in that order. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
+4. Advancements (the total) — spotlight one single-session run when a group has one_session and a span, from the first title to the last. Call it their first session when first_session is true. Spotlight one other unique title with "including" when notable is set. Lump every remaining group into a single sentence by count. Then one line per burst and per shared title. One line for anyone in advancements.none. Say someone missed a title only when advancements.missed lists it, as "Hey, Name, I saw you missed Title."
+5. Server notes — the note text you were given. Omit the section when server_notes is empty.
+
+Do not invent players, times, places, dimensions, or causes. Do not say the Nether unless those flags are true. Discord markdown. No code fence. Stay under 1600 characters.
 """
 
 
@@ -136,12 +129,6 @@ class PreparedPost:
     source: str
     nobody_played: bool
     persisted: bool
-
-
-def minecraft_summary_enabled() -> bool:
-    """On unless ``MINECRAFT_SUMMARY_ENABLED`` is false, 0, no, or off."""
-    raw = os.getenv("MINECRAFT_SUMMARY_ENABLED", "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
 
 
 def minecraft_model() -> str:
@@ -397,42 +384,12 @@ def build_day_stats(
 
 
 def grok_payload(stats: dict) -> dict:
-    """Facts the model is allowed to mention. No raw slices or timestamps."""
+    """Highlights the model may phrase. No raw slices or per-death logs."""
+    highlights = stats.get("highlights") or _minimal_highlights(stats)
     return {
-        "date": stats["pretty_date"],
-        "timezone": stats["timezone"],
-        "partial_day": stats["partial_day"],
-        "new_players": list(stats.get("new_players") or []),
-        "players": [
-            {
-                "name": player["name"],
-                "playtime": player["playtime"],
-                "sessions": player["sessions"],
-                "longest_session": player["longest_session"],
-                "likely_afk": player["likely_afk"],
-                "mostly_afk": player["mostly_afk"],
-                "deaths": player["deaths"],
-                "death_lines": list(player.get("death_lines") or []),
-                "advancements": player["advancements"],
-                "advancement_titles": list(player.get("advancement_titles") or []),
-                "no_advancements": bool(player.get("no_advancements")),
-                "new_player": bool(player.get("new_player")),
-                "missed_advancements": list(player.get("missed_advancements") or []),
-            }
-            for player in stats["players"]
-        ],
-        "totals": {
-            "players": stats["totals"]["players"],
-            "sessions": stats["totals"]["sessions"],
-            "deaths": stats["totals"]["deaths"],
-            "advancements": stats["totals"]["advancements"],
-        },
-        "death_counts": stats["death_counts"][:40],
-        "advancements": [
-            {"player": item["player"], "kind": item["kind"], "title": item["title"]}
-            for item in stats["advancements"][:60]
-        ],
-        "server_notes": stats["server_notes"],
+        "date": stats.get("pretty_date"),
+        "partial_day": bool(stats.get("partial_day")),
+        "highlights": highlights,
     }
 
 
@@ -515,6 +472,10 @@ def narrative_ok(text: str, stats: dict) -> bool:
     if titles and not any(title.lower() in cleaned.lower() for title in titles):
         return False
     lowered = cleaned.lower()
+    if stats["players"] and "time played" not in lowered:
+        return False
+    if (stats.get("highlights") or {}).get("deaths", {}).get("nether") and "nether" not in lowered:
+        return False
     if any(player.get("no_advancements") for player in stats["players"]):
         if not any(marker in lowered for marker in _NUDGE_MARKERS):
             return False
@@ -552,104 +513,342 @@ def _and_join(items: list[str]) -> str:
     return ", ".join(items[:-1]) + ", and " + items[-1]
 
 
-def _death_lines(player: dict, stats: dict) -> list[str]:
-    lines = player.get("death_lines")
-    if lines:
-        return list(lines)
-    built: list[str] = []
-    for item in stats.get("death_counts") or []:
-        if item["player"] != player["name"]:
-            continue
-        count = int(item["count"])
-        message = item["message"]
-        built.append(message if count == 1 else f"{message} ×{count}")
-    return built
+def _people_phrase(low: int, high: int) -> str:
+    words = {
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+    }
+
+    def word(count: int) -> str:
+        return words.get(count, str(count))
+
+    if low == high:
+        return word(low)
+    if high - low == 1:
+        return f"{word(low)} or {word(high)}"
+    return f"as many as {word(high)}"
 
 
-def _advancement_titles(player: dict, stats: dict) -> list[str]:
-    if "advancement_titles" in player:
-        return list(player["advancement_titles"])
-    seen: list[str] = []
-    for item in stats.get("advancements") or []:
-        if item["player"] == player["name"] and item["title"] not in seen:
-            seen.append(item["title"])
-    return seen
+def _minimal_highlights(stats: dict) -> dict:
+    """Section facts for a hand-built day that never went through the parser."""
+    players = stats.get("players") or []
+    deaths = stats.get("deaths") or []
+    advancements = stats.get("advancements") or []
+    by_player: dict[str, list[str]] = {}
+    for item in deaths:
+        by_player.setdefault(item["player"], []).append(item["message"])
+    groups = []
+    for player in players:
+        titles = list(player.get("advancement_titles") or [])
+        if not titles:
+            titles = [
+                item["title"]
+                for item in advancements
+                if item.get("player") == player["name"]
+            ]
+        if titles:
+            groups.append(
+                {
+                    "names": [player["name"]],
+                    "count": player.get("advancements") or len(titles),
+                    "span": [titles[0], titles[-1]] if len(titles) >= 2 else [],
+                    "one_session": False,
+                    "notable": None,
+                }
+            )
+    notes = []
+    for note in stats.get("server_notes") or []:
+        if note.get("text"):
+            notes.append(note)
+        elif note.get("entity"):
+            notes.append(
+                {
+                    "kind": "entity",
+                    "text": f"{note['entity']} {note['message']} ×{note['count']}.",
+                }
+            )
+    return {
+        "player_count": len(players),
+        "combined": None,
+        "date_label": stats.get("pretty_date") or "",
+        "busiest": None,
+        "time_played": [
+            {
+                "name": player["name"],
+                "playtime": player["playtime"],
+                "sessions": player["sessions"],
+                "still_online": False,
+                "afk": (
+                    {"duration": player.get("longest_session"), "since": None}
+                    if player.get("likely_afk")
+                    else None
+                ),
+                "new_player": bool(player.get("new_player")),
+            }
+            for player in players
+        ],
+        "deaths": {
+            "total": (stats.get("totals") or {}).get("deaths", len(deaths)),
+            "nether": False,
+            "cluster": None,
+            "others": [
+                {"name": name, "count": len(messages), "details": messages[:3]}
+                for name, messages in by_player.items()
+            ],
+        },
+        "advancements": {
+            "total": (stats.get("totals") or {}).get("advancements", len(advancements)),
+            "groups": groups,
+            "bursts": [],
+            "shared": [],
+            "none": [
+                player["name"]
+                for player in players
+                if player.get("no_advancements") and not player.get("missed_advancements")
+            ],
+            "missed": [
+                {"name": player["name"], "titles": list(player.get("missed_advancements") or [])}
+                for player in players
+                if player.get("missed_advancements")
+            ],
+        },
+        "server_notes": notes,
+    }
 
 
-def _player_needs_nudge(player: dict) -> bool:
-    if "no_advancements" in player:
-        return bool(player["no_advancements"])
+def _pretty_duration(text: str) -> str:
+    """Turn ``17h 53m`` into ``17 h 53 m`` so a line can be read out loud."""
+    return re.sub(r"(\d+)([hms])", r"\1 \2", text)
+
+
+def _stretch_phrase(start_label: str, end_label: str) -> str:
+    """``8 PM`` to ``11 PM`` reads better as ``8 to 11 PM``."""
+    for suffix in (" AM", " PM"):
+        if start_label.endswith(suffix) and end_label.endswith(suffix):
+            return f"{start_label[: -len(suffix)]} to {end_label}"
+    return f"{start_label} to {end_label}"
+
+
+def _time_line(row: dict) -> str:
+    name = f"**{_md(row['name'])}**"
+    noun = "session" if row["sessions"] == 1 else "sessions"
+    bridge = "in" if row["sessions"] == 1 else "over"
+    played = _pretty_duration(row["playtime"])
+    line = f"{name}, {played} {bridge} {row['sessions']} {noun}"
+    if row.get("still_online"):
+        line += ", and still online"
+    line += "."
+    afk = row.get("afk")
+    if afk and afk.get("duration"):
+        since = f" since {afk['since']}" if afk.get("since") else ""
+        duration = _pretty_duration(afk["duration"])
+        line += f" That includes {duration} straight{since}, so it's likely AFK."
+    if row.get("new_player"):
+        line += " Welcome, first time on the server."
+    return line
+
+
+def _cluster_sentence(cluster: dict) -> str:
+    bits = []
+    for index, row in enumerate(cluster["players"]):
+        if index == 0:
+            bits.append(f"{_md(row['name'])} died {row['count']} times")
+        else:
+            bits.append(f"{_md(row['name'])} {row['count']} times")
+    who = _and_join(bits)
+    causes = [_md(cause) for cause in cluster.get("causes") or []]
+    cause_bit = f", mostly to {_and_join(causes)}" if causes else ""
     return (
-        player.get("advancements", 0) == 0
-        and player.get("playtime_seconds", 0) >= 20 * 60
+        f"{who} between {cluster['start_label']} and {cluster['end_label']}{cause_bit}."
     )
 
 
-def _compose_template(stats: dict, *, title_cap: int, death_cap: int) -> str:
-    lines: list[str] = []
+def _other_bit(row: dict) -> str:
+    name = _md(row["name"])
+    count = row["count"]
+    details = [_md(item) for item in row.get("details") or []]
+    if row.get("follow_up") and count == 1 and details == ["a fall"]:
+        return f"{name} fell once more later"
+    if row.get("follow_up") and count == 1 and details:
+        return f"{name} also died once later ({details[0]})"
+    if row.get("follow_up") and count == 1:
+        return f"{name} died once more later"
+    if count == 1 and details == ["a Creeper"]:
+        return f"{name} was blown up by a Creeper once"
+    if count == 1 and details:
+        return f"{name} died once ({details[0]})"
+    if count == 2 and len(details) >= 2:
+        if details[0].startswith(("a ", "an ")):
+            return f"{name} died twice (to {details[0]}, then {details[1]})"
+        return f"{name} died twice ({details[0]}, then {details[1]})"
+    if details:
+        return f"{name} died {count} times ({_and_join(details)})"
+    return f"{name} died {count} times"
+
+
+def _lumped_groups(groups: list[dict]) -> str:
+    """One sentence for everyone who doesn't get their own story line."""
+    buckets: list[tuple[int, list[str]]] = []
+    for group in groups:
+        names = list(group["names"])
+        if buckets and buckets[-1][0] == group["count"]:
+            buckets[-1][1].extend(names)
+        else:
+            buckets.append((group["count"], names))
+    parts = []
+    for count, names in buckets:
+        shown = [_md(name) for name in names]
+        if len(shown) == 1:
+            parts.append(f"{shown[0]} got {count}")
+        else:
+            parts.append(f"{_and_join(shown)} got {count} each")
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0] + "."
+    return ", ".join(parts[:-1]) + ", and " + parts[-1] + "."
+
+
+def _group_line(group: dict) -> str:
+    names = [_md(name) for name in group["names"]]
+    count = group["count"]
+    if len(names) == 1:
+        who = f"{names[0]} got {count}"
+    elif len(names) == 2:
+        who = f"{names[0]} and {names[1]} got {count} each"
+    else:
+        who = f"{_and_join(names)} got {count} each"
+    if group.get("first_session"):
+        who += " in their first session"
+    elif group.get("one_session"):
+        who += " in one session"
+    span = group.get("span") or []
+    if len(span) == 2:
+        who += f", from {_md(span[0])} to {_md(span[1])}"
+    elif group.get("notable"):
+        who += f", including {_md(group['notable'])}"
+    if who.endswith(("?", "!", ".")):
+        return who
+    return who + "."
+
+
+def _burst_line(burst: dict) -> str:
+    names = [_md(name) for name in burst["players"]]
+    title = _md(burst["title"])
+    when = burst["at_label"]
+    if burst.get("seconds_apart", 999) <= 15:
+        pace = "within seconds of each other"
+    else:
+        pace = "within a couple of minutes"
+    kind = "challenge" if burst.get("kind") == "challenge" else "advancement"
+    return f"{_and_join(names)} all finished the {title} {kind} {pace} at {when}."
+
+
+def _render_highlights(stats: dict, highlights: dict) -> str:
+    sections: list[str] = []
+    overview = ""
+    if highlights.get("combined"):
+        overview = (
+            f"**{highlights['player_count']} players** were on for a combined "
+            f"{highlights['combined']}."
+        )
+    busiest = highlights.get("busiest")
+    if busiest:
+        people = _people_phrase(busiest["low"], busiest["high"])
+        where = ", mostly in the Nether" if busiest.get("mostly_nether") else ""
+        sentence = (
+            f"The busiest stretch was {_stretch_phrase(busiest['start_label'], busiest['end_label'])}, "
+            f"when {people} people were on together{where}."
+        )
+        overview = f"{overview} {sentence}".strip()
     if stats.get("partial_day"):
-        lines.append("Still in progress.")
+        overview = (overview + " " if overview else "") + "The day is still in progress."
+    if overview:
+        sections.append(overview.strip())
 
-    for player in stats["players"]:
-        name = f"**{_md(player['name'])}**"
-        noun = "session" if player["sessions"] == 1 else "sessions"
-        longest = player.get("longest_session")
-        head = f"{name} — {player['playtime']}, {player['sessions']} {noun}"
-        if player.get("mostly_afk") and longest:
-            head += f", mostly one {longest} session, likely AFK"
-        elif player.get("likely_afk") and longest:
-            # The long session can span midnight, so its length may exceed this day's total.
-            head += f", likely AFK ({longest} session)"
-        sentences = [head + "."]
-        if player.get("new_player"):
-            sentences.append("Welcome, first time on the server.")
+    played = "\n".join(_time_line(row) for row in highlights.get("time_played") or [])
+    if played:
+        sections.append("**Time played**\n" + played)
 
-        death_lines = _death_lines(player, stats)
-        death_count = int(player.get("deaths") or 0)
-        if death_lines:
-            shown = [_md(line) for line in death_lines[:death_cap]]
-            if death_count == 1:
-                sentences.append(f"Died once: {_and_join(shown)}.")
-            else:
-                sentences.append(f"Died {death_count} times: {_and_join(shown)}.")
+    deaths = highlights.get("deaths") or {}
+    if deaths.get("total"):
+        lines = [f"**Deaths ({deaths['total']})**"]
+        story: list[str] = []
+        if deaths.get("nether") and deaths.get("cluster"):
+            story.append("The Nether trip went badly. " + _cluster_sentence(deaths["cluster"]))
+        elif deaths.get("cluster"):
+            story.append(_cluster_sentence(deaths["cluster"]))
+        others = deaths.get("others") or []
+        if others:
+            story.append(_and_join([_other_bit(row) for row in others]) + ".")
+        if story:
+            lines.append(" ".join(story))
+        sections.append("\n".join(lines))
 
-        titles = _advancement_titles(player, stats)
-        missed = [_md(title) for title in (player.get("missed_advancements") or [])[:2]]
-        if titles:
-            shown = [_md(title) for title in titles[:title_cap]]
-            extra = len(titles) - len(shown)
-            more = f", plus {extra} more" if extra else ""
-            sentences.append(f"{_and_join(shown)}{more}.")
-        elif missed:
-            sentences.append(f"Hey, I saw you missed {_and_join(missed)}.")
-        elif _player_needs_nudge(player):
-            suggestion = titles_earned_by_others(stats, player["name"])
-            if suggestion:
-                sentences.append(f"No advancement. {_md(suggestion[0])} is a place to start.")
-            else:
-                sentences.append("No advancement.")
-        lines.append(" ".join(sentences))
+    advancements = highlights.get("advancements") or {}
+    if advancements.get("total") or advancements.get("none") or advancements.get("missed"):
+        lines = [f"**Advancements ({advancements.get('total', 0)})**"]
+        groups = list(advancements.get("groups") or [])
+        arc = next(
+            (
+                group
+                for group in groups
+                if group.get("one_session") and len(group.get("span") or []) == 2
+            ),
+            None,
+        )
+        remaining = [group for group in groups if group is not arc]
+        standout = next((group for group in remaining if group.get("notable")), None)
+        remaining = [group for group in remaining if group is not standout]
+        if arc is not None:
+            lines.append(_group_line(arc))
+        if standout is not None:
+            lines.append(
+                _group_line(
+                    {
+                        **standout,
+                        "span": [],
+                        "one_session": False,
+                        "first_session": False,
+                    }
+                )
+            )
+        lumped = _lumped_groups(remaining)
+        if lumped:
+            lines.append(lumped)
+        for burst in advancements.get("bursts") or []:
+            lines.append(_burst_line(burst))
+        for shared in advancements.get("shared") or []:
+            people = _people_phrase(shared["count"], shared["count"])
+            lines.append(f"{people.capitalize()} people reached {_md(shared['title'])}.")
+        for missed in advancements.get("missed") or []:
+            titles = [_md(title) for title in missed["titles"][:2]]
+            lines.append(f"Hey, {_md(missed['name'])}, I saw you missed {_and_join(titles)}.")
+        for name in advancements.get("none") or []:
+            lines.append(f"{_md(name)} didn't earn an advancement.")
+        sections.append("\n".join(lines))
 
-    for note in (stats.get("server_notes") or [])[:1]:
-        lines.append(f"{_md(note['entity'])} {_md(note['message'])} ×{note['count']}.")
-
-    totals = stats["totals"]
-    death_word = "death" if totals["deaths"] == 1 else "deaths"
-    adv_word = "advancement" if totals["advancements"] == 1 else "advancements"
-    lines.append(f"{totals['deaths']} {death_word}, {totals['advancements']} {adv_word}.")
-    return "\n".join(lines)
+    notes = highlights.get("server_notes") or []
+    if notes:
+        sections.append(
+            "**Server notes**\n" + "\n".join(note["text"] for note in notes)
+        )
+    return "\n\n".join(section for section in sections if section)
 
 
 def render_template(stats: dict) -> str:
-    """Prose recap used when Grok is unavailable. Stays under Discord's limit."""
+    """Sectioned recap used when Grok is unavailable. Stays under Discord's limit."""
     if stats["nobody_played"]:
         return nobody_line(stats)
-
-    text = _compose_template(stats, title_cap=2, death_cap=2)
-    if len(text) > 1900:
-        text = _compose_template(stats, title_cap=2, death_cap=2)
-    if len(text) > 1900:
-        text = _compose_template(stats, title_cap=1, death_cap=1)
+    highlights = stats.get("highlights") or _minimal_highlights(stats)
+    text = _render_highlights(stats, highlights)
     if len(text) > 1900:
         text = text[:1890].rstrip() + "…"
     return text

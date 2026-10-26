@@ -67,6 +67,16 @@ ADV_RE = re.compile(
 ENTITY_DEATH_RE = re.compile(
     r"^(?P<entity>[A-Za-z]+) .+ died, message: '(?P<message>.*)'$"
 )
+COORD_RE = re.compile(
+    r"\bx=(?P<x>-?\d+(?:\.\d+)?), y=-?\d+(?:\.\d+)?, z=(?P<z>-?\d+(?:\.\d+)?)"
+)
+LOGIN_AT_RE = re.compile(
+    rf"^(?P<name>{PLAYER_NAME})\[/[^\]]+\] logged in with entity id \d+ at "
+    r"\(\[(?P<dimension>[^\]]+)\]"
+)
+PRELOGIN_RE = re.compile(
+    rf"^(?P<name>{PLAYER_NAME}) \([^)]*\) lost connection:"
+)
 DONE_RE = re.compile(r'^Done \([0-9.]+s\)! For help, type "help"')
 
 ADV_KINDS = {
@@ -197,6 +207,21 @@ class EntityDeath:
     entity: str
     at: datetime
     message: str
+    x: float | None = None
+    z: float | None = None
+
+
+@dataclass(frozen=True)
+class DimensionLogin:
+    player: str
+    at: datetime
+    dimension: str
+
+
+@dataclass(frozen=True)
+class Prelogin:
+    name: str
+    at: datetime
 
 
 @dataclass
@@ -205,6 +230,8 @@ class ParsedLogs:
     deaths: list[Death] = field(default_factory=list)
     advancements: list[Advancement] = field(default_factory=list)
     entity_deaths: list[EntityDeath] = field(default_factory=list)
+    logins: list[DimensionLogin] = field(default_factory=list)
+    prelogins: list[Prelogin] = field(default_factory=list)
     uuids: dict[str, str] = field(default_factory=dict)
     files_found: int = 0
     last_event_at: datetime | None = None
@@ -475,6 +502,8 @@ def interpret_lines(
     deaths: list[Death] = []
     advancements: list[Advancement] = []
     entity_deaths: list[EntityDeath] = []
+    logins: list[DimensionLogin] = []
+    prelogins: list[Prelogin] = []
     previous_dt: datetime | None = None
 
     def close_player(name: str, at: datetime, reason: str) -> None:
@@ -522,14 +551,37 @@ def interpret_lines(
             previous_dt = line.dt
             continue
 
+        login_match = LOGIN_AT_RE.match(msg)
+        if login_match:
+            logins.append(
+                DimensionLogin(
+                    player=login_match.group("name"),
+                    at=line.dt,
+                    dimension=login_match.group("dimension"),
+                )
+            )
+            previous_dt = line.dt
+            continue
+
+        prelogin_match = PRELOGIN_RE.match(msg)
+        if prelogin_match:
+            name = prelogin_match.group("name")
+            if name not in known:
+                prelogins.append(Prelogin(name=name, at=line.dt))
+            previous_dt = line.dt
+            continue
+
         entity_match = ENTITY_DEATH_RE.match(msg)
         if entity_match:
             entity = entity_match.group("entity")
+            coord = COORD_RE.search(msg)
             entity_deaths.append(
                 EntityDeath(
                     entity=entity,
                     at=line.dt,
                     message=_normalize_entity_message(entity, entity_match.group("message")),
+                    x=float(coord.group("x")) if coord else None,
+                    z=float(coord.group("z")) if coord else None,
                 )
             )
         previous_dt = line.dt
@@ -549,6 +601,8 @@ def interpret_lines(
         deaths=deaths,
         advancements=advancements,
         entity_deaths=entity_deaths,
+        logins=logins,
+        prelogins=prelogins,
         uuids=uuids,
         files_found=files_found,
         last_event_at=previous_dt,
@@ -786,6 +840,30 @@ def summarize_window(
     server_notes.sort(key=lambda item: (-item["count"], item["entity"]))
     server_notes = server_notes[:3]
 
+    highlights = build_highlights(
+        players=players,
+        slices=slices,
+        deaths=deaths,
+        advancements=advancements,
+        entity_deaths=[
+            death
+            for death in parsed.entity_deaths
+            if _in_window(death.at, window_start, window_end)
+        ],
+        logins=[
+            login
+            for login in parsed.logins
+            if _in_window(login.at, window_start, window_end)
+        ],
+        prelogins=[
+            attempt
+            for attempt in parsed.prelogins
+            if _in_window(attempt.at, window_start, window_end)
+        ],
+        window_start=window_start,
+        window_end=window_end,
+    )
+
     return {
         "date": day.isoformat(),
         "weekday": day.strftime("%A"),
@@ -808,6 +886,7 @@ def summarize_window(
         "death_counts": death_counts,
         "advancements": advancements,
         "server_notes": server_notes,
+        "highlights": highlights,
         "slices": slices,
     }
 
@@ -940,7 +1019,567 @@ def apply_world_files(stats: dict, parsed: ParsedLogs, data_dir: Path) -> dict:
     stats["new_players"] = [
         player["name"] for player in stats["players"] if player["new_player"]
     ]
+    _sync_highlight_people(stats)
     return stats
+
+
+_COUNT_WORDS = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+}
+
+_NETHER_CAUSES = {"lava", "Magma Cubes", "Ghasts", "Piglins", "Blazes"}
+_NETHER_PROOF = {"Ghasts", "Piglins", "Blazes"}
+_NETHER_TITLES = {
+    "A Terrible Fortress",
+    "Those Were the Days",
+    "Who is Cutting Onions?",
+    "This Boat Has Legs",
+    "Into Fire",
+    "Hot Tourist Destinations",
+    "Return to Sender",
+    "Spooky Scary Skeleton",
+}
+
+
+def _count_word(count: int) -> str:
+    return _COUNT_WORDS.get(count, str(count))
+
+
+def _clock_label(moment: datetime) -> str:
+    local = moment.astimezone(EASTERN)
+    hour = local.hour % 12 or 12
+    suffix = "AM" if local.hour < 12 else "PM"
+    if local.minute == 0:
+        return f"{hour} {suffix}"
+    return f"{hour}:{local.minute:02d} {suffix}"
+
+
+def _hour_span_label(start: datetime, end: datetime) -> tuple[str, str]:
+    """Round a busy stretch onto the clock hours a person would name.
+
+    ``end`` is the first quiet sample, so 11:20 stays 11 rather than becoming
+    midnight. A start on the half hour rounds up.
+    """
+    start = start.astimezone(EASTERN).replace(second=0, microsecond=0)
+    end = end.astimezone(EASTERN).replace(second=0, microsecond=0)
+    if start.minute >= 30:
+        start = start.replace(minute=0) + timedelta(hours=1)
+    else:
+        start = start.replace(minute=0)
+    if end.minute == 0:
+        labeled_end = end
+    elif end.minute <= 30:
+        labeled_end = end.replace(minute=0)
+    else:
+        labeled_end = end.replace(minute=0) + timedelta(hours=1)
+    if labeled_end <= start:
+        labeled_end = start + timedelta(hours=1)
+    return _clock_label(start), _clock_label(labeled_end)
+
+
+def _death_mentions(message: str) -> list[str]:
+    """Every cause worth naming. Lava-while-escaping-a-mob counts as both."""
+    text = message.lower()
+    found: list[str] = []
+    for needle, label in (
+        ("lava", "lava"),
+        ("magma", "Magma Cubes"),
+        ("ghast", "Ghasts"),
+        ("piglin", "Piglins"),
+        ("blaze", "Blazes"),
+        ("creeper", "a Creeper"),
+        ("zombie", "a Zombie"),
+        ("wither skeleton", "a Wither Skeleton"),
+        ("drowned", "drowning"),
+    ):
+        if needle in text and label not in found:
+            found.append(label)
+    if any(token in text for token in ("fell", "doomed to fall", "high place")):
+        found.append("a fall")
+    mobs = {"Magma Cubes", "Ghasts", "Piglins", "Blazes", "a Creeper", "a Zombie", "a Wither Skeleton"}
+    if ("blown up" in text or "explosion" in text) and not mobs.intersection(found):
+        found.append("an explosion")
+    return found or [message]
+
+
+def _death_cause(message: str) -> str:
+    mentions = _death_mentions(message)
+    for label in mentions:
+        if label not in {"lava", "a fall", "drowning", "an explosion"}:
+            return label
+    return mentions[0]
+
+
+def _combined_label(seconds: int) -> str:
+    hours = seconds / 3600
+    rounded = round(hours)
+    if rounded >= 1 and abs(hours - rounded) <= 0.35:
+        unit = "hour" if rounded == 1 else "hours"
+        return f"{rounded} {unit}"
+    return format_duration(seconds)
+
+
+def _date_label(window_start: datetime, window_end: datetime) -> str:
+    start = window_start.astimezone(EASTERN)
+    end = (window_end - timedelta(seconds=1)).astimezone(EASTERN)
+    if start.date() == end.date():
+        return f"{start.strftime('%b')} {start.day}"
+    if start.month == end.month:
+        return f"{start.strftime('%b')} {start.day}–{end.day}"
+    return f"{start.strftime('%b')} {start.day}–{end.strftime('%b')} {end.day}"
+
+
+def _busiest_stretch(slices: list[dict], window_start: datetime, window_end: datetime):
+    if not slices:
+        return None
+    step = timedelta(minutes=10)
+    samples: list[tuple[datetime, int]] = []
+    moment = window_start
+    parsed_slices = [
+        (
+            datetime.fromisoformat(item["slice_started_at"]),
+            datetime.fromisoformat(item["slice_ended_at"]),
+            item["player_name"],
+        )
+        for item in slices
+    ]
+    while moment < window_end:
+        online = {
+            name
+            for start, end, name in parsed_slices
+            if start <= moment < end
+        }
+        samples.append((moment, len(online)))
+        moment += step
+    if not samples:
+        return None
+    peak = max(count for _, count in samples)
+    if peak < 3:
+        return None
+    threshold = max(3, peak - 1)
+    best: tuple[timedelta, datetime, datetime, int, int] | None = None
+    run_start: datetime | None = None
+    run_low = run_high = 0
+    for moment, count in samples + [(window_end, 0)]:
+        if count >= threshold:
+            if run_start is None:
+                run_start = moment
+                run_low = run_high = count
+            else:
+                run_low = min(run_low, count)
+                run_high = max(run_high, count)
+        elif run_start is not None:
+            span = moment - run_start
+            if span >= timedelta(hours=1) and (best is None or span > best[0]):
+                best = (span, run_start, moment, run_low, run_high)
+            run_start = None
+    if best is None:
+        return None
+    _span, start, end, low, high = best
+    # Begin when the stretch actually hit its peak, if that still covers an hour.
+    # A long warm-up at one fewer player would otherwise pull the label earlier.
+    for moment, count in samples:
+        if moment < start or moment >= end:
+            continue
+        if count == high:
+            if end - moment >= timedelta(hours=1):
+                start = moment
+                counted = [value for when, value in samples if start <= when < end]
+                low, high = min(counted), max(counted)
+            break
+    start_label, end_label = _hour_span_label(start, end)
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "start_label": start_label,
+        "end_label": end_label,
+        "low": low,
+        "high": high,
+        "mostly_nether": False,
+    }
+
+
+def _death_cluster(deaths: list[dict]) -> dict | None:
+    ordered = sorted(deaths, key=lambda item: item["at"])
+    if len(ordered) < 5:
+        return None
+    best: tuple[int, int, int] | None = None
+    for left, first in enumerate(ordered):
+        first_at = datetime.fromisoformat(first["at"])
+        for right in range(left, len(ordered)):
+            last_at = datetime.fromisoformat(ordered[right]["at"])
+            if last_at - first_at > timedelta(minutes=45):
+                break
+            count = right - left + 1
+            if best is None or count > best[0]:
+                best = (count, left, right)
+    if best is None or best[0] < 5 or best[0] * 2 < len(ordered):
+        return None
+    _count, left, right = best
+    group = ordered[left : right + 1]
+    mention_counts: dict[str, int] = {}
+    mention_order: list[str] = []
+    for item in group:
+        for cause in _death_mentions(item["message"]):
+            if cause not in mention_counts:
+                mention_order.append(cause)
+            mention_counts[cause] = mention_counts.get(cause, 0) + 1
+    causes = sorted(
+        mention_order,
+        key=lambda cause: (-mention_counts[cause], mention_order.index(cause)),
+    )[:3]
+    by_player: dict[str, int] = {}
+    for item in group:
+        by_player[item["player"]] = by_player.get(item["player"], 0) + 1
+    players = [
+        {"name": name, "count": count}
+        for name, count in sorted(by_player.items(), key=lambda pair: (-pair[1], pair[0].lower()))
+        if count >= 3
+    ]
+    if not players:
+        players = [
+            {"name": name, "count": count}
+            for name, count in sorted(by_player.items(), key=lambda pair: (-pair[1], pair[0].lower()))
+        ][:2]
+    start = datetime.fromisoformat(group[0]["at"])
+    end = datetime.fromisoformat(group[-1]["at"])
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "start_label": _clock_label(start),
+        "end_label": _clock_label(end),
+        "players": players,
+        "causes": causes[:3],
+        "indexes": {id(item) for item in group},
+    }
+
+
+def _overlaps(start_iso: str, end_iso: str, other_start_iso: str, other_end_iso: str) -> bool:
+    start = datetime.fromisoformat(start_iso)
+    end = datetime.fromisoformat(end_iso)
+    other_start = datetime.fromisoformat(other_start_iso)
+    other_end = datetime.fromisoformat(other_end_iso)
+    return start < other_end and other_start < end
+
+
+def _cluster_is_nether(cluster: dict, deaths: list[dict], logins, advancements: list[dict]) -> bool:
+    if any(cause in _NETHER_PROOF for cause in cluster["causes"]):
+        return True
+    start = datetime.fromisoformat(cluster["start"]) - timedelta(minutes=30)
+    end = datetime.fromisoformat(cluster["end"]) + timedelta(minutes=30)
+    if any(start <= login.at <= end and login.dimension.endswith("the_nether") for login in logins):
+        return True
+    for item in advancements:
+        moment = datetime.fromisoformat(item["at"])
+        if start <= moment <= end and item["title"] in _NETHER_TITLES:
+            return True
+    return any(
+        _death_cause(item["message"]) in _NETHER_CAUSES and id(item) in cluster["indexes"]
+        for item in deaths
+    ) and any(cause in _NETHER_PROOF for cause in cluster["causes"])
+
+
+def _advancement_highlights(players: list[dict], advancements: list[dict], slices: list[dict]) -> dict:
+    by_player: dict[str, list[dict]] = {}
+    for item in advancements:
+        by_player.setdefault(item["player"], []).append(item)
+    records = []
+    for player in players:
+        items = by_player.get(player["name"], [])
+        if not items:
+            continue
+        items = sorted(items, key=lambda item: item["at"])
+        titles = []
+        for item in items:
+            if item["title"] not in titles:
+                titles.append(item["title"])
+        player_slices = [item for item in slices if item["player_name"] == player["name"]]
+        one_session = False
+        first_session = False
+        if player_slices:
+            def _covers(sl: dict) -> bool:
+                return all(
+                    datetime.fromisoformat(sl["slice_started_at"])
+                    <= datetime.fromisoformat(adv["at"])
+                    < datetime.fromisoformat(sl["slice_ended_at"])
+                    for adv in items
+                )
+
+            one_session = any(_covers(sl) for sl in player_slices)
+            earliest = min(player_slices, key=lambda sl: sl["slice_started_at"])
+            first_session = _covers(earliest)
+        notable = None
+        for title in reversed(titles):
+            others = [
+                name
+                for name, owned in by_player.items()
+                if name != player["name"] and any(adv["title"] == title for adv in owned)
+            ]
+            if not others:
+                notable = title
+                break
+        records.append(
+            {
+                "names": [player["name"]],
+                "count": len(items),
+                "span": [titles[0], titles[-1]] if len(titles) >= 4 and titles[0] != titles[-1] else [],
+                "one_session": one_session and len(items) >= 4,
+                "first_session": first_session and len(items) >= 4,
+                "notable": notable if len(items) >= 4 else None,
+            }
+        )
+    records.sort(key=lambda item: (-item["count"], item["names"][0].lower()))
+
+    bursts = []
+    by_title: dict[str, list[dict]] = {}
+    for item in advancements:
+        by_title.setdefault(item["title"], []).append(item)
+    for title, items in by_title.items():
+        items = sorted(items, key=lambda item: item["at"])
+        names: list[str] = []
+        first = datetime.fromisoformat(items[0]["at"])
+        last = first
+        kind = items[0]["kind"]
+        for item in items:
+            moment = datetime.fromisoformat(item["at"])
+            if names and moment - first > timedelta(minutes=2):
+                break
+            if item["player"] not in names:
+                names.append(item["player"])
+            last = moment
+            kind = item["kind"]
+        close_together = int((last - first).total_seconds()) <= 20
+        if len(names) >= 3 or (len(names) >= 2 and close_together and kind == "challenge"):
+            bursts.append(
+                {
+                    "title": title,
+                    "kind": kind,
+                    "players": names,
+                    "at_label": _clock_label(first),
+                    "seconds_apart": int((last - first).total_seconds()),
+                }
+            )
+    bursts.sort(key=lambda item: (-len(item["players"]), item["title"]))
+
+    shared = []
+    burst_covered = set()
+    for burst in bursts:
+        everyone = {
+            item["player"]
+            for item in by_title.get(burst["title"], [])
+        }
+        if set(burst["players"]) >= everyone and len(burst["players"]) >= 3:
+            burst_covered.add(burst["title"])
+    for title, items in by_title.items():
+        names = []
+        for item in items:
+            if item["player"] not in names:
+                names.append(item["player"])
+        if len(names) >= 3 and title not in burst_covered:
+            shared.append({"title": title, "count": len(names)})
+    shared.sort(key=lambda item: (-item["count"], item["title"]))
+
+    return {
+        "total": len(advancements),
+        "groups": records,
+        "bursts": bursts[:2],
+        "shared": shared[:2],
+        "none": [
+            player["name"]
+            for player in players
+            if player.get("no_advancements") and not player.get("missed_advancements")
+        ],
+        "missed": [
+            {"name": player["name"], "titles": list(player.get("missed_advancements") or [])}
+            for player in players
+            if player.get("missed_advancements")
+        ],
+    }
+
+
+def _server_highlights(entity_deaths: list[EntityDeath], prelogins: list[Prelogin]) -> list[dict]:
+    notes: list[dict] = []
+    squished = [
+        death
+        for death in entity_deaths
+        if "squish" in death.message.lower() or "cram" in death.message.lower()
+    ]
+    if len(squished) >= ENTITY_NOTE_MIN_COUNT:
+        placed = [death for death in squished if death.x is not None and death.z is not None]
+        where = ""
+        if len(placed) >= ENTITY_NOTE_MIN_COUNT:
+            xs = sorted(death.x for death in placed if death.x is not None)
+            zs = sorted(death.z for death in placed if death.z is not None)
+            mid_x = round(xs[len(xs) // 2])
+            mid_z = round(zs[len(zs) // 2])
+            where = f" near x {mid_x}, z {mid_z}"
+        if where:
+            text = (
+                f"Villagers kept dying from overcrowding{where} — "
+                f"squished {len(squished)} times."
+            )
+        else:
+            text = f"Villagers were squished {len(squished)} times."
+        notes.append({"kind": "villagers", "text": text})
+    attempts: dict[str, int] = {}
+    for attempt in prelogins:
+        attempts[attempt.name] = attempts.get(attempt.name, 0) + 1
+    scanners = sorted(
+        ((name, count) for name, count in attempts.items() if count >= 5),
+        key=lambda pair: (-pair[1], pair[0].lower()),
+    )
+    if scanners:
+        shown = scanners[:3]
+        if len(shown) == 1:
+            name, count = shown[0]
+            notes.append(
+                {
+                    "kind": "scanner",
+                    "text": (
+                        f"{name} tried to connect {count} times and never got in. "
+                        "Looks like a scanner."
+                    ),
+                }
+            )
+        else:
+            names = ", ".join(name for name, _count in shown)
+            notes.append(
+                {
+                    "kind": "scanner",
+                    "text": (
+                        f"A few unknown names, like {names}, tried to connect "
+                        "and never got in. They look like scanners."
+                    ),
+                }
+            )
+    return notes
+
+
+def _sync_highlight_people(stats: dict) -> None:
+    highlights = stats.get("highlights")
+    if not highlights:
+        return
+    by_name = {player["name"]: player for player in stats["players"]}
+    for row in highlights.get("time_played") or []:
+        player = by_name.get(row["name"])
+        if player:
+            row["new_player"] = bool(player.get("new_player"))
+    advancements = highlights.setdefault("advancements", {})
+    advancements["missed"] = [
+        {"name": player["name"], "titles": list(player.get("missed_advancements") or [])}
+        for player in stats["players"]
+        if player.get("missed_advancements")
+    ]
+    advancements["none"] = [
+        player["name"]
+        for player in stats["players"]
+        if player.get("no_advancements") and not player.get("missed_advancements")
+    ]
+
+
+def build_highlights(
+    *,
+    players: list[dict],
+    slices: list[dict],
+    deaths: list[dict],
+    advancements: list[dict],
+    entity_deaths: list[EntityDeath],
+    logins: list[DimensionLogin],
+    prelogins: list[Prelogin],
+    window_start: datetime,
+    window_end: datetime,
+) -> dict:
+    """The few facts worth saying: totals, the busy hour, the death story."""
+    play_seconds = sum(player["playtime_seconds"] for player in players)
+    busiest = _busiest_stretch(slices, window_start, window_end)
+    cluster = _death_cluster(deaths)
+    nether = False
+    if cluster is not None:
+        nether = _cluster_is_nether(cluster, deaths, logins, advancements)
+        if busiest is not None and _overlaps(
+            busiest["start"], busiest["end"], cluster["start"], cluster["end"]
+        ):
+            busiest["mostly_nether"] = nether
+        cluster = {key: value for key, value in cluster.items() if key != "indexes"}
+
+    in_cluster: set[int] = set()
+    cluster_names = {row["name"] for row in (cluster or {}).get("players", [])}
+    if cluster is not None:
+        start = datetime.fromisoformat(cluster["start"])
+        end = datetime.fromisoformat(cluster["end"])
+        in_cluster = {
+            id(item)
+            for item in deaths
+            if start <= datetime.fromisoformat(item["at"]) <= end
+        }
+
+    others_map: dict[str, list[str]] = {}
+    for item in deaths:
+        if id(item) in in_cluster and item["player"] in cluster_names:
+            continue
+        others_map.setdefault(item["player"], []).append(_death_cause(item["message"]))
+    others = [
+        {
+            "name": name,
+            "count": len(causes),
+            "details": causes[:3],
+            "follow_up": name in cluster_names,
+        }
+        for name, causes in others_map.items()
+    ]
+    others.sort(key=lambda item: (-item["count"], item["name"].lower()))
+
+    time_played = []
+    for player in players:
+        player_slices = [item for item in slices if item["player_name"] == player["name"]]
+        # A session clipped by midnight is not "still online" in yesterday's recap.
+        still_online = any(
+            item["end_reason"] == "still_online" and item["slice_ended_at"] == item["ended_at"]
+            for item in player_slices
+        )
+        afk = None
+        long_slices = [item for item in player_slices if item["likely_afk"]]
+        if long_slices and player.get("mostly_afk"):
+            longest = max(long_slices, key=lambda item: item["full_seconds"])
+            started = datetime.fromisoformat(longest["started_at"])
+            afk = {
+                "duration": format_duration(longest["full_seconds"]),
+                "since": _clock_label(started),
+            }
+        time_played.append(
+            {
+                "name": player["name"],
+                "playtime": player["playtime"],
+                "sessions": player["sessions"],
+                "still_online": still_online,
+                "afk": afk,
+                "new_player": bool(player.get("new_player")),
+            }
+        )
+
+    return {
+        "player_count": len(players),
+        "combined": _combined_label(play_seconds),
+        "date_label": _date_label(window_start, window_end),
+        "busiest": busiest,
+        "time_played": time_played,
+        "deaths": {
+            "total": len(deaths),
+            "nether": nether,
+            "cluster": cluster,
+            "others": others,
+        },
+        "advancements": _advancement_highlights(players, advancements, slices),
+        "server_notes": _server_highlights(entity_deaths, prelogins),
+    }
 
 
 def summarize_day(

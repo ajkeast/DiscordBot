@@ -1,19 +1,4 @@
-"""Daily Minecraft activity summary posted to #minecraft at 8:00 AM Eastern.
-
-Temporary feature. Turn it off with ``MINECRAFT_SUMMARY_ENABLED=false``
-(stops the schedule and leaves the cog unloaded). To delete it later, remove:
-
-- ``cogs/minecraft.py``, ``utils/minecraft_log.py``, ``utils/minecraft_job.py``
-- ``scripts/minecraft_schema.sql``, ``tests/test_minecraft_log.py``,
-  ``tests/test_minecraft_job.py``, ``tests/fixtures/minecraft/``
-- the ``cogs.minecraft`` load in ``bot.py`` and ``MINECRAFT_CHANNEL_ID``
-- the bot's ``minecraft_data`` mount in ``docker-compose.prod.yml``
-  (the volume itself is the Minecraft server's data — leave the volume)
-- the Minecraft notes in the README, ``.env.example``, and ``docs/self_knowledge/``
-- ``minecraft_summary`` in ``tests/conftest.py`` and the cog in ``tests/test_bot_loading.py``
-
-The ``minecraft_*`` tables are only read by this feature. Dropping them is optional.
-"""
+"""Daily Minecraft activity summary posted to #minecraft at 8:00 AM Eastern."""
 
 from __future__ import annotations
 
@@ -33,7 +18,6 @@ from utils.minecraft_job import (
     embed_footer,
     mark_posted,
     minecraft_channel_id,
-    minecraft_summary_enabled,
     prepare_post,
     release_claim,
     summary_title,
@@ -63,8 +47,7 @@ class Minecraft(commands.Cog):
         self._run_lock = asyncio.Lock()
 
     async def cog_load(self):
-        if minecraft_summary_enabled():
-            self.daily_minecraft.start()
+        self.daily_minecraft.start()
 
     def cog_unload(self):
         if self.daily_minecraft.is_running():

@@ -18,7 +18,6 @@ from utils.minecraft_job import (
     grok_payload,
     minecraft_channel_id,
     minecraft_model,
-    minecraft_summary_enabled,
     narrative_ok,
     prepare_post,
     render_narrative,
@@ -126,15 +125,6 @@ def test_activity_date_is_due_at_and_after_8am():
     assert DAILY_AT.minute == 0
 
 
-def test_summary_is_on_unless_the_env_flag_disables_it(monkeypatch):
-    monkeypatch.delenv("MINECRAFT_SUMMARY_ENABLED", raising=False)
-    assert minecraft_summary_enabled() is True
-    monkeypatch.setenv("MINECRAFT_SUMMARY_ENABLED", "false")
-    assert minecraft_summary_enabled() is False
-    monkeypatch.setenv("MINECRAFT_SUMMARY_ENABLED", "off")
-    assert minecraft_summary_enabled() is False
-
-
 def test_channel_and_model_defaults(monkeypatch):
     monkeypatch.delenv("MINECRAFT_CHANNEL_ID", raising=False)
     monkeypatch.delenv("GROK_MINECRAFT_MODEL", raising=False)
@@ -177,27 +167,31 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
         "jphelps",
     ):
         assert name in text
+    assert "Time played" in text
+    assert "Deaths (19)" in text
+    assert "Advancements (28)" in text
     assert "likely AFK" in text
-    assert "lava" in text
-    assert "Stone Age" in text
-    assert "place to start" in text
-    assert "jphelps" in text
-    assert "missed" not in text.lower()
-    assert "welcome" not in text.lower()
-    assert "19" in text
-    assert "28" in text
+    assert "The Nether trip went badly" in text
+    assert "8 to 11 PM" in text
+    assert "three or four" in text
+    assert "EpicPigz 6 times" in text
+    assert "lava, Magma Cubes, and Ghasts" in text
+    assert "45 hours" in text
+    assert "Acquire Hardware" in text
+    assert "Cover Me with Diamonds" in text
+    assert "got 5 each, and Conkeastador got 3." in text
+    assert "Hot Tourist Destinations" in text
+    assert "A Terrible Fortress" in text
+    assert "didn't earn" in text
     assert "squished" in text
+    assert "FishNet" not in text
+    assert text.count("\n\n") >= 3
     payload = grok_payload(stats)
     assert "slices" not in payload
-    assert "playtime_seconds" not in payload["players"][0]
-    assert payload["players"][0]["death_lines"]
-    assert payload["players"][0]["advancement_titles"]
-    jphelps = next(player for player in payload["players"] if player["name"] == "jphelps")
-    assert jphelps["no_advancements"] is True
-    assert jphelps["new_player"] is False
-    assert jphelps["missed_advancements"] == []
-    assert payload["totals"]["deaths"] == 19
-    assert payload["totals"]["advancements"] == 28
+    assert "death_lines" not in payload
+    assert payload["highlights"]["deaths"]["total"] == 19
+    assert payload["highlights"]["deaths"]["nether"] is True
+    assert payload["highlights"]["advancements"]["total"] == 28
 
 
 def test_nobody_played_is_a_one_liner():
@@ -217,11 +211,11 @@ def test_nobody_played_is_a_one_liner():
     assert len(text) < 200
 
 
-def test_prompt_asks_for_deaths_nudges_and_welcomes():
-    assert "death_lines" in SYSTEM_PROMPT
-    assert "missed_advancements" in SYSTEM_PROMPT
-    assert "new_player" in SYSTEM_PROMPT
-    assert "place to start" in SYSTEM_PROMPT
+def test_prompt_asks_for_sections_and_a_nether_call_only_when_supported():
+    assert "Time played" in SYSTEM_PROMPT
+    assert "busiest" in SYSTEM_PROMPT
+    assert "Nether" in SYSTEM_PROMPT
+    assert "deaths.nether" in SYSTEM_PROMPT
 
 
 def test_narrative_requires_a_nudge_and_a_welcome_when_the_json_says_so():
@@ -233,7 +227,7 @@ def test_narrative_requires_a_nudge_and_a_welcome_when_the_json_says_so():
     stats["totals"]["advancements"] = 0
     assert narrative_ok("Steve fell from a high place.", stats) is False
     assert narrative_ok(
-        "Welcome Steve. He fell from a high place. No advancement today.",
+        "Time played\nWelcome Steve. He fell from a high place. No advancement today.",
         stats,
     ) is True
 
@@ -263,7 +257,7 @@ def test_template_names_a_confirmed_miss_and_welcomes_a_new_player():
     stats["totals"]["advancements"] = 1
     text = render_template(stats)
     assert "Welcome" in text
-    assert "Hey, I saw you missed Stone Age." in text
+    assert "Hey, Steve, I saw you missed Stone Age." in text
     assert "Died" not in text
 
 
@@ -271,7 +265,7 @@ def test_narrative_requires_the_death_and_the_title():
     stats = _steve_stats()
     assert narrative_ok("Steve had a nice day.", stats) is False
     assert narrative_ok(
-        "Steve played 1h. He fell from a high place and earned Stone Age.",
+        "Time played\nSteve played 1h. He fell from a high place and earned Stone Age.",
         stats,
     ) is True
     assert narrative_ok(
@@ -288,9 +282,9 @@ def test_grok_text_is_used_when_it_matches_the_json(monkeypatch):
     client.chat.create.return_value = chat
     chat.sample.return_value = MagicMock(
         content=(
-            "```\nSteve played 1h across 1 session. "
-            "Died twice: fell from a high place. Earned Stone Age. "
-            "2 deaths, 1 advancement.\n```"
+            "```\n**Time played**\nSteve, 1h, 1 session.\n\n"
+            "**Deaths (2)**\nHe fell from a high place.\n\n"
+            "**Advancements (1)**\nStone Age.\n```"
         )
     )
     text, source = render_narrative(stats, client=client)
