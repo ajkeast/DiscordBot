@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS message_sentiment (
 """
 
 # Newest first so recent holes are filled before ancient backfill gaps.
+# messages.content is the original text. Edits live in edited_content and are
+# not rescored; a row already in message_sentiment stays tied to the original.
 UNSCORED_SQL = """
 SELECT
     m.id AS message_id,

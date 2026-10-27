@@ -6,6 +6,7 @@ import math
 import os                              # For environment variables
 import logging
 import sys
+from functools import partial
 from dotenv import load_dotenv         # Load .env
 from utils.constants import GENERAL_CHANNEL_ID
 from utils.db import db_ops            # Database operations
@@ -90,6 +91,30 @@ class DinkBot(commands.Bot):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, db_ops.update_messages, message_data)
 
+    async def _store_message_edit(
+        self,
+        message_id,
+        new_content,
+        *,
+        member_id,
+        channel_id,
+        created_at,
+        original_content,
+    ):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            partial(
+                db_ops.record_message_edit,
+                message_id,
+                new_content,
+                member_id=member_id,
+                channel_id=channel_id,
+                created_at=created_at,
+                original_content=original_content,
+            ),
+        )
+
     async def on_message(self, message):
         if message.author.bot:
             return
@@ -106,17 +131,60 @@ class DinkBot(commands.Bot):
         await self.process_commands(message)
 
     async def on_message_edit(self, before, after):
-        if after.author.bot:
+        """Cached edit. Identical content (link-preview embeds) is ignored."""
+        author = getattr(after, "author", None)
+        if author is not None and getattr(author, "bot", False):
             return
-            
-        message_data = (
+        before_content = getattr(before, "content", None)
+        after_content = getattr(after, "content", None)
+        if after_content is None:
+            return
+        if before_content is not None and before_content == after_content:
+            return
+        channel = getattr(after, "channel", None)
+        await self._store_message_edit(
             after.id,
-            after.author.id,
-            after.channel.id,
-            after.content,
-            after.created_at
+            after_content,
+            member_id=getattr(author, "id", None),
+            channel_id=getattr(channel, "id", None),
+            created_at=getattr(after, "created_at", None),
+            original_content=before_content,
         )
-        await self._store_message(message_data)
+
+    async def on_raw_message_edit(self, payload):
+        """Uncached edit. on_message_edit does not run when the message is not cached."""
+        if getattr(payload, "cached_message", None) is not None:
+            return
+        data = getattr(payload, "data", None) or {}
+        if "content" not in data:
+            return
+        author_data = data.get("author") or {}
+        if author_data.get("bot"):
+            return
+        message = getattr(payload, "message", None)
+        author = getattr(message, "author", None) if message is not None else None
+        if author is not None and getattr(author, "bot", False):
+            return
+
+        member_id = author_data.get("id")
+        if member_id is None and author is not None:
+            member_id = getattr(author, "id", None)
+        if member_id is not None:
+            member_id = int(member_id)
+
+        channel_id = getattr(payload, "channel_id", None)
+        created_at = getattr(message, "created_at", None) if message is not None else None
+        if created_at is None:
+            created_at = discord.utils.snowflake_time(payload.message_id)
+        content = data.get("content")
+        await self._store_message_edit(
+            payload.message_id,
+            "" if content is None else content,
+            member_id=member_id,
+            channel_id=channel_id,
+            created_at=created_at,
+            original_content=None,
+        )
 
 def main():
     bot = DinkBot()
