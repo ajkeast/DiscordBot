@@ -1,14 +1,13 @@
--- Original Discord message text stays in messages.content.
+-- Manual migration. The bot does not apply this file.
+-- Run it against Postgres before deploying a bot build that writes these columns.
+--
+-- content stays the original Discord message text.
 -- edited_content is the latest text after a real content edit (NULL if never edited).
 -- edited_at is when edited_content was last written.
 --
--- Additive and safe to re-run on a live database: nullable columns only.
--- No data is rewritten. Originals already overwritten in messages.content
--- cannot be recovered. edited_content stays NULL until a later edit.
---
--- Applied by DataOperations.ensure_message_edit_columns() at startup and
--- before message writes.
--- Deploy: docker compose -f docker-compose.prod.yml up --build -d
+-- Additive and safe to re-run: nullable columns only. No data is rewritten.
+-- Originals already overwritten in messages.content cannot be recovered.
+-- edited_content stays NULL on those rows until a later edit.
 
 ALTER TABLE messages
     ADD COLUMN IF NOT EXISTS edited_content VARCHAR(4000);

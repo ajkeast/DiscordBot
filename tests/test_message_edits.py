@@ -16,7 +16,6 @@ from utils.db import (
     UPSERT_UNSEEN_EDIT_SQL,
     DataOperations,
     db_ops,
-    message_edit_schema_statements,
 )
 from utils.sentiment_job import PRIORS_SQL, UNSCORED_SQL
 
@@ -34,7 +33,6 @@ class MessageTable:
     def __init__(self):
         self.rows = {}
         self.clock = 0
-        self.schema_statements = []
         self.rowcount = 0
 
     @contextmanager
@@ -43,11 +41,6 @@ class MessageTable:
 
     def execute(self, query, params=None):
         norm = _norm(query)
-        upper = norm.upper()
-        if upper.startswith("ALTER ") or upper.startswith("COMMENT "):
-            self.schema_statements.append(norm)
-            self.rowcount = 0
-            return
         kind = {
             _norm(INSERT_MESSAGE_SQL): "insert",
             _norm(INSERT_KNOWN_EDIT_SQL): "known_edit",
@@ -147,13 +140,11 @@ class MessageTable:
 
 @pytest.fixture
 def messages():
-    db_ops._message_edit_schema_ready = False
     table = MessageTable()
     with patch.object(db_ops.db, "execute", table.execute), patch.object(
         db_ops.db, "cursor", table.cursor
     ):
         yield table
-    db_ops._message_edit_schema_ready = False
 
 
 def _insert(message_id, content, *, member_id=10, channel_id=20):
@@ -171,28 +162,26 @@ def _setter_clause(sql: str) -> str:
     return clause.split("WHERE", 1)[0].replace("edited_content", "")
 
 
-def test_schema_is_additive_and_loaded(report):
+def test_manual_migration_file_is_additive_and_not_applied(report):
     from pathlib import Path
 
     file_sql = Path("scripts/messages_edit_schema.sql").read_text(encoding="utf-8")
     lowered = file_sql.lower()
-    statements = message_edit_schema_statements()
-    loaded = " ".join(statements).lower()
+    db_source = Path("utils/db.py").read_text(encoding="utf-8")
+    bot_source = Path("bot.py").read_text(encoding="utf-8")
 
-    report.record("statement count", 4, len(statements), section=SECTION)
+    applies_schema = (
+        "ensure_message_edit_columns" in db_source
+        or "message_edit_schema_statements" in db_source
+        or "_apply_message_schema" in bot_source
+    )
+    report.record("bot applies messages edit schema", False, applies_schema, section=SECTION)
     assert "drop " not in lowered
     assert "rename " not in lowered
     assert "alter column" not in lowered
     assert "add column if not exists edited_content varchar(4000)" in lowered
     assert "add column if not exists edited_at timestamp" in lowered
-    assert len(statements) == 4
-    assert "add column if not exists edited_content" in loaded
-    assert "add column if not exists edited_at" in loaded
-    assert "comment on column messages.edited_content" in loaded
-    assert "comment on column messages.edited_at" in loaded
-    for statement in statements:
-        assert statement.lower().startswith(("alter table", "comment on column"))
-        assert _norm(statement) in _norm(file_sql)
+    assert applies_schema is False
 
 
 def test_edit_statements_do_not_assign_content():
@@ -206,22 +195,6 @@ def test_insert_reclaims_original_only_when_unedited():
     assert "messages.edited_content IS NULL" in clause
     assert "content = EXCLUDED.content" in clause
     assert "edited_content = messages.content" in clause
-
-
-def test_ensure_runs_schema_once():
-    db_ops._message_edit_schema_ready = False
-    calls = []
-
-    def _execute(query, params=None):
-        calls.append(_norm(query))
-
-    try:
-        with patch.object(db_ops.db, "execute", side_effect=_execute):
-            db_ops.ensure_message_edit_columns()
-            db_ops.ensure_message_edit_columns()
-        assert calls == [_norm(statement) for statement in message_edit_schema_statements()]
-    finally:
-        db_ops._message_edit_schema_ready = False
 
 
 def test_sentiment_keeps_reading_original_content():
@@ -267,7 +240,6 @@ def test_repeated_edits_keep_original_and_latest_text(report, messages):
     assert row["content"] == "original"
     assert row["edited_content"] == "edit two"
     assert row["edited_at"] == 2
-    assert len(messages.schema_statements) == 4
 
 
 def test_identical_cached_text_does_not_touch_the_row(messages):

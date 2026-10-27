@@ -33,8 +33,6 @@ class DinkBot(commands.Bot):
         super().__init__(command_prefix='_', case_insensitive=True, intents=intents)
 
     async def setup_hook(self):
-        self.loop.create_task(self._apply_message_schema())
-
         # Load all cogs
         await self.load_extension('cogs.first')
         await self.load_extension('cogs.dinkcoin')
@@ -88,16 +86,6 @@ class DinkBot(commands.Bot):
             return
         logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)
         await ctx.send("Something went wrong running that command.")
-
-    async def _apply_message_schema(self):
-        """Add edited_content / edited_at. Message writes retry this if it fails."""
-        loop = asyncio.get_running_loop()
-        try:
-            await loop.run_in_executor(None, db_ops.ensure_message_edit_columns)
-        except Exception:
-            logger.exception(
-                "Could not apply messages edit schema; message writes will retry"
-            )
 
     async def _store_message(self, message_data):
         loop = asyncio.get_running_loop()

@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pandas as pd
@@ -13,40 +12,14 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_MESSAGE_EDIT_SCHEMA_PATH = (
-    Path(__file__).resolve().parents[1] / "scripts" / "messages_edit_schema.sql"
-)
-
 
 class DatabaseError(Exception):
     """Custom exception for database operations"""
     pass
 
 
-def message_edit_schema_statements() -> List[str]:
-    """Load scripts/messages_edit_schema.sql, skipping comments and blanks.
-
-    Full-line comments are removed before splitting, so a semicolon inside a
-    comment cannot glue the next statement onto leftover prose.
-    """
-    text = _MESSAGE_EDIT_SCHEMA_PATH.read_text(encoding="utf-8")
-    sql_lines = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("--"):
-            continue
-        sql_lines.append(line)
-    statements: List[str] = []
-    for chunk in "\n".join(sql_lines).split(";"):
-        statement = chunk.strip()
-        if statement:
-            statements.append(statement)
-    if not statements:
-        raise DatabaseError(f"No statements in {_MESSAGE_EDIT_SCHEMA_PATH}")
-    return statements
-
-
 # on_message / slash inserts. content is the original text.
+# edited_content and edited_at are added manually (scripts/messages_edit_schema.sql).
 # If an edit was stored first (edited_content still NULL and the text differs),
 # keep that earlier text as the edited version and store this write as content.
 INSERT_MESSAGE_SQL = """
@@ -162,16 +135,6 @@ class Database:
 class DataOperations:
     def __init__(self):
         self.db = Database()
-        self._message_edit_schema_ready = False
-
-    def ensure_message_edit_columns(self) -> None:
-        """Add edited_content / edited_at if they are not already present."""
-        if self._message_edit_schema_ready:
-            return
-        for statement in message_edit_schema_statements():
-            self.db.execute(statement)
-        self._message_edit_schema_ready = True
-        logger.info("Ensured messages.edited_content and messages.edited_at")
 
     def write_first_entry(self, user_id: int) -> None:
         query = "INSERT INTO firstlist_id (user_id) VALUES (%s);"
@@ -211,7 +174,6 @@ class DataOperations:
 
     def update_messages(self, message_data: Tuple) -> None:
         """Insert a message. content stays the original text."""
-        self.ensure_message_edit_columns()
         self.db.execute(INSERT_MESSAGE_SQL, message_data)
 
     def record_message_edit(
@@ -237,7 +199,6 @@ class DataOperations:
         if known_original is not None and known_original == new_text:
             return "unchanged"
 
-        self.ensure_message_edit_columns()
         can_insert = (
             member_id is not None and channel_id is not None and created_at is not None
         )
