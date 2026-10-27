@@ -1,6 +1,8 @@
-import os
 import json
+import logging
+import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pandas as pd
@@ -9,10 +11,85 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
+_MESSAGE_EDIT_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "scripts" / "messages_edit_schema.sql"
+)
+
 
 class DatabaseError(Exception):
     """Custom exception for database operations"""
     pass
+
+
+def message_edit_schema_statements() -> List[str]:
+    """Load scripts/messages_edit_schema.sql, skipping comments and blanks.
+
+    Full-line comments are removed before splitting, so a semicolon inside a
+    comment cannot glue the next statement onto leftover prose.
+    """
+    text = _MESSAGE_EDIT_SCHEMA_PATH.read_text(encoding="utf-8")
+    sql_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        sql_lines.append(line)
+    statements: List[str] = []
+    for chunk in "\n".join(sql_lines).split(";"):
+        statement = chunk.strip()
+        if statement:
+            statements.append(statement)
+    if not statements:
+        raise DatabaseError(f"No statements in {_MESSAGE_EDIT_SCHEMA_PATH}")
+    return statements
+
+
+# on_message / slash inserts. content is the original text.
+# If an edit was stored first (edited_content still NULL and the text differs),
+# keep that earlier text as the edited version and store this write as content.
+INSERT_MESSAGE_SQL = """
+INSERT INTO messages (id, member_id, channel_id, content, created_at)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT (id) DO UPDATE SET
+    edited_content = messages.content,
+    edited_at = CURRENT_TIMESTAMP,
+    content = EXCLUDED.content
+WHERE messages.edited_content IS NULL
+  AND messages.content IS DISTINCT FROM EXCLUDED.content
+"""
+
+# Cached edit: the pre-edit text is known. Never overwrite messages.content.
+INSERT_KNOWN_EDIT_SQL = """
+INSERT INTO messages (
+    id, member_id, channel_id, content, created_at, edited_content, edited_at
+) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO UPDATE SET
+    edited_content = EXCLUDED.edited_content,
+    edited_at = CURRENT_TIMESTAMP
+WHERE EXCLUDED.edited_content IS DISTINCT FROM COALESCE(messages.edited_content, messages.content)
+"""
+
+# Uncached edit: the pre-edit text is unknown. A missing row is stored as the
+# only text we have, without marking it edited. An existing row updates only
+# the edited columns, and only when the text changed.
+UPSERT_UNSEEN_EDIT_SQL = """
+INSERT INTO messages (id, member_id, channel_id, content, created_at)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT (id) DO UPDATE SET
+    edited_content = %s,
+    edited_at = CURRENT_TIMESTAMP
+WHERE %s IS DISTINCT FROM COALESCE(messages.edited_content, messages.content)
+"""
+
+UPDATE_EDITED_CONTENT_SQL = """
+UPDATE messages
+SET edited_content = %s,
+    edited_at = CURRENT_TIMESTAMP
+WHERE id = %s
+  AND %s IS DISTINCT FROM COALESCE(edited_content, content)
+"""
 
 
 def _connect():
@@ -85,6 +162,16 @@ class Database:
 class DataOperations:
     def __init__(self):
         self.db = Database()
+        self._message_edit_schema_ready = False
+
+    def ensure_message_edit_columns(self) -> None:
+        """Add edited_content / edited_at if they are not already present."""
+        if self._message_edit_schema_ready:
+            return
+        for statement in message_edit_schema_statements():
+            self.db.execute(statement)
+        self._message_edit_schema_ready = True
+        logger.info("Ensured messages.edited_content and messages.edited_at")
 
     def write_first_entry(self, user_id: int) -> None:
         query = "INSERT INTO firstlist_id (user_id) VALUES (%s);"
@@ -123,13 +210,76 @@ class DataOperations:
         )
 
     def update_messages(self, message_data: Tuple) -> None:
-        query = """
-            INSERT INTO messages (id, member_id, channel_id, content, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET
-                content = EXCLUDED.content
+        """Insert a message. content stays the original text."""
+        self.ensure_message_edit_columns()
+        self.db.execute(INSERT_MESSAGE_SQL, message_data)
+
+    def record_message_edit(
+        self,
+        message_id: int,
+        new_content: Optional[str],
+        *,
+        member_id: Optional[int] = None,
+        channel_id: Optional[int] = None,
+        created_at=None,
+        original_content: Optional[str] = None,
+    ) -> str:
+        """Store a content edit without overwriting messages.content.
+
+        original_content is the pre-edit text when the message was cached.
+        None means the edit was not cached, so the previous text is unknown.
+
+        Returns "unchanged", "stored", "updated", or "missing".
+        Embed-only updates (identical text) leave the row untouched.
         """
-        self.db.execute(query, message_data)
+        new_text = "" if new_content is None else str(new_content)
+        known_original = None if original_content is None else str(original_content)
+        if known_original is not None and known_original == new_text:
+            return "unchanged"
+
+        self.ensure_message_edit_columns()
+        can_insert = (
+            member_id is not None and channel_id is not None and created_at is not None
+        )
+        with self.db.cursor() as cursor:
+            if known_original is not None and can_insert:
+                cursor.execute(
+                    INSERT_KNOWN_EDIT_SQL,
+                    (
+                        message_id,
+                        member_id,
+                        channel_id,
+                        known_original,
+                        created_at,
+                        new_text,
+                    ),
+                )
+                return "stored" if cursor.rowcount else "unchanged"
+            if known_original is None and can_insert:
+                cursor.execute(
+                    UPSERT_UNSEEN_EDIT_SQL,
+                    (
+                        message_id,
+                        member_id,
+                        channel_id,
+                        new_text,
+                        created_at,
+                        new_text,
+                        new_text,
+                    ),
+                )
+                return "stored" if cursor.rowcount else "unchanged"
+            cursor.execute(
+                UPDATE_EDITED_CONTENT_SQL,
+                (new_text, message_id, new_text),
+            )
+            if cursor.rowcount:
+                return "updated"
+        logger.debug(
+            "Edit for message %s was not stored; row missing and author unknown",
+            message_id,
+        )
+        return "missing"
 
     def update_members(self, member_data: List[Tuple]) -> None:
         query = """
