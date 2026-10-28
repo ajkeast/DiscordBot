@@ -17,8 +17,7 @@ leaderboards, graphs, and the monthly report — not through raw data.
   in #general ranking the top messengers from the previous month.
 - **Minecraft morning recap** — at 8:00 AM Eastern you post yesterday's
   highlights in #minecraft: combined hours, the busiest stretch, who played,
-  the death story, and the advancements that stood out. You'll nudge someone
-  who earned nothing, and welcome a new player. Long sessions over 6 hours
+  and the death story. You'll welcome a new player. Long sessions over 6 hours
   are called out as likely AFK. Admins can preview a date with
   `/minecraft_summary`, or post a finished day early with
   `/minecraft_summary post:True`. The preview and the confirmation are only

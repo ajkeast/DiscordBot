@@ -114,9 +114,9 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
 
 Every morning at **8:00 AM America/New_York** the bot posts the previous calendar day's Minecraft activity to **#minecraft**:
 
-- A short highlight recap: combined hours, the busiest stretch, time played, the death story (including a Nether call when the logs support it), the advancements that stood out, and a server note when something repeats.
+- A short highlight recap: combined hours, the busiest stretch, time played, the death story (including a Nether call when the logs support it), and a server note when something repeats.
 - Playtime is clipped to midnight–midnight Eastern. A server stop or restart ends a session. An unbroken session over 6 hours is called likely AFK.
-- A new player is welcomed only when world `play_time` matches the sessions in the logs. A missed advancement is named only when that player's advancement file still has it undone.
+- A new player is welcomed only when world `play_time` matches the sessions in the logs.
 
 The numbers are computed in Python from the logs (and the world save, when it is mounted). Grok 4.7 phrases those highlights. If Grok is unavailable, the same sectioned template is posted. A day with no players gets a one-line note. The job records the post in Postgres, so a restart after 8:00 AM does not double-post, and a start later that same day catches up a missed morning post.
 

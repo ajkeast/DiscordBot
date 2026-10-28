@@ -15,7 +15,6 @@ from utils.minecraft_job import (
     PreparedPost,
     activity_date_due,
     claim_daily_post,
-    embed_footer,
     mark_posted,
     minecraft_channel_id,
     prepare_post,
@@ -67,13 +66,11 @@ class Minecraft(commands.Cog):
         description = prepared.narrative
         if len(description) > 4096:
             description = description[:4090].rstrip() + "…"
-        embed = discord.Embed(
+        return discord.Embed(
             title=summary_title(prepared.stats),
             description=description,
             color=EMBED_COLOR,
         )
-        embed.set_footer(text=embed_footer(prepared.stats))
-        return embed
 
     async def _send_summary(self, channel, prepared: PreparedPost):
         if prepared.nobody_played:
