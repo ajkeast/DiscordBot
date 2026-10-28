@@ -1,15 +1,13 @@
 """Incremental nightly sentiment scoring with cheap Grok (xAI).
 
-Only scores messages that are not yet in message_sentiment. Uses the same
-prompt/schema shape as the Sentiment-Analysis backfill so rows stay compatible.
+Only scores messages that are not yet in message_sentiment. Structured outputs
+fix the categorical fields; written rows stay compatible with message_sentiment.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import time
 from typing import Any
 
 import pandas as pd
@@ -18,12 +16,8 @@ from xai_sdk import Client
 from xai_sdk.chat import system, user
 
 from utils.db import db_ops
-from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt, build_user_prompt
-from utils.sentiment_schema import (
-    SentimentResult,
-    parse_sentiment_batch_response,
-    parse_sentiment_response,
-)
+from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt
+from utils.sentiment_schema import SentimentBatch, SentimentResult
 
 load_dotenv()
 
@@ -34,7 +28,8 @@ DEFAULT_SENTIMENT_MODEL = "grok-4.3"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_CONTEXT_SIZE = 3
 DEFAULT_MAX_CONTENT_CHARS = 500
-DEFAULT_MAX_RETRIES = 3
+# Best-effort deterministic sampling. xAI honors seed when it is set.
+SENTIMENT_SEED = 7
 PROGRESS_EVERY = 25
 
 ENSURE_TABLE_SQL = """
@@ -247,81 +242,11 @@ def iter_batches(items: list[dict], batch_size: int) -> list[list[dict]]:
     return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
 
-def score_message_with_grok(
-    item: dict,
-    *,
-    model: str,
-    client: Client | None = None,
-    max_retries: int = DEFAULT_MAX_RETRIES,
-) -> SentimentResult:
-    """Score one message via Grok structured JSON (no tools / no reasoning)."""
-    if client is None:
-        api_key = os.getenv("XAI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("XAI_API_KEY is required for sentiment scoring")
-        client = Client(api_key=api_key, timeout=120)
-
-    user_prompt = build_user_prompt(item)
-    expected_id = item["message_id"]
-    last_error: Exception | None = None
-
-    for attempt in range(max_retries):
-        try:
-            chat = client.chat.create(
-                model=model,
-                temperature=0.2,
-                reasoning_effort="none",
-                response_format="json_object",
-                store_messages=False,
-            )
-            chat.append(system(SYSTEM_PROMPT))
-            chat.append(user(user_prompt))
-            response = chat.sample()
-            result = parse_sentiment_response(json.loads(response.content))
-            if result.message_id != expected_id:
-                raise ValueError(
-                    f"Model returned message_id={result.message_id!r}, expected {expected_id!r}"
-                )
-            return result
-        except Exception as exc:  # noqa: BLE001 — retry transient/parse failures
-            last_error = exc
-            logger.warning(
-                "Sentiment attempt %s/%s failed for message_id=%s: %s",
-                attempt + 1,
-                max_retries,
-                expected_id,
-                exc,
-            )
-            time.sleep(1.5 * (attempt + 1))
-
-    raise RuntimeError(
-        f"Sentiment failed for message_id={expected_id} after {max_retries} attempts: {last_error}"
-    )
-
-
-def _score_batch_once(
-    items: list[dict],
-    *,
-    model: str,
-    client: Client,
-) -> list[SentimentResult]:
-    """Attempt a single batch call; raises on parse/coverage failure."""
-    user_prompt = build_batch_user_prompt(items)
-    expected_ids = {item["message_id"] for item in items}
-    chat = client.chat.create(
-        model=model,
-        temperature=0.2,
-        reasoning_effort="none",
-        response_format="json_object",
-        store_messages=False,
-    )
-    chat.append(system(SYSTEM_PROMPT))
-    chat.append(user(user_prompt))
-    response = chat.sample()
-    return parse_sentiment_batch_response(
-        json.loads(response.content),
-        expected_ids=expected_ids,
-    )
+def _grok_client() -> Client:
+    api_key = os.getenv("XAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("XAI_API_KEY is required for sentiment scoring")
+    return Client(api_key=api_key, timeout=120)
 
 
 def score_batch_with_grok(
@@ -329,62 +254,34 @@ def score_batch_with_grok(
     *,
     model: str,
     client: Client | None = None,
-    max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> list[SentimentResult]:
-    """Score a batch via Grok.
+    """Score one batch with structured outputs.
 
-    Retries the batch call on transient/parse failures. If the batch still fails,
-    falls back to per-message scoring so one bad JSON payload cannot abort the run.
-    Individual fallback failures are logged and skipped.
+    Raises if the call fails or the returned message_ids do not match the batch.
+    The caller logs and skips that batch; those messages are retried next run.
     """
     if not items:
         return []
-    if len(items) == 1:
-        return [score_message_with_grok(items[0], model=model, client=client, max_retries=max_retries)]
-
     if client is None:
-        api_key = os.getenv("XAI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("XAI_API_KEY is required for sentiment scoring")
-        client = Client(api_key=api_key, timeout=120)
+        client = _grok_client()
 
-    last_error: Exception | None = None
-    for attempt in range(max_retries):
-        try:
-            return _score_batch_once(items, model=model, client=client)
-        except Exception as exc:  # noqa: BLE001 — retry transient/parse failures
-            last_error = exc
-            logger.warning(
-                "Sentiment batch attempt %s/%s failed (%s messages): %s",
-                attempt + 1,
-                max_retries,
-                len(items),
-                exc,
-            )
-            time.sleep(1.5 * (attempt + 1))
-
-    logger.warning(
-        "Sentiment batch failed after %s attempts (%s); falling back to per-message scoring",
-        max_retries,
-        last_error,
+    chat = client.chat.create(
+        model=model,
+        temperature=0,
+        seed=SENTIMENT_SEED,
+        reasoning_effort="none",
+        response_format=SentimentBatch,
+        store_messages=False,
     )
-    results: list[SentimentResult] = []
-    for item in items:
-        try:
-            results.append(
-                score_message_with_grok(
-                    item,
-                    model=model,
-                    client=client,
-                    max_retries=max_retries,
-                )
-            )
-        except Exception:
-            logger.exception(
-                "Sentiment fallback failed for message_id=%s",
-                item["message_id"],
-            )
-    return results
+    chat.append(system(SYSTEM_PROMPT))
+    chat.append(user(build_batch_user_prompt(items)))
+    _response, batch = chat.parse(SentimentBatch)
+
+    expected = {item["message_id"] for item in items}
+    got = [row.message_id for row in batch.results]
+    if len(got) != len(set(got)) or set(got) != expected:
+        raise ValueError(f"message_ids {got} do not match the batch {sorted(expected)}")
+    return list(batch.results)
 
 
 def upsert_results(results: list[SentimentResult], *, model: str) -> int:
@@ -400,12 +297,12 @@ def upsert_results(results: list[SentimentResult], *, model: str) -> int:
             (
                 int(mid),
                 r.polarity,
-                float(r.polarity_score),
+                min(1.0, max(-1.0, float(r.polarity_score))),
                 ",".join(r.emotions),
                 bool(r.sarcasm),
                 r.toxicity,
                 r.directed_at,
-                float(r.confidence),
+                min(1.0, max(0.0, float(r.confidence))),
                 r.rationale[:255],
                 model,
             )
@@ -417,14 +314,12 @@ def upsert_results(results: list[SentimentResult], *, model: str) -> int:
 
 
 def run_sentiment_nightly(*, limit: int | None = None) -> int:
-    """
-    Score unscored messages with Grok and upsert into message_sentiment.
+    """Score unscored messages and upsert them into message_sentiment.
 
-    Scores in batches (newest first). Malformed batch responses fall back to
-    per-message scoring; individual failures are logged and skipped so one bad
-    response cannot abort the whole run.
+    One structured-output call per batch, newest first. A failed batch is logged
+    and skipped; those messages stay unscored and are picked up on the next run.
 
-    Returns number of rows written.
+    Returns the number of rows written.
     """
     if not sentiment_enabled():
         raise RuntimeError("XAI_API_KEY is required for sentiment scoring")
@@ -436,8 +331,7 @@ def run_sentiment_nightly(*, limit: int | None = None) -> int:
 
     batch_size = sentiment_batch_size()
     model = sentiment_model()
-    api_key = os.getenv("XAI_API_KEY", "").strip()
-    client = Client(api_key=api_key, timeout=120)
+    client = _grok_client()
 
     ensure_sentiment_table()
     unscored = fetch_unscored_messages(limit=limit)
@@ -461,9 +355,6 @@ def run_sentiment_nightly(*, limit: int | None = None) -> int:
     for batch_idx, batch in enumerate(batches, start=1):
         try:
             results = score_batch_with_grok(batch, model=model, client=client)
-            skipped = len(batch) - len(results)
-            if skipped > 0:
-                failures += skipped
             written += upsert_results(results, model=model)
         except Exception:
             failures += len(batch)

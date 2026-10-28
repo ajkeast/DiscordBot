@@ -4,52 +4,100 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from cogs.sentiment import Sentiment
 from utils import sentiment_job
-from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt, build_user_prompt
-from utils.sentiment_schema import (
-    ALLOWED_EMOTIONS,
-    POLARITIES,
-    SentimentResult,
-    parse_sentiment_batch_response,
-    parse_sentiment_response,
-    parse_sentiment_result,
-)
+from utils.sentiment_prompt import SYSTEM_PROMPT, build_batch_user_prompt
+from utils.sentiment_schema import SentimentBatch, SentimentResult
+
+
+def _payload(message_id: str, **overrides) -> dict:
+    payload = {
+        "message_id": message_id,
+        "polarity": "neutral",
+        "polarity_score": 0.0,
+        "emotions": ["neutral"],
+        "sarcasm": False,
+        "toxicity": "none",
+        "directed_at": "general",
+        "confidence": 0.8,
+        "rationale": "Test result",
+    }
+    payload.update(overrides)
+    return payload
 
 
 def _result(message_id: str, *, polarity: str = "neutral") -> SentimentResult:
-    return SentimentResult(
-        message_id=message_id,
-        polarity=polarity,
-        polarity_score=0.0 if polarity == "neutral" else 0.4,
-        emotions=["neutral"] if polarity == "neutral" else ["amusement"],
-        sarcasm=False,
-        toxicity="none",
-        directed_at="general",
-        confidence=0.8,
-        rationale="Test result",
+    return SentimentResult.model_validate(
+        _payload(
+            message_id,
+            polarity=polarity,
+            polarity_score=0.0 if polarity == "neutral" else 0.4,
+            emotions=["neutral"] if polarity == "neutral" else ["amusement"],
+        )
     )
 
 
-def test_system_prompt_lists_allowed_emotions_and_polarities():
-    for emotion in ALLOWED_EMOTIONS:
-        assert emotion in SYSTEM_PROMPT
-    for polarity in POLARITIES:
-        assert polarity in SYSTEM_PROMPT
+def _chat_returning(batch: SentimentBatch) -> MagicMock:
+    chat = MagicMock()
+    chat.parse.return_value = (MagicMock(), batch)
+    client = MagicMock()
+    client.chat.create.return_value = chat
+    return client
 
 
-def test_build_user_prompt_includes_message_id():
-    prompt = build_user_prompt(
-        {
-            "message_id": "111",
-            "channel_name": "general",
-            "context_text": ">>> TARGET [alice] hello",
-        }
-    )
-    assert "message_id: 111" in prompt
-    assert "#general" in prompt
-    assert ">>> TARGET [alice] hello" in prompt
+def test_system_prompt_scores_only_the_target():
+    assert ">>> TARGET" in SYSTEM_PROMPT
+    assert "message_id" in SYSTEM_PROMPT
+    assert "sarcasm" in SYSTEM_PROMPT
+
+
+def test_schema_closes_categorical_fields_and_bounds():
+    schema = SentimentResult.model_json_schema()
+    props = schema["properties"]
+    assert props["polarity"]["enum"] == ["positive", "negative", "neutral", "mixed"]
+    assert props["toxicity"]["enum"] == ["none", "mild", "moderate", "severe"]
+    assert props["directed_at"]["enum"] == ["general", "person", "group", "self", "topic"]
+    assert set(props["emotions"]["items"]["enum"]) == {
+        "joy",
+        "anger",
+        "annoyance",
+        "amusement",
+        "sadness",
+        "fear",
+        "surprise",
+        "disgust",
+        "neutral",
+    }
+    assert props["emotions"]["minItems"] == 1
+    assert props["emotions"]["maxItems"] == 3
+    assert props["sarcasm"]["type"] == "boolean"
+    assert props["polarity_score"]["minimum"] == -1
+    assert props["polarity_score"]["maximum"] == 1
+    assert props["confidence"]["minimum"] == 0
+    assert props["confidence"]["maximum"] == 1
+    assert props["rationale"]["maxLength"] == 255
+    assert schema.get("additionalProperties", False) is False
+
+    batch = SentimentBatch.model_json_schema()
+    assert batch["properties"]["results"]["minItems"] == 1
+    assert "$ref" in batch["properties"]["results"]["items"]
+
+
+def test_schema_rejects_invented_labels_and_out_of_range_numbers():
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", polarity="frustrated"))
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", emotions=["frustrated"]))
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", emotions=[]))
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", polarity_score=1.5))
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", confidence=-0.1))
+    with pytest.raises(ValidationError):
+        SentimentResult.model_validate(_payload("1", rationale="x" * 256))
 
 
 def test_build_batch_user_prompt_includes_all_items():
@@ -67,11 +115,11 @@ def test_build_batch_user_prompt_includes_all_items():
             },
         ]
     )
-    assert 'Return JSON {"results": [...]}' in prompt
     assert "message_id: 111" in prompt
     assert "message_id: 222" in prompt
     assert "#memes" in prompt
     assert "--- ITEM 2 ---" in prompt
+    assert ">>> TARGET [bob] lol" in prompt
 
 
 def test_format_context_block_marks_target():
@@ -119,17 +167,7 @@ def test_iter_batches_splits_items():
 
 
 def test_upsert_results_writes_rows():
-    result = SentimentResult(
-        message_id="123",
-        polarity="positive",
-        polarity_score=0.5,
-        emotions=["joy"],
-        sarcasm=False,
-        toxicity="none",
-        directed_at="general",
-        confidence=0.9,
-        rationale="Friendly greeting",
-    )
+    result = _result("123", polarity="positive")
     with patch.object(sentiment_job.db_ops.db, "executemany") as execmany:
         written = sentiment_job.upsert_results([result], model="grok-4.3")
     assert written == 1
@@ -139,10 +177,80 @@ def test_upsert_results_writes_rows():
     rows = execmany.call_args.args[1]
     assert rows[0][0] == 123
     assert rows[0][1] == "positive"
-    assert rows[0][3] == "joy"
+    assert rows[0][3] == "amusement"
     assert rows[0][4] is False
     assert isinstance(rows[0][4], bool)
     assert rows[0][9] == "grok-4.3"
+
+
+def test_upsert_clamps_scores_and_slices_rationale():
+    result = SentimentResult.model_construct(
+        message_id="123",
+        polarity="negative",
+        polarity_score=4,
+        emotions=["anger"],
+        sarcasm=False,
+        toxicity="mild",
+        directed_at="person",
+        confidence=-0.2,
+        rationale="y" * 300,
+    )
+    with patch.object(sentiment_job.db_ops.db, "executemany") as execmany:
+        written = sentiment_job.upsert_results([result], model="grok-4.3")
+    assert written == 1
+    row = execmany.call_args.args[1][0]
+    assert row[2] == 1.0
+    assert row[7] == 0.0
+    assert row[8] == "y" * 255
+
+
+def test_score_batch_uses_structured_output():
+    items = [
+        {"message_id": "1", "channel_name": "general", "context_text": "t1"},
+        {"message_id": "2", "channel_name": "general", "context_text": "t2"},
+    ]
+    parsed = SentimentBatch(results=[_result("1"), _result("2")])
+    client = _chat_returning(parsed)
+
+    results = sentiment_job.score_batch_with_grok(items, model="grok-4.3", client=client)
+
+    assert [row.message_id for row in results] == ["1", "2"]
+    kwargs = client.chat.create.call_args.kwargs
+    assert kwargs["model"] == "grok-4.3"
+    assert kwargs["temperature"] == 0
+    assert kwargs["seed"] == sentiment_job.SENTIMENT_SEED
+    assert kwargs["reasoning_effort"] == "none"
+    assert kwargs["response_format"] is SentimentBatch
+    assert kwargs["store_messages"] is False
+    client.chat.create.return_value.parse.assert_called_once_with(SentimentBatch)
+
+
+def test_score_batch_rejects_mismatched_ids():
+    items = [
+        {"message_id": "1", "channel_name": "general", "context_text": "t1"},
+        {"message_id": "2", "channel_name": "general", "context_text": "t2"},
+    ]
+    client = _chat_returning(SentimentBatch(results=[_result("1"), _result("1")]))
+    with pytest.raises(ValueError, match="message_ids"):
+        sentiment_job.score_batch_with_grok(items, model="grok-4.3", client=client)
+    assert client.chat.create.return_value.parse.call_count == 1
+
+
+def test_score_batch_does_not_retry():
+    items = [{"message_id": "1", "channel_name": "general", "context_text": "t1"}]
+    chat = MagicMock()
+    chat.parse.side_effect = RuntimeError("down")
+    client = MagicMock()
+    client.chat.create.return_value = chat
+    with pytest.raises(RuntimeError, match="down"):
+        sentiment_job.score_batch_with_grok(items, model="grok-4.3", client=client)
+    assert chat.parse.call_count == 1
+
+
+def test_score_batch_empty_items_skips_the_api():
+    client = MagicMock()
+    assert sentiment_job.score_batch_with_grok([], model="grok-4.3", client=client) == []
+    client.chat.create.assert_not_called()
 
 
 def test_run_sentiment_nightly_scores_in_batches(monkeypatch):
@@ -172,7 +280,7 @@ def test_run_sentiment_nightly_scores_in_batches(monkeypatch):
         [_result("101", polarity="positive")],
     ]
 
-    with patch.object(sentiment_job, "Client"):
+    with patch.object(sentiment_job, "_grok_client"):
         with patch.object(sentiment_job, "ensure_sentiment_table"):
             with patch.object(sentiment_job, "fetch_unscored_messages", return_value=unscored):
                 with patch.object(sentiment_job, "build_prompt_items", return_value=items):
@@ -219,7 +327,7 @@ def test_run_sentiment_nightly_continues_after_batch_failure(monkeypatch):
             raise RuntimeError("boom")
         return [ok]
 
-    with patch.object(sentiment_job, "Client"):
+    with patch.object(sentiment_job, "_grok_client"):
         with patch.object(sentiment_job, "ensure_sentiment_table"):
             with patch.object(sentiment_job, "fetch_unscored_messages", return_value=unscored):
                 with patch.object(
@@ -236,253 +344,6 @@ def test_run_sentiment_nightly_continues_after_batch_failure(monkeypatch):
 
     assert written == 1
     upsert.assert_called_once_with([ok], model="grok-4.3")
-
-
-def test_score_batch_with_grok_falls_back_to_singles(monkeypatch):
-    monkeypatch.setenv("XAI_API_KEY", "xai-test")
-    items = [
-        {"message_id": "1", "channel_name": "general", "context_text": "t1"},
-        {"message_id": "2", "channel_name": "general", "context_text": "t2"},
-    ]
-    ok1 = _result("1", polarity="positive")
-    ok2 = _result("2")
-
-    with patch.object(
-        sentiment_job,
-        "_score_batch_once",
-        side_effect=ValueError("bad json"),
-    ) as batch_once:
-        with patch.object(
-            sentiment_job,
-            "score_message_with_grok",
-            side_effect=[ok1, ok2],
-        ) as score_one:
-            with patch.object(sentiment_job.time, "sleep"):
-                results = sentiment_job.score_batch_with_grok(
-                    items,
-                    model="grok-4.3",
-                    client=MagicMock(),
-                    max_retries=2,
-                )
-
-    assert results == [ok1, ok2]
-    assert batch_once.call_count == 2
-    assert score_one.call_count == 2
-
-
-def test_score_batch_with_grok_skips_failed_fallback_items(monkeypatch):
-    monkeypatch.setenv("XAI_API_KEY", "xai-test")
-    items = [
-        {"message_id": "1", "channel_name": "general", "context_text": "t1"},
-        {"message_id": "2", "channel_name": "general", "context_text": "t2"},
-    ]
-    ok2 = _result("2")
-
-    def _score_one(item, *, model, client=None, max_retries=3):
-        if item["message_id"] == "1":
-            raise RuntimeError("still bad")
-        return ok2
-
-    with patch.object(sentiment_job, "_score_batch_once", side_effect=ValueError("bad json")):
-        with patch.object(sentiment_job, "score_message_with_grok", side_effect=_score_one):
-            with patch.object(sentiment_job.time, "sleep"):
-                results = sentiment_job.score_batch_with_grok(
-                    items,
-                    model="grok-4.3",
-                    client=MagicMock(),
-                    max_retries=1,
-                )
-
-    assert results == [ok2]
-
-
-def test_parse_sentiment_response_single_object():
-    payload = {
-        "message_id": "42",
-        "polarity": "neutral",
-        "polarity_score": 0.0,
-        "emotions": ["neutral"],
-        "sarcasm": False,
-        "toxicity": "none",
-        "directed_at": "general",
-        "confidence": 0.7,
-        "rationale": "No clear valence",
-    }
-    parsed = parse_sentiment_response(payload)
-    assert parsed.message_id == "42"
-    assert parsed.polarity == "neutral"
-
-
-def test_parse_sentiment_response_legacy_results_wrapper():
-    payload = {
-        "results": [
-            {
-                "message_id": "42",
-                "polarity": "neutral",
-                "polarity_score": 0.0,
-                "emotions": ["neutral"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.7,
-                "rationale": "No clear valence",
-            }
-        ]
-    }
-    parsed = parse_sentiment_response(payload)
-    assert parsed.message_id == "42"
-
-
-def test_parse_sentiment_batch_response_validates_coverage():
-    payload = {
-        "results": [
-            {
-                "message_id": "1",
-                "polarity": "positive",
-                "polarity_score": 0.5,
-                "emotions": ["joy"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.9,
-                "rationale": "Upbeat",
-            },
-            {
-                "message_id": "2",
-                "polarity": "neutral",
-                "polarity_score": 0.0,
-                "emotions": ["neutral"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.7,
-                "rationale": "Flat",
-            },
-        ]
-    }
-    parsed = parse_sentiment_batch_response(payload, expected_ids={"1", "2"})
-    assert [r.message_id for r in parsed] == ["1", "2"]
-
-
-def test_parse_sentiment_batch_response_rejects_missing_ids():
-    payload = {
-        "results": [
-            {
-                "message_id": "1",
-                "polarity": "neutral",
-                "polarity_score": 0.0,
-                "emotions": ["neutral"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.7,
-                "rationale": "Only one",
-            }
-        ]
-    }
-    with pytest.raises(ValueError, match="omitted message_ids"):
-        parse_sentiment_batch_response(payload, expected_ids={"1", "2"})
-
-
-def test_parse_sentiment_batch_response_rejects_duplicates():
-    payload = {
-        "results": [
-            {
-                "message_id": "1",
-                "polarity": "neutral",
-                "polarity_score": 0.0,
-                "emotions": ["neutral"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.7,
-                "rationale": "First",
-            },
-            {
-                "message_id": "1",
-                "polarity": "positive",
-                "polarity_score": 0.4,
-                "emotions": ["joy"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.8,
-                "rationale": "Dup",
-            },
-        ]
-    }
-    with pytest.raises(ValueError, match="duplicate message_ids"):
-        parse_sentiment_batch_response(payload, expected_ids={"1", "2"})
-
-
-def test_coerce_emotion_used_as_polarity():
-    result = parse_sentiment_result(
-        {
-            "message_id": "7",
-            "polarity": "surprise",
-            "polarity_score": 0.1,
-            "emotions": ["joy"],
-            "sarcasm": False,
-            "toxicity": "none",
-            "directed_at": "general",
-            "confidence": 0.8,
-            "rationale": "Unexpected twist",
-        }
-    )
-    assert result.polarity == "neutral"
-    assert result.emotions[0] == "surprise"
-    assert "joy" in result.emotions
-
-
-def test_emotion_aliases_map_confusion():
-    result = parse_sentiment_result(
-        {
-            "message_id": "8",
-            "polarity": "neutral",
-            "polarity_score": 0.0,
-            "emotions": ["confusion"],
-            "sarcasm": False,
-            "toxicity": "none",
-            "directed_at": "general",
-            "confidence": 0.7,
-            "rationale": "Unclear intent",
-        }
-    )
-    assert result.emotions == ["surprise"]
-
-
-def test_unknown_emotions_fall_back_to_neutral():
-    result = parse_sentiment_result(
-        {
-            "message_id": "9",
-            "polarity": "neutral",
-            "polarity_score": 0.0,
-            "emotions": ["existential-dread"],
-            "sarcasm": False,
-            "toxicity": "none",
-            "directed_at": "general",
-            "confidence": 0.5,
-            "rationale": "Weird label",
-        }
-    )
-    assert result.emotions == ["neutral"]
-
-
-def test_invalid_polarity_still_raises():
-    with pytest.raises(ValueError, match="invalid polarity"):
-        parse_sentiment_result(
-            {
-                "message_id": "7",
-                "polarity": "ecstatic",
-                "polarity_score": 0.9,
-                "emotions": ["joy"],
-                "sarcasm": False,
-                "toxicity": "none",
-                "directed_at": "general",
-                "confidence": 0.8,
-                "rationale": "Too happy",
-            }
-        )
 
 
 def test_sentiment_cog_starts_when_api_key_present(monkeypatch):
