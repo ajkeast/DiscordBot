@@ -169,7 +169,9 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
         assert name in text
     assert "Time played" in text
     assert "Deaths (19)" in text
-    assert "Advancements (28)" in text
+    assert "Advancements" not in text
+    assert "Acquire Hardware" not in text
+    assert "didn't earn" not in text
     assert "likely AFK" in text
     assert "The Nether trip went badly" in text
     assert "8 to 11 PM" in text
@@ -177,21 +179,15 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
     assert "EpicPigz 6 times" in text
     assert "lava, Magma Cubes, and Ghasts" in text
     assert "45 hours" in text
-    assert "Acquire Hardware" in text
-    assert "Cover Me with Diamonds" in text
-    assert "got 5 each, and Conkeastador got 3." in text
-    assert "Hot Tourist Destinations" in text
-    assert "A Terrible Fortress" in text
-    assert "didn't earn" in text
     assert "squished" in text
     assert "FishNet" not in text
     assert text.count("\n\n") >= 3
     payload = grok_payload(stats)
     assert "slices" not in payload
     assert "death_lines" not in payload
+    assert "advancements" not in payload["highlights"]
     assert payload["highlights"]["deaths"]["total"] == 19
     assert payload["highlights"]["deaths"]["nether"] is True
-    assert payload["highlights"]["advancements"]["total"] == 28
 
 
 def test_nobody_played_is_a_one_liner():
@@ -216,9 +212,10 @@ def test_prompt_asks_for_sections_and_a_nether_call_only_when_supported():
     assert "busiest" in SYSTEM_PROMPT
     assert "Nether" in SYSTEM_PROMPT
     assert "deaths.nether" in SYSTEM_PROMPT
+    assert "Do not mention advancements" in SYSTEM_PROMPT
 
 
-def test_narrative_requires_a_nudge_and_a_welcome_when_the_json_says_so():
+def test_narrative_welcomes_a_new_player_and_rejects_advancement_talk():
     stats = _steve_stats()
     stats["players"][0]["no_advancements"] = True
     stats["players"][0]["new_player"] = True
@@ -227,12 +224,16 @@ def test_narrative_requires_a_nudge_and_a_welcome_when_the_json_says_so():
     stats["totals"]["advancements"] = 0
     assert narrative_ok("Steve fell from a high place.", stats) is False
     assert narrative_ok(
-        "Time played\nWelcome Steve. He fell from a high place. No advancement today.",
+        "Time played\nWelcome Steve. He fell from a high place.",
         stats,
     ) is True
+    assert narrative_ok(
+        "Time played\nWelcome Steve. He fell from a high place. No advancement today.",
+        stats,
+    ) is False
 
 
-def test_template_names_a_confirmed_miss_and_welcomes_a_new_player():
+def test_template_welcomes_a_new_player_without_an_advancement_nudge():
     stats = _steve_stats()
     stats["players"][0]["new_player"] = True
     stats["players"][0]["no_advancements"] = True
@@ -257,19 +258,20 @@ def test_template_names_a_confirmed_miss_and_welcomes_a_new_player():
     stats["totals"]["advancements"] = 1
     text = render_template(stats)
     assert "Welcome" in text
-    assert "Hey, Steve, I saw you missed Stone Age." in text
+    assert "Stone Age" not in text
+    assert "advancement" not in text.lower()
     assert "Died" not in text
 
 
-def test_narrative_requires_the_death_and_the_title():
+def test_narrative_requires_the_death_and_rejects_a_title():
     stats = _steve_stats()
     assert narrative_ok("Steve had a nice day.", stats) is False
     assert narrative_ok(
-        "Time played\nSteve played 1h. He fell from a high place and earned Stone Age.",
+        "Time played\nSteve played 1h. He fell from a high place.",
         stats,
     ) is True
     assert narrative_ok(
-        "Steve fell from a high place. 2 deaths, 1 advancement.",
+        "Time played\nSteve played 1h. He fell from a high place and earned Stone Age.",
         stats,
     ) is False
 
@@ -283,13 +285,12 @@ def test_grok_text_is_used_when_it_matches_the_json(monkeypatch):
     chat.sample.return_value = MagicMock(
         content=(
             "```\n**Time played**\nSteve, 1h, 1 session.\n\n"
-            "**Deaths (2)**\nHe fell from a high place.\n\n"
-            "**Advancements (1)**\nStone Age.\n```"
+            "**Deaths (2)**\nHe fell from a high place.\n```"
         )
     )
     text, source = render_narrative(stats, client=client)
     assert source == "grok"
-    assert "Stone Age" in text
+    assert "Stone Age" not in text
     assert "fell from a high place" in text
     assert client.chat.create.call_args.kwargs["model"] == "grok-4.7"
     assert client.chat.create.call_args.kwargs["reasoning_effort"] == "low"
@@ -541,7 +542,9 @@ async def test_preview_sends_an_embed_without_posting(mock_bot, mock_ctx):
         await cog.minecraft_summary.callback(cog, mock_ctx, day="2026-10-25")
     mock_ctx.send.assert_awaited()
     embed = mock_ctx.send.call_args.kwargs["embed"]
-    assert "October 25, 2026" in embed.title
+    assert embed.title == "Sunday, October 25, 2026"
+    assert "Minecraft" not in embed.title
+    assert not embed.footer.text
     assert "Steve played" in embed.description
     assert mock_ctx.channel.send.await_count == 0
 

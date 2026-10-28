@@ -109,16 +109,15 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small Discord server.
 You are given JSON of highlights computed from the logs. Use only that JSON.
-Write the way a friend would recap the night: a couple of sentences of context, then short sections. A list of every death or every title is not what anyone wants.
+Write the way a friend would recap the night: a couple of sentences of context, then short sections. A list of every death is not what anyone wants.
 
 Sections, with a blank line between them:
 1. Opening: how many players, the combined string, and the busiest stretch when busiest is set. Use its start_label and end_label. Say people were mostly in the Nether only when busiest.mostly_nether is true.
 2. Time played — a heading, then one line per person. Use the playtime string and session count. Mention still online, the AFK stretch, or a welcome only when those fields say so.
 3. Deaths (the total) — skip when the total is 0. When deaths.nether is true, open with the Nether trip going badly. Then one sentence for the cluster: who died how many times, between the two clock labels, mostly to the causes, in that order. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
-4. Advancements (the total) — spotlight one single-session run when a group has one_session and a span, from the first title to the last. Call it their first session when first_session is true. Spotlight one other unique title with "including" when notable is set. Lump every remaining group into a single sentence by count. Then one line per burst and per shared title. One line for anyone in advancements.none. Say someone missed a title only when advancements.missed lists it, as "Hey, Name, I saw you missed Title."
-5. Server notes — the note text you were given. Omit the section when server_notes is empty.
+4. Server notes — the note text you were given. Omit the section when server_notes is empty.
 
-Do not invent players, times, places, dimensions, or causes. Do not say the Nether unless those flags are true. Discord markdown. No code fence. Stay under 1600 characters.
+Do not mention advancements, challenges, goals, or titles. Do not invent players, times, places, dimensions, or causes. Do not say the Nether unless those flags are true. Discord markdown. No code fence. Stay under 1600 characters.
 """
 
 
@@ -384,8 +383,9 @@ def build_day_stats(
 
 
 def grok_payload(stats: dict) -> dict:
-    """Highlights the model may phrase. No raw slices or per-death logs."""
-    highlights = stats.get("highlights") or _minimal_highlights(stats)
+    """Highlights the model may phrase. No raw slices, death logs, or advancements."""
+    raw = stats.get("highlights") or _minimal_highlights(stats)
+    highlights = {key: value for key, value in raw.items() if key != "advancements"}
     return {
         "date": stats.get("pretty_date"),
         "partial_day": bool(stats.get("partial_day")),
@@ -435,17 +435,6 @@ _DEATH_HINTS = (
     "berry",
 )
 
-_NUDGE_MARKERS = (
-    "no advancement",
-    "didn't earn",
-    "did not earn",
-    "without an advancement",
-    "zero advancement",
-    "missed",
-    "place to start",
-)
-
-
 def _death_fact_present(text: str, stats: dict) -> bool:
     blob = " ".join(item["message"].lower() for item in stats.get("deaths") or [])
     if not blob:
@@ -458,8 +447,20 @@ def _death_fact_present(text: str, stats: dict) -> bool:
     return any(word in lowered for word in words)
 
 
+def _known_advancement_titles(stats: dict) -> list[str]:
+    titles: list[str] = []
+    for item in stats.get("advancements") or []:
+        title = item.get("title")
+        if title:
+            titles.append(title)
+    for player in stats.get("players") or []:
+        titles.extend(player.get("advancement_titles") or [])
+        titles.extend(player.get("missed_advancements") or [])
+    return titles
+
+
 def narrative_ok(text: str, stats: dict) -> bool:
-    """Accept a reply that names everyone and uses the deaths and titles."""
+    """Accept a reply that names everyone and uses the deaths, not titles."""
     cleaned = text.strip()
     if not cleaned or len(cleaned) > MAX_NARRATIVE_CHARS:
         return False
@@ -468,17 +469,15 @@ def narrative_ok(text: str, stats: dict) -> bool:
             return False
     if stats["totals"]["deaths"] and not _death_fact_present(cleaned, stats):
         return False
-    titles = [item["title"] for item in stats.get("advancements") or [] if item.get("title")]
-    if titles and not any(title.lower() in cleaned.lower() for title in titles):
-        return False
     lowered = cleaned.lower()
+    if "advancement" in lowered:
+        return False
+    if any(title.lower() in lowered for title in _known_advancement_titles(stats) if title):
+        return False
     if stats["players"] and "time played" not in lowered:
         return False
     if (stats.get("highlights") or {}).get("deaths", {}).get("nether") and "nether" not in lowered:
         return False
-    if any(player.get("no_advancements") for player in stats["players"]):
-        if not any(marker in lowered for marker in _NUDGE_MARKERS):
-            return False
     if any(player.get("new_player") for player in stats["players"]):
         if "welcome" not in lowered:
             return False
@@ -693,64 +692,6 @@ def _other_bit(row: dict) -> str:
     return f"{name} died {count} times"
 
 
-def _lumped_groups(groups: list[dict]) -> str:
-    """One sentence for everyone who doesn't get their own story line."""
-    buckets: list[tuple[int, list[str]]] = []
-    for group in groups:
-        names = list(group["names"])
-        if buckets and buckets[-1][0] == group["count"]:
-            buckets[-1][1].extend(names)
-        else:
-            buckets.append((group["count"], names))
-    parts = []
-    for count, names in buckets:
-        shown = [_md(name) for name in names]
-        if len(shown) == 1:
-            parts.append(f"{shown[0]} got {count}")
-        else:
-            parts.append(f"{_and_join(shown)} got {count} each")
-    if not parts:
-        return ""
-    if len(parts) == 1:
-        return parts[0] + "."
-    return ", ".join(parts[:-1]) + ", and " + parts[-1] + "."
-
-
-def _group_line(group: dict) -> str:
-    names = [_md(name) for name in group["names"]]
-    count = group["count"]
-    if len(names) == 1:
-        who = f"{names[0]} got {count}"
-    elif len(names) == 2:
-        who = f"{names[0]} and {names[1]} got {count} each"
-    else:
-        who = f"{_and_join(names)} got {count} each"
-    if group.get("first_session"):
-        who += " in their first session"
-    elif group.get("one_session"):
-        who += " in one session"
-    span = group.get("span") or []
-    if len(span) == 2:
-        who += f", from {_md(span[0])} to {_md(span[1])}"
-    elif group.get("notable"):
-        who += f", including {_md(group['notable'])}"
-    if who.endswith(("?", "!", ".")):
-        return who
-    return who + "."
-
-
-def _burst_line(burst: dict) -> str:
-    names = [_md(name) for name in burst["players"]]
-    title = _md(burst["title"])
-    when = burst["at_label"]
-    if burst.get("seconds_apart", 999) <= 15:
-        pace = "within seconds of each other"
-    else:
-        pace = "within a couple of minutes"
-    kind = "challenge" if burst.get("kind") == "challenge" else "advancement"
-    return f"{_and_join(names)} all finished the {title} {kind} {pace} at {when}."
-
-
 def _render_highlights(stats: dict, highlights: dict) -> str:
     sections: list[str] = []
     overview = ""
@@ -790,49 +731,6 @@ def _render_highlights(stats: dict, highlights: dict) -> str:
             story.append(_and_join([_other_bit(row) for row in others]) + ".")
         if story:
             lines.append(" ".join(story))
-        sections.append("\n".join(lines))
-
-    advancements = highlights.get("advancements") or {}
-    if advancements.get("total") or advancements.get("none") or advancements.get("missed"):
-        lines = [f"**Advancements ({advancements.get('total', 0)})**"]
-        groups = list(advancements.get("groups") or [])
-        arc = next(
-            (
-                group
-                for group in groups
-                if group.get("one_session") and len(group.get("span") or []) == 2
-            ),
-            None,
-        )
-        remaining = [group for group in groups if group is not arc]
-        standout = next((group for group in remaining if group.get("notable")), None)
-        remaining = [group for group in remaining if group is not standout]
-        if arc is not None:
-            lines.append(_group_line(arc))
-        if standout is not None:
-            lines.append(
-                _group_line(
-                    {
-                        **standout,
-                        "span": [],
-                        "one_session": False,
-                        "first_session": False,
-                    }
-                )
-            )
-        lumped = _lumped_groups(remaining)
-        if lumped:
-            lines.append(lumped)
-        for burst in advancements.get("bursts") or []:
-            lines.append(_burst_line(burst))
-        for shared in advancements.get("shared") or []:
-            people = _people_phrase(shared["count"], shared["count"])
-            lines.append(f"{people.capitalize()} people reached {_md(shared['title'])}.")
-        for missed in advancements.get("missed") or []:
-            titles = [_md(title) for title in missed["titles"][:2]]
-            lines.append(f"Hey, {_md(missed['name'])}, I saw you missed {_and_join(titles)}.")
-        for name in advancements.get("none") or []:
-            lines.append(f"{_md(name)} didn't earn an advancement.")
         sections.append("\n".join(lines))
 
     notes = highlights.get("server_notes") or []
@@ -942,12 +840,6 @@ def prepare_post(
     )
 
 
-def embed_footer(stats: dict) -> str:
-    footer = "Midnight to midnight America/New_York. Sessions over 6 hours are likely AFK."
-    if stats.get("partial_day"):
-        footer += " This day is still in progress."
-    return footer
-
-
 def summary_title(stats: dict) -> str:
-    return f"Minecraft — {stats['pretty_date']}"
+    """Date only. The post already lives in #minecraft."""
+    return stats["pretty_date"]
