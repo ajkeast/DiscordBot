@@ -99,7 +99,7 @@ Join a voice channel, then:
 | `/pause` / `/resume` | Pause or resume |
 | `/leave` | Disconnect from voice |
 
-Requires **Lavalink** (Java audio node) with SoundCloud enabled. The Discord bot talks to Lavalink via Wavelink. The bot needs **Connect** and **Speak** permissions in the voice channel.
+Requires **Lavalink** (Java audio node). SoundCloud now streams AAC over HLS (fragmented MP4). Lavalink's built-in SoundCloud source still asks for the removed MP3 URLs, so the node loads the [Soundy](https://github.com/Lochis/soundy) plugin instead (`deploy/lavalink/application.yml`). The first start downloads that plugin from JitPack. The Discord bot talks to Lavalink via Wavelink. The bot needs **Connect** and **Speak** permissions in the voice channel.
 
 Production setup:
 
@@ -150,7 +150,7 @@ docker compose -f docker-compose.prod.yml up --build -d
   - `ai.py`: `/ask`, `/imagine`, `/clear`, `/voice`
   - `first.py`: `/1st` daily game
   - `dinkcoin.py`: DINK balance, ledger, pay, request
-  - `music.py`: SoundCloud `/play` via Lavalink + Wavelink
+  - `music.py`: SoundCloud `/play` via Lavalink (Soundy AAC HLS) + Wavelink
   - `sentiment.py`: Nightly + manual message sentiment scoring
   - `minecraft.py`: Daily Minecraft log summary for #minecraft
   - `server.py` / `utility.py` / `misc.py`: server stats and misc commands

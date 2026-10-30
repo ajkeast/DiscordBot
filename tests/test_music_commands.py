@@ -8,6 +8,7 @@ from cogs.music import (
     MAX_QUEUE_SIZE,
     Music,
     _lavalink_user_message,
+    expand_soundcloud_short_link,
     format_duration,
     full_stream_tracks,
     is_preview_track,
@@ -45,6 +46,31 @@ def test_to_search_query(report):
     bare = to_search_query("soundcloud.com/artist/track-name")
     report.record("bare url gets scheme", True, bare.startswith("https://"), section=SECTION_COMMANDS)
     assert bare.startswith("https://")
+    mobile = to_search_query("https://m.soundcloud.com/artist/track-name?si=abc")
+    report.record(
+        "mobile host rewritten",
+        "https://soundcloud.com/artist/track-name?si=abc",
+        mobile,
+        section=SECTION_COMMANDS,
+    )
+    assert mobile == "https://soundcloud.com/artist/track-name?si=abc"
+    assert to_search_query("https://www.soundcloud.com/artist/track-name").startswith(
+        "https://www.soundcloud.com/"
+    )
+
+
+def test_expand_soundcloud_short_link(report):
+    permalink = "https://soundcloud.com/artist/track-name"
+    response = MagicMock()
+    response.geturl.return_value = permalink
+    response.__enter__.return_value = response
+    response.__exit__.return_value = False
+    with patch("cogs.music.urlopen", return_value=response) as urlopen:
+        actual = expand_soundcloud_short_link("https://on.soundcloud.com/abc123")
+    report.record("short link expands", permalink, actual, section=SECTION_COMMANDS)
+    assert actual == permalink
+    urlopen.assert_called_once()
+    assert expand_soundcloud_short_link(permalink) == permalink
 
 
 def test_format_duration(report):

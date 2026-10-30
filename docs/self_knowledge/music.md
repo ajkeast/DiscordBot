@@ -3,8 +3,9 @@
 Play SoundCloud audio in a voice channel. Join a voice channel first, then use
 `/play` with either a **SoundCloud URL** or a **search phrase**.
 
-Audio is fetched by **Lavalink** (built-in SoundCloud source), not by the Discord
-bot process itself. YouTube is not supported (VPS IPs get blocked).
+Audio is fetched by **Lavalink** using the Soundy plugin, which plays SoundCloud's
+AAC HLS streams. The Discord bot process does not download the audio itself.
+YouTube is not supported (VPS IPs get blocked).
 
 ## Play — `/play`
 
