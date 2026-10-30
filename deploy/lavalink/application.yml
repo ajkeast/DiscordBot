@@ -10,7 +10,10 @@ lavalink:
       # YouTube disabled — datacenter IPs are blocked even with OAuth.
       youtube: false
       bandcamp: true
-      soundcloud: true
+      # Built-in SoundCloud still requests progressive MP3 and HLS MP3.
+      # SoundCloud removed those. The stream URL 404s. Playback is the
+      # Soundy plugin below, which uses AAC HLS (fragmented MP4, audio/mp4).
+      soundcloud: false
       twitch: true
       vimeo: true
       http: false
@@ -23,9 +26,16 @@ lavalink:
     useSeekGhosting: true
     playerUpdateInterval: 5
     soundcloudSearchEnabled: true
-    # Drop Go+ ~30s previews; /play only uses fully streamable uploads.
+    # Only applies to the built-in source, which is off. Soundy drops Go+
+    # tracks whose policy is SNIPPED (~30s previews).
     soundcloudFilterOutPreviewTracks: true
     gc-warnings: true
+  plugins:
+    # https://github.com/Lochis/soundy tag v1.1.0 — AAC HLS / fMP4 SoundCloud.
+    # Built against lavaplayer 2.2.6, which Lavalink 4.2.2 bundles.
+    - dependency: "com.github.Lochis.soundy:plugin:v1.1.0"
+      repository: "https://jitpack.io"
+      snapshot: false
 
 metrics:
   prometheus:
@@ -33,6 +43,10 @@ metrics:
 
 sentry:
   dsn: ""
+
+plugins:
+  soundy:
+    enabled: true
 
 logging:
   file:

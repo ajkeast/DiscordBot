@@ -1,4 +1,4 @@
-"""SoundCloud voice playback via Lavalink + Wavelink (URL or search query)."""
+"""SoundCloud voice playback via Lavalink (Soundy AAC HLS) + Wavelink."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import logging
 import os
 import re
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.error import URLError
+from urllib.parse import urlparse, urlunparse
+from urllib.request import Request, urlopen
 
 import discord
 import wavelink
@@ -56,9 +58,37 @@ def to_search_query(query: str) -> str:
     text = query.strip()
     if is_soundcloud_url(text):
         if "://" not in text:
-            return f"https://{text}"
-        return text
+            text = f"https://{text}"
+        return _prefer_soundcloud_host(text)
     return text
+
+
+def _prefer_soundcloud_host(url: str) -> str:
+    """Rewrite m.soundcloud.com so the Soundy source manager accepts the URL.
+
+    Soundy matches soundcloud.com and www.soundcloud.com only.
+    """
+    parsed = urlparse(url)
+    if (parsed.hostname or "").lower() != "m.soundcloud.com":
+        return url
+    return urlunparse(parsed._replace(netloc="soundcloud.com"))
+
+
+def expand_soundcloud_short_link(url: str) -> str:
+    """Follow on.soundcloud.com to the permalink Soundy can load."""
+    parsed = urlparse(url)
+    if (parsed.hostname or "").lower() != "on.soundcloud.com":
+        return url
+    request = Request(url, headers={"User-Agent": "DiscordBot music"})
+    try:
+        with urlopen(request, timeout=8) as response:
+            final = response.geturl()
+    except (OSError, URLError, ValueError):
+        logger.warning("Could not expand SoundCloud short link %s", url, exc_info=True)
+        return url
+    if not is_soundcloud_url(final):
+        return url
+    return to_search_query(final)
 
 
 def format_duration(seconds: Optional[int | float]) -> str:
@@ -346,9 +376,15 @@ class Music(commands.Cog):
                 await ctx.send(str(exc))
                 return
 
+            prepared = to_search_query(query)
+            if is_soundcloud_url(prepared):
+                host = (urlparse(prepared).hostname or "").lower()
+                if host == "on.soundcloud.com":
+                    prepared = await asyncio.to_thread(expand_soundcloud_short_link, prepared)
+
             try:
                 tracks = await wavelink.Playable.search(
-                    to_search_query(query),
+                    prepared,
                     source=wavelink.TrackSource.SoundCloud,
                 )
             except Exception as exc:

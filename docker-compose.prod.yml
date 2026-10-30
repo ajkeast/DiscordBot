@@ -8,7 +8,8 @@
 services:
   lavalink:
     container_name: discord-lavalink
-    image: ghcr.io/lavalink-devs/lavalink:4
+    # 4.2.2 bundles lavaplayer 2.2.6, which Soundy v1.1.0 decodes fMP4 with.
+    image: ghcr.io/lavalink-devs/lavalink:4.2.2
     restart: unless-stopped
     environment:
       LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
