@@ -99,6 +99,8 @@ Join a voice channel, then:
 | `/pause` / `/resume` | Pause or resume |
 | `/leave` | Disconnect from voice |
 
+The bot leaves voice on its own after 5 minutes with nothing playing, or after about 90 seconds if everyone else has left the channel. `MUSIC_INACTIVE_TIMEOUT` (seconds) overrides the idle wait.
+
 Requires **Lavalink** (Java audio node). SoundCloud now streams AAC over HLS (fragmented MP4). Lavalink's built-in SoundCloud source still asks for the removed MP3 URLs, so the node loads the [Soundy](https://github.com/Lochis/soundy) plugin instead (`deploy/lavalink/application.yml`). The first start downloads that plugin from JitPack. The Discord bot talks to Lavalink via Wavelink. The bot needs **Connect** and **Speak** permissions in the voice channel.
 
 Production setup:

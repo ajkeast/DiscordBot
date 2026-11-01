@@ -22,6 +22,30 @@ logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
 MAX_PLAY_CANDIDATES = 8
+# Seconds to stay in an empty voice channel (everyone else left) before disconnecting.
+ALONE_TIMEOUT = 90
+
+
+def _inactive_timeout_seconds(default: int = 300) -> int:
+    """Idle seconds before wavelink fires ``on_wavelink_inactive_player``.
+
+    ``MUSIC_INACTIVE_TIMEOUT`` overrides the default. Invalid values keep the default.
+    """
+    raw = os.getenv("MUSIC_INACTIVE_TIMEOUT", "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid MUSIC_INACTIVE_TIMEOUT=%r; using %s", raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Ignoring non-positive MUSIC_INACTIVE_TIMEOUT=%s; using %s", value, default)
+        return default
+    return value
+
+
+INACTIVE_TIMEOUT = _inactive_timeout_seconds()
 
 SOUNDCLOUD_HOSTS = frozenset({
     "soundcloud.com",
@@ -165,6 +189,7 @@ class Music(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._alone_tasks: dict[int, asyncio.Task[None]] = {}
 
     async def cog_load(self) -> None:
         uri = os.getenv("LAVALINK_URI", "http://127.0.0.1:2333").strip()
@@ -173,7 +198,14 @@ class Music(commands.Cog):
             logger.warning(
                 "LAVALINK_PASSWORD is empty — set it in .env to match Lavalink."
             )
-        nodes = [wavelink.Node(identifier="main", uri=uri, password=password or "youshallnotpass")]
+        nodes = [
+            wavelink.Node(
+                identifier="main",
+                uri=uri,
+                password=password or "youshallnotpass",
+                inactive_player_timeout=INACTIVE_TIMEOUT,
+            )
+        ]
         try:
             await wavelink.Pool.connect(nodes=nodes, client=self.bot)
             logger.info("Connected to Lavalink at %s", uri)
@@ -181,10 +213,81 @@ class Music(commands.Cog):
             logger.exception("Failed to connect to Lavalink at %s", uri)
 
     async def cog_unload(self) -> None:
+        for guild_id in list(self._alone_tasks):
+            self._cancel_alone(guild_id)
         try:
             await wavelink.Pool.close()
         except Exception:
             logger.debug("Lavalink pool close failed", exc_info=True)
+
+    def _cancel_alone(self, guild_id: int) -> None:
+        task = self._alone_tasks.pop(guild_id, None)
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    def _arm_alone(self, guild_id: int) -> None:
+        current = self._alone_tasks.get(guild_id)
+        if current is not None and not current.done():
+            return
+        self._alone_tasks[guild_id] = asyncio.create_task(
+            self._leave_if_still_alone(guild_id),
+            name=f"music-alone-{guild_id}",
+        )
+
+    @staticmethod
+    def _channel_has_human(channel: object) -> bool:
+        members = getattr(channel, "members", None) or ()
+        return any(not getattr(member, "bot", False) for member in members)
+
+    async def _leave_if_still_alone(self, guild_id: int) -> None:
+        await asyncio.sleep(ALONE_TIMEOUT)
+        self._alone_tasks.pop(guild_id, None)
+        guild = self.bot.get_guild(guild_id)
+        player = getattr(guild, "voice_client", None) if guild is not None else None
+        if not isinstance(player, wavelink.Player) or player.channel is None:
+            return
+        if self._channel_has_human(player.channel):
+            return
+        await self._disconnect_player(player)
+
+    async def _disconnect_player(self, player: wavelink.Player) -> None:
+        """Clear playback state and leave voice so the next ``/play`` starts clean."""
+        guild_id = getattr(getattr(player, "guild", None), "id", None)
+        if isinstance(guild_id, int):
+            self._cancel_alone(guild_id)
+        self._discard_search_fallbacks(player)
+        player.music_pending_ctx = None  # type: ignore[attr-defined]
+        player.queue.clear()
+        if not player.connected:
+            return
+        await player.disconnect()
+
+    @commands.Cog.listener()
+    async def on_wavelink_inactive_player(self, player: wavelink.Player) -> None:
+        """Nothing has played for ``INACTIVE_TIMEOUT`` seconds (wavelink idle clock)."""
+        if player is None or player.playing:
+            return
+        await self._disconnect_player(player)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        _before: discord.VoiceState,
+        _after: discord.VoiceState,
+    ) -> None:
+        """Leave a bit sooner when every human has left the voice channel."""
+        guild = getattr(member, "guild", None)
+        if guild is None:
+            return
+        player = guild.voice_client
+        if not isinstance(player, wavelink.Player) or player.channel is None:
+            self._cancel_alone(guild.id)
+            return
+        if self._channel_has_human(player.channel):
+            self._cancel_alone(guild.id)
+            return
+        self._arm_alone(guild.id)
 
     def _discard_search_fallbacks(self, player: wavelink.Player) -> None:
         """Drop leftover search candidates so skip/stop never walks the result list."""
@@ -352,6 +455,9 @@ class Music(commands.Cog):
 
         assert isinstance(player, wavelink.Player)
         player.autoplay = wavelink.AutoPlayMode.partial
+        # Resets wavelink's idle clock. Starts immediately when nothing is playing
+        # (including a failed /play); a track start cancels it.
+        player.inactive_timeout = INACTIVE_TIMEOUT
         if ctx.channel is not None:
             player.music_text_channel = ctx.channel  # type: ignore[attr-defined]
         return player
@@ -538,9 +644,7 @@ class Music(commands.Cog):
         if not isinstance(player, wavelink.Player):
             await ctx.send("I'm not in a voice channel.")
             return
-        self._discard_search_fallbacks(player)
-        player.queue.clear()
-        await player.disconnect()
+        await self._disconnect_player(player)
         await ctx.send("Left the voice channel.")
 
 
