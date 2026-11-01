@@ -20,12 +20,14 @@ Also works with the `_play` prefix.
 | Command | What it does |
 |---------|----------------|
 | `/skip` | Skip the current track |
-| `/stop` | Stop and clear the queue (bot stays in voice) |
+| `/stop` | Stop and clear the queue. The bot leaves after a few minutes of silence. |
 | `/queue` | Show now playing + upcoming tracks |
 | `/np` | Show the track playing now |
 | `/pause` | Pause |
 | `/resume` | Resume |
-| `/leave` | Disconnect and clear the queue |
+| `/leave` | Disconnect immediately and clear the queue |
+
+The bot also leaves on its own: about 5 minutes after playback stops (nothing queued and no track loaded), or about 90 seconds after everyone else has left the channel. Pausing a track that is still loaded does not start the 5 minute timer.
 
 ## Tips for members
 

@@ -1,12 +1,17 @@
 """Unit tests for music helpers and command edge cases (Lavalink/Wavelink SoundCloud)."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 import wavelink
 
 from cogs.music import (
+    ALONE_TIMEOUT,
+    INACTIVE_TIMEOUT,
     MAX_QUEUE_SIZE,
     Music,
+    _inactive_timeout_seconds,
     _lavalink_user_message,
     expand_soundcloud_short_link,
     format_duration,
@@ -469,3 +474,219 @@ async def test_skip_clears_fallbacks_and_plays_queue(report, mock_bot, mock_ctx)
 def test_max_queue_size_constant(report):
     report.record("MAX_QUEUE_SIZE", 50, MAX_QUEUE_SIZE, section=SECTION_COMMANDS)
     assert MAX_QUEUE_SIZE == 50
+
+
+def test_inactive_timeout_env(monkeypatch, report):
+    monkeypatch.delenv("MUSIC_INACTIVE_TIMEOUT", raising=False)
+    assert _inactive_timeout_seconds() == 300
+    monkeypatch.setenv("MUSIC_INACTIVE_TIMEOUT", " 120 ")
+    assert _inactive_timeout_seconds() == 120
+    monkeypatch.setenv("MUSIC_INACTIVE_TIMEOUT", "nope")
+    assert _inactive_timeout_seconds() == 300
+    monkeypatch.setenv("MUSIC_INACTIVE_TIMEOUT", "0")
+    assert _inactive_timeout_seconds() == 300
+    monkeypatch.setenv("MUSIC_INACTIVE_TIMEOUT", "-5")
+    assert _inactive_timeout_seconds() == 300
+    monkeypatch.delenv("MUSIC_INACTIVE_TIMEOUT", raising=False)
+    assert _inactive_timeout_seconds() == 300
+    assert ALONE_TIMEOUT == 90
+    report.record("idle timeout default", 300, _inactive_timeout_seconds(), section=SECTION_COMMANDS)
+
+
+def _voice_player(*, guild_id: int, humans: int, playing: bool = False):
+    """Player sitting in a channel with ``humans`` non-bot members plus the bot."""
+    guild = MagicMock()
+    guild.id = guild_id
+    members = [MagicMock(bot=True)]
+    members.extend(MagicMock(bot=False) for _ in range(humans))
+    channel = MagicMock()
+    channel.members = members
+    player = MagicMock(spec=wavelink.Player)
+    player.playing = playing
+    player.connected = True
+    player.paused = False
+    player.channel = channel
+    player.guild = guild
+    player.queue = MagicMock()
+    player.disconnect = AsyncMock()
+    player.music_fallbacks = [MagicMock(title="leftover")]
+    player.music_announce_fallback = True
+    player.music_pending_ctx = MagicMock()
+    guild.voice_client = player
+    return guild, player
+
+
+async def test_cog_load_sets_inactive_player_timeout(mock_bot, monkeypatch, report):
+    monkeypatch.setenv("LAVALINK_URI", "http://lavalink.test:2333")
+    monkeypatch.setenv("LAVALINK_PASSWORD", "pw")
+    cog = Music(mock_bot)
+    with patch("cogs.music.wavelink.Node", return_value=MagicMock()) as node:
+        with patch("cogs.music.wavelink.Pool.connect", new=AsyncMock()) as connect:
+            await cog.cog_load()
+    node.assert_called_once_with(
+        identifier="main",
+        uri="http://lavalink.test:2333",
+        password="pw",
+        inactive_player_timeout=INACTIVE_TIMEOUT,
+    )
+    connect.assert_awaited_once()
+    assert connect.await_args.kwargs["client"] is mock_bot
+    report.record(
+        "node idle timeout",
+        INACTIVE_TIMEOUT,
+        node.call_args.kwargs["inactive_player_timeout"],
+        section=SECTION_COMMANDS,
+    )
+
+
+async def test_ensure_player_arms_inactive_timeout(mock_bot, mock_ctx, report):
+    channel = MagicMock()
+    perms = MagicMock()
+    perms.connect = True
+    perms.speak = True
+    channel.permissions_for.return_value = perms
+    player = MagicMock(spec=wavelink.Player)
+    player.channel = channel
+    channel.connect = AsyncMock(return_value=player)
+
+    mock_ctx.guild = MagicMock()
+    mock_ctx.guild.me = MagicMock()
+    mock_ctx.author.voice = MagicMock(channel=channel)
+    mock_ctx.voice_client = None
+    mock_ctx.channel = MagicMock()
+
+    cog = Music(mock_bot)
+    got = await cog._ensure_player(mock_ctx)
+    assert got is player
+    assert player.inactive_timeout == INACTIVE_TIMEOUT
+    assert player.autoplay is wavelink.AutoPlayMode.partial
+    channel.connect.assert_awaited_once()
+    report.record("player idle timeout", INACTIVE_TIMEOUT, player.inactive_timeout, section=SECTION_COMMANDS)
+
+
+async def test_inactive_player_disconnects_and_clears(mock_bot, report):
+    _guild, player = _voice_player(guild_id=11, humans=1, playing=False)
+    cog = Music(mock_bot)
+    await cog.on_wavelink_inactive_player(player)
+
+    player.queue.clear.assert_called_once()
+    assert player.music_fallbacks == []
+    assert player.music_announce_fallback is False
+    assert player.music_pending_ctx is None
+    player.disconnect.assert_awaited_once()
+    report.record("idle disconnect", True, player.disconnect.await_count == 1, section=SECTION_COMMANDS)
+
+
+async def test_inactive_player_keeps_a_loaded_track(mock_bot, report):
+    _guild, player = _voice_player(guild_id=12, humans=1, playing=True)
+    cog = Music(mock_bot)
+    await cog.on_wavelink_inactive_player(player)
+    player.disconnect.assert_not_called()
+    player.queue.clear.assert_not_called()
+    report.record("playing skips idle leave", True, True, section=SECTION_COMMANDS)
+
+
+async def test_inactive_player_cancels_alone_wait(mock_bot):
+    guild, player = _voice_player(guild_id=13, humans=0, playing=False)
+    mock_bot.get_guild.return_value = guild
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    with patch("cogs.music.ALONE_TIMEOUT", 30):
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        alone = cog._alone_tasks[guild.id]
+        await cog.on_wavelink_inactive_player(player)
+        with pytest.raises(asyncio.CancelledError):
+            await alone
+    player.disconnect.assert_awaited_once()
+    assert guild.id not in cog._alone_tasks
+
+
+async def test_leaves_when_alone(mock_bot, report):
+    guild, player = _voice_player(guild_id=14, humans=0, playing=True)
+    mock_bot.get_guild.return_value = guild
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    with patch("cogs.music.ALONE_TIMEOUT", 0):
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        await cog._alone_tasks[guild.id]
+
+    player.disconnect.assert_awaited_once()
+    player.queue.clear.assert_called_once()
+    assert player.music_fallbacks == []
+    assert player.music_pending_ctx is None
+    assert guild.id not in cog._alone_tasks
+    report.record("alone disconnect", True, player.disconnect.await_count == 1, section=SECTION_COMMANDS)
+
+
+async def test_alone_wait_aborts_when_a_human_returns(mock_bot, report):
+    guild, player = _voice_player(guild_id=15, humans=0, playing=True)
+    mock_bot.get_guild.return_value = guild
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    with patch("cogs.music.ALONE_TIMEOUT", 0):
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        task = cog._alone_tasks[guild.id]
+        player.channel.members.append(MagicMock(bot=False))
+        await task
+    player.disconnect.assert_not_called()
+    report.record("human returned", True, player.disconnect.await_count == 0, section=SECTION_COMMANDS)
+
+
+async def test_alone_wait_cancelled_when_someone_joins(mock_bot):
+    guild, player = _voice_player(guild_id=16, humans=0)
+    mock_bot.get_guild.return_value = guild
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    with patch("cogs.music.ALONE_TIMEOUT", 30):
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        task = cog._alone_tasks[guild.id]
+        player.channel.members.append(MagicMock(bot=False))
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    player.disconnect.assert_not_called()
+    assert cog._alone_tasks == {}
+
+
+async def test_voice_activity_with_humans_does_not_arm_alone_timer(mock_bot):
+    guild, player = _voice_player(guild_id=17, humans=2, playing=True)
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+    assert cog._alone_tasks == {}
+    player.disconnect.assert_not_called()
+
+
+async def test_repeated_alone_updates_keep_one_timer(mock_bot):
+    guild, _player = _voice_player(guild_id=18, humans=0)
+    member = MagicMock()
+    member.guild = guild
+    cog = Music(mock_bot)
+    with patch("cogs.music.ALONE_TIMEOUT", 30):
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        first = cog._alone_tasks[guild.id]
+        await cog.on_voice_state_update(member, MagicMock(), MagicMock())
+        assert cog._alone_tasks[guild.id] is first
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+
+
+async def test_leave_clears_player_state(mock_bot, mock_ctx, report):
+    guild, player = _voice_player(guild_id=19, humans=1, playing=True)
+    mock_ctx.guild = guild
+    mock_ctx.voice_client = player
+    cog = Music(mock_bot)
+    await cog.leave.callback(cog, mock_ctx)
+    player.queue.clear.assert_called_once()
+    assert player.music_fallbacks == []
+    assert player.music_pending_ctx is None
+    player.disconnect.assert_awaited_once()
+    actual = mock_ctx.send.call_args.args[0]
+    report.record("leave message", "Left the voice channel.", actual, section=SECTION_COMMANDS)
+    assert actual == "Left the voice channel."
