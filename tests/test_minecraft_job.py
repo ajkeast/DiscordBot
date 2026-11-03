@@ -14,6 +14,7 @@ from utils.minecraft_job import (
     SCHEMA_STATEMENTS,
     SYSTEM_PROMPT,
     activity_date_due,
+    build_day_stats,
     claim_daily_post,
     grok_payload,
     minecraft_channel_id,
@@ -23,7 +24,7 @@ from utils.minecraft_job import (
     render_narrative,
     render_template,
 )
-from utils.minecraft_log import EASTERN, parse_log_directory, summarize_window
+from utils.minecraft_log import EASTERN, day_window, parse_log_directory, summarize_window
 
 FIXTURES = Path(__file__).parent / "fixtures" / "minecraft"
 WINDOW_START = datetime(2026, 10, 25, 15, 0, tzinfo=EASTERN)
@@ -121,6 +122,10 @@ def test_activity_date_is_due_at_and_after_8am():
     assert activity_date_due(before) is None
     assert activity_date_due(at_eight) == date(2026, 10, 25)
     assert activity_date_due(afternoon) == date(2026, 10, 25)
+    start, end = day_window(activity_date_due(at_eight))
+    assert start == datetime(2026, 10, 25, 5, 0, tzinfo=EASTERN)
+    assert end == datetime(2026, 10, 26, 5, 0, tzinfo=EASTERN)
+    assert end <= at_eight
     assert DAILY_AT.hour == 8
     assert DAILY_AT.minute == 0
 
@@ -397,6 +402,91 @@ def test_claim_inserts_a_pending_row_when_the_day_is_new():
     assert cursor.calls[-1][1] == (date(2026, 10, 25), 99)
 
 
+def _steve_log(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "2026-10-25-1.log").write_text(
+        "\n".join(
+            [
+                "[10:00:00] [User Authenticator #1/INFO]: UUID of player Steve is "
+                "11111111-1111-1111-1111-111111111111",
+                "[10:00:00] [Server thread/INFO]: System chat: Steve joined the game",
+                "[11:00:00] [Server thread/INFO]: System chat: Steve left the game",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    def execute(self, query, params=None):
+        self.calls.append((query, params))
+
+    def fetchall(self):
+        return self.rows
+
+
+def _history(rows):
+    cursor = _Rows(rows)
+
+    @contextmanager
+    def fake_cursor():
+        yield cursor
+
+    return cursor, fake_cursor
+
+
+def test_stored_history_blocks_a_welcome_by_name_or_uuid(tmp_path):
+    _steve_log(tmp_path)
+    as_of = datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN)
+    cursor, fake_cursor = _history([("Alex", "11111111-1111-1111-1111-111111111111")])
+    with patch("utils.minecraft_job.ensure_minecraft_tables"):
+        with patch("utils.minecraft_job.db_ops.db.cursor", fake_cursor):
+            stats = build_day_stats(date(2026, 10, 25), data_dir=tmp_path, as_of=as_of)
+    assert stats["new_players"] == []
+    assert stats["players"][0]["new_player"] is False
+    assert "Welcome" not in render_template(stats)
+    assert cursor.calls[0][1][0] == datetime(2026, 10, 25, 5, 0, tzinfo=EASTERN)
+
+    cursor, fake_cursor = _history([("Steve", None)])
+    with patch("utils.minecraft_job.ensure_minecraft_tables"):
+        with patch("utils.minecraft_job.db_ops.db.cursor", fake_cursor):
+            stats = build_day_stats(date(2026, 10, 25), data_dir=tmp_path, as_of=as_of)
+    assert stats["new_players"] == []
+
+
+def test_first_session_is_welcomed_when_history_is_empty(tmp_path):
+    _steve_log(tmp_path)
+    _cursor, fake_cursor = _history([])
+    with patch("utils.minecraft_job.ensure_minecraft_tables"):
+        with patch("utils.minecraft_job.db_ops.db.cursor", fake_cursor):
+            stats = build_day_stats(
+                date(2026, 10, 25),
+                data_dir=tmp_path,
+                as_of=datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN),
+            )
+    assert stats["new_players"] == ["Steve"]
+    assert "Welcome, first time on the server." in render_template(stats)
+
+
+def test_unreadable_history_does_not_welcome_anyone(tmp_path):
+    _steve_log(tmp_path)
+    with patch("utils.minecraft_job.ensure_minecraft_tables"):
+        with patch("utils.minecraft_job.db_ops.db.cursor", side_effect=RuntimeError("db down")):
+            stats = build_day_stats(
+                date(2026, 10, 25),
+                data_dir=tmp_path,
+                as_of=datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN),
+            )
+    assert stats["new_players"] == []
+    assert "Welcome" not in render_template(stats)
+
+
 def test_prepare_post_still_previews_when_persist_fails(tmp_path, monkeypatch):
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     logs = tmp_path / "logs"
@@ -497,6 +587,36 @@ async def test_post_flag_skips_a_day_already_in_the_channel(mock_bot, mock_ctx):
             )
     prepare.assert_not_called()
     assert "already" in mock_ctx.send.call_args.args[0].lower()
+
+
+async def test_post_flag_refuses_a_play_day_before_5am(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    frozen = datetime(2026, 10, 26, 4, 30, tzinfo=EASTERN)
+    with patch("cogs.minecraft.datetime") as clock:
+        clock.now.return_value = frozen
+        with patch("cogs.minecraft.claim_daily_post") as claim:
+            await cog.minecraft_summary.callback(
+                cog, mock_ctx, day="2026-10-25", post=True
+            )
+    claim.assert_not_called()
+    assert "in progress" in mock_ctx.send.call_args.args[0].lower()
+
+
+async def test_post_flag_allows_a_play_day_that_ended_at_5am(mock_bot, mock_ctx):
+    cog = Minecraft(mock_bot)
+    mock_ctx.author.guild_permissions.administrator = True
+    mock_bot.is_owner = AsyncMock(return_value=False)
+    frozen = datetime(2026, 10, 26, 5, 0, tzinfo=EASTERN)
+    with patch("cogs.minecraft.datetime") as clock:
+        clock.now.return_value = frozen
+        with patch("cogs.minecraft.claim_daily_post", return_value="already_posted") as claim:
+            await cog.minecraft_summary.callback(
+                cog, mock_ctx, day="2026-10-25", post=True
+            )
+    claim.assert_called_once()
+    assert claim.call_args.args[0] == date(2026, 10, 25)
 
 
 async def test_post_flag_refuses_a_day_still_in_progress(mock_bot, mock_ctx):

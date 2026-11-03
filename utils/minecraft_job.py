@@ -26,6 +26,7 @@ from utils.minecraft_log import (
     EASTERN,
     MinecraftLogError,
     apply_world_files,
+    drop_new_players,
     parse_data_dir,
     summarize_day,
 )
@@ -168,11 +169,11 @@ def minecraft_data_dir() -> Path:
 
 
 def activity_date_due(now: datetime) -> date | None:
-    """Yesterday's summary is due at and after 08:00 America/New_York.
+    """The play day that ended at 05:00 is due at and after 08:00 Eastern.
 
-    Returns None before 08:00 so a restart early in the morning waits for the
-    scheduled run. After 08:00, the same calendar day's catch-up may post if
-    the ledger does not already show a post.
+    A play day starts at 05:00 America/New_York and runs until 05:00 the next
+    morning. The 08:00 post covers that finished window. Returns None before
+    08:00 so a restart waits for the scheduled run.
     """
     local = now.astimezone(EASTERN)
     if (local.hour, local.minute) < (8, 0):
@@ -359,6 +360,45 @@ def mark_posted(
     )
 
 
+def _players_seen_before(window_start: datetime) -> tuple[set[str], set[str]]:
+    """Names and uuids with a minecraft_* row from before this play day."""
+    ensure_minecraft_tables()
+    with db_ops.db.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT player_name, player_uuid FROM minecraft_sessions
+            WHERE started_at < %s
+            UNION
+            SELECT player_name, player_uuid FROM minecraft_deaths
+            WHERE occurred_at < %s
+            UNION
+            SELECT player_name, player_uuid FROM minecraft_advancements
+            WHERE occurred_at < %s
+            """,
+            (window_start, window_start, window_start),
+        )
+        rows = cursor.fetchall()
+    names = {name for name, _uuid in rows if name}
+    uuids = {uuid for _name, uuid in rows if uuid}
+    return names, uuids
+
+
+def apply_stored_history(stats: dict) -> None:
+    """Drop welcomes for anyone already stored before this play day.
+
+    A failed read drops every welcome. Guessing would greet regulars.
+    """
+    if not any(player.get("new_player") for player in stats["players"]):
+        return
+    try:
+        names, uuids = _players_seen_before(datetime.fromisoformat(stats["window_start"]))
+    except Exception:
+        logger.exception("Could not read Minecraft player history; skipping welcomes")
+        names = {player["name"] for player in stats["players"]}
+        uuids = set()
+    drop_new_players(stats, names, uuids)
+
+
 def build_day_stats(
     day: date,
     *,
@@ -371,6 +411,7 @@ def build_day_stats(
     parsed = parse_data_dir(root, as_of=as_of)
     stats = summarize_day(parsed, day, as_of=as_of)
     apply_world_files(stats, parsed, root)
+    apply_stored_history(stats)
     logger.info(
         "Minecraft %s: %s players, %s sessions, %s deaths, %s advancements",
         day.isoformat(),

@@ -22,7 +22,7 @@ from utils.minecraft_job import (
     summary_title,
     yesterday_et,
 )
-from utils.minecraft_log import EASTERN, MinecraftLogError, pretty_date
+from utils.minecraft_log import EASTERN, MinecraftLogError, day_window, pretty_date
 
 logger = logging.getLogger(__name__)
 DAILY_AT = time(hour=8, minute=0, tzinfo=EASTERN)
@@ -151,7 +151,7 @@ class Minecraft(commands.Cog):
 
     @tasks.loop(time=DAILY_AT)
     async def daily_minecraft(self):
-        """Post yesterday's Minecraft recap. Idempotent across restarts."""
+        """Post the play day that ended at 5:00 AM. Idempotent across restarts."""
         due = activity_date_due(datetime.now(EASTERN))
         if due is None:
             return
@@ -177,15 +177,15 @@ class Minecraft(commands.Cog):
     )
     @commands.guild_only()
     @app_commands.describe(
-        day="Calendar date in America/New_York (YYYY-MM-DD). Defaults to yesterday.",
+        day="Play day (YYYY-MM-DD), 5:00 AM to 5:00 AM Eastern. Defaults to yesterday.",
         post="Post that finished day in #minecraft. Otherwise this only previews for you.",
     )
     @app_commands.default_permissions(administrator=True)
     async def minecraft_summary(self, ctx, day: str | None = None, post: bool = False):
-        """Preview a day's recap, or post a finished day in #minecraft.
+        """Preview a play day's recap, or post a finished one in #minecraft.
 
-        The 8:00 AM schedule still posts yesterday on its own. ``post`` is the
-        manual run of that same post.
+        A play day is 5:00 AM to 5:00 AM America/New_York. The 8:00 AM schedule
+        posts the window that ended at 5:00 AM. ``post`` is that same post.
         """
         if not await self._actor_is_admin(ctx):
             await self._ephemeral(ctx, "Only server admins can run the Minecraft summary.")
@@ -201,7 +201,8 @@ class Minecraft(commands.Cog):
                 await self._ephemeral(ctx, "Use a date like `2026-10-25`.")
                 return
 
-        if post and activity_day >= now.date():
+        _window_start, window_end = day_window(activity_day)
+        if post and now < window_end:
             await self._ephemeral(
                 ctx,
                 "That day is still in progress. Preview it, or post an earlier date. "

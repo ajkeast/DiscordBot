@@ -20,9 +20,9 @@ older `_` prefix still works. Commands are case-insensitive.
 - **Server stats** — you keep track of activity on the server and post a monthly
   report. Stats are also on the public dashboard at https://dinkscord.com
   (`/dashboard` shares a link). See the `server_stats` topic.
-- **Minecraft** — every morning at 8:00 AM Eastern you post the previous day's
-  highlights in #minecraft: who played, the death story, and a welcome for a
-  new player.
+- **Minecraft** — every morning at 8:00 AM Eastern you post the play day that
+  ended at 5:00 AM (a day runs 5:00 AM to 5:00 AM Eastern) in #minecraft:
+  who played, the death story, and a welcome for a new player.
 - **Fun & utilities** — `/ping`, `/hello`, `/simonsays`, `/dashboard`, and
   `/donation` (a thank-you list of patrons who help keep the bot running).
 

@@ -13,9 +13,9 @@ from utils.minecraft_log import (
     ParsedLogs,
     Session,
     apply_world_files,
+    day_window,
     format_duration,
     parse_log_directory,
-    play_time_looks_new,
     strip_codes,
     summarize_day,
     summarize_window,
@@ -121,30 +121,44 @@ def test_reference_window_advancement_kinds():
     assert ("EpicPigz", "advancement", "A Terrible Fortress") in titles
 
 
-def test_calendar_day_clips_sessions_at_midnight():
+def test_play_day_clips_sessions_at_5am():
     parsed = _load()
     oct_25 = summarize_day(parsed, date(2026, 10, 25), as_of=WINDOW_END)
     oct_26 = summarize_day(parsed, date(2026, 10, 26), as_of=WINDOW_END)
 
-    # 23:20:13 → midnight, then midnight → 00:44:24.
-    assert _player(oct_25, "jphelps")["playtime_seconds"] == 2387
-    assert _player(oct_26, "jphelps")["playtime_seconds"] == 2664
-    assert (
-        _player(oct_25, "jphelps")["playtime_seconds"]
-        + _player(oct_26, "jphelps")["playtime_seconds"]
-        == 5051
-    )
-    # Still online at 15:00, so the 26th slice is the full 15 hours after midnight.
-    assert _player(oct_26, "Conkeastador")["playtime_seconds"] == 15 * 3600
+    # 23:20:13 through 00:44:24 ET is 8:20–9:44 PM PT, still the 25th's play day.
+    assert _player(oct_25, "jphelps")["playtime_seconds"] == 5051
+    assert oct_25["date"] == "2026-10-25"
+    assert oct_25["pretty_date"] == "Sunday, October 25, 2026"
+    assert oct_25["highlights"]["date_label"] == "Oct 25"
+    assert oct_25["window_start"] == "2026-10-25T05:00:00-04:00"
+    assert oct_25["window_end"] == "2026-10-26T05:00:00-04:00"
+    assert all(player["name"] != "jphelps" for player in oct_26["players"])
+    # Open session clipped at 05:00. The 26th is 05:00 → 15:00 and still online.
+    assert _player(oct_26, "Conkeastador")["playtime_seconds"] == 10 * 3600
     assert _player(oct_26, "Conkeastador")["likely_afk"] is True
+    assert (
+        _player(oct_25, "Conkeastador")["playtime_seconds"]
+        + _player(oct_26, "Conkeastador")["playtime_seconds"]
+        == 64393
+    )
+    conke_25 = next(
+        row for row in oct_25["highlights"]["time_played"] if row["name"] == "Conkeastador"
+    )
+    conke_26 = next(
+        row for row in oct_26["highlights"]["time_played"] if row["name"] == "Conkeastador"
+    )
+    assert conke_25["still_online"] is False
+    assert conke_26["still_online"] is True
 
-    assert oct_25["totals"]["deaths"] == 18
-    assert oct_26["totals"]["deaths"] == 1
-    assert oct_25["totals"]["advancements"] == 24
-    assert oct_26["totals"]["advancements"] == 4
+    assert oct_25["totals"]["deaths"] == 19
+    assert oct_26["totals"]["deaths"] == 0
+    assert oct_25["totals"]["advancements"] == 27
+    assert oct_26["totals"]["advancements"] == 1
     assert oct_25["server_notes"] == []
     assert oct_25["partial_day"] is False
     assert oct_26["partial_day"] is True
+    assert oct_26["pretty_date"] == "Monday, October 26, 2026"
 
 
 def test_latest_log_date_comes_from_rollover_not_the_filename():
@@ -186,13 +200,16 @@ def test_file_crossing_midnight_when_the_clock_goes_backwards(tmp_path):
         ],
     )
     parsed = parse_log_directory(tmp_path)
+    session = parsed.sessions[0]
+    assert session.start.astimezone(EASTERN) == datetime(2026, 10, 25, 23, 0, tzinfo=EASTERN)
+    assert session.end.astimezone(EASTERN) == datetime(2026, 10, 26, 1, 0, tzinfo=EASTERN)
+    # 11 PM through 1 AM is still the play day that started at 5 AM on the 25th.
     oct_25 = summarize_day(parsed, date(2026, 10, 25))
     oct_26 = summarize_day(parsed, date(2026, 10, 26))
-    assert _player(oct_25, "Steve")["playtime_seconds"] == 3600
-    assert _player(oct_26, "Steve")["playtime_seconds"] == 3600
+    assert _player(oct_25, "Steve")["playtime_seconds"] == 2 * 3600
     assert _player(oct_25, "Steve")["sessions"] == 1
-    assert _player(oct_26, "Steve")["sessions"] == 1
     assert _player(oct_25, "Steve")["likely_afk"] is False
+    assert oct_26["nobody_played"] is True
 
 
 def test_small_clock_jitter_does_not_roll_the_day(tmp_path):
@@ -265,15 +282,51 @@ def test_rejoin_without_a_leave_splits_the_session(tmp_path):
     assert _player(stats, "Steve")["sessions"] == 2
 
 
+def test_play_day_splits_at_5am_and_still_online_follows_the_slice(tmp_path):
+    _write(
+        tmp_path,
+        "2026-10-25-1.log",
+        [
+            "[04:00:00] [Server thread/INFO]: System chat: Steve joined the game",
+            "[05:50:00] [Async Chat Thread - #1/INFO]: <Steve> still here",
+        ],
+    )
+    as_of = datetime(2026, 10, 25, 6, 0, tzinfo=EASTERN)
+    parsed = parse_log_directory(tmp_path, as_of=as_of)
+    early = summarize_day(parsed, date(2026, 10, 24), as_of=as_of)
+    later = summarize_day(parsed, date(2026, 10, 25), as_of=as_of)
+    assert _player(early, "Steve")["playtime_seconds"] == 3600
+    assert early["highlights"]["time_played"][0]["still_online"] is False
+    assert early["partial_day"] is False
+    assert early["date"] == "2026-10-24"
+    assert _player(later, "Steve")["playtime_seconds"] == 3600
+    assert later["highlights"]["time_played"][0]["still_online"] is True
+    assert later["partial_day"] is True
+    assert later["pretty_date"] == "Sunday, October 25, 2026"
+
+
+def test_day_window_is_5am_eastern_across_dst():
+    spring_start, spring_end = day_window(date(2026, 3, 7))
+    assert spring_start == datetime(2026, 3, 7, 5, 0, tzinfo=EASTERN)
+    assert spring_end == datetime(2026, 3, 8, 5, 0, tzinfo=EASTERN)
+    assert spring_end.timestamp() - spring_start.timestamp() == 23 * 3600
+
+    fall_start, fall_end = day_window(date(2026, 10, 31))
+    assert fall_start == datetime(2026, 10, 31, 5, 0, tzinfo=EASTERN)
+    assert fall_end == datetime(2026, 11, 1, 5, 0, tzinfo=EASTERN)
+    assert fall_end.timestamp() - fall_start.timestamp() == 25 * 3600
+    assert summarize_window(ParsedLogs(), fall_start, fall_end)["highlights"]["date_label"] == "Oct 31"
+
+
 def test_afk_threshold_is_strictly_over_six_hours(tmp_path):
     _write(
         tmp_path,
         "2026-10-25-1.log",
         [
-            "[00:00:00] [Server thread/INFO]: System chat: Exact joined the game",
-            "[06:00:00] [Server thread/INFO]: System chat: Exact left the game",
-            "[08:00:00] [Server thread/INFO]: System chat: Over joined the game",
-            "[14:00:01] [Server thread/INFO]: System chat: Over left the game",
+            "[06:00:00] [Server thread/INFO]: System chat: Exact joined the game",
+            "[12:00:00] [Server thread/INFO]: System chat: Exact left the game",
+            "[12:00:00] [Server thread/INFO]: System chat: Over joined the game",
+            "[18:00:01] [Server thread/INFO]: System chat: Over left the game",
         ],
     )
     stats = summarize_day(parse_log_directory(tmp_path), date(2026, 10, 25))
@@ -401,32 +454,21 @@ def test_reference_players_carry_death_lines_and_titles():
     assert stats["new_players"] == []
 
 
-def test_play_time_matches_only_a_short_history():
-    assert play_time_looks_new(3600, 3600) is True
-    assert play_time_looks_new(3600 + 30 * 60, 3600) is True
-    assert play_time_looks_new(3600 + 30 * 60 + 1, 3600) is False
-    assert play_time_looks_new(3600 - 10 * 60, 3600) is True
-    assert play_time_looks_new(3600 - 10 * 60 - 1, 3600) is False
-    assert play_time_looks_new(0, 0) is False
-    assert play_time_looks_new(100 * 3600, 3600) is False
-
-
 def _world_stats():
     start = datetime(2026, 10, 25, 10, 0, tzinfo=EASTERN)
+    earlier = datetime(2026, 10, 13, 12, 0, tzinfo=EASTERN)
     newbie_id = "11111111-1111-1111-1111-111111111111"
     veteran_id = "22222222-2222-2222-2222-222222222222"
     parsed = ParsedLogs(
         sessions=[
             Session("Newbie", start, start + timedelta(hours=1), "leave"),
+            Session("Veteran", earlier, earlier + timedelta(hours=1), "leave"),
             Session("Veteran", start, start + timedelta(hours=1), "leave"),
         ],
         uuids={"Newbie": newbie_id, "Veteran": veteran_id},
     )
-    stats = summarize_window(
-        parsed,
-        datetime(2026, 10, 25, tzinfo=EASTERN),
-        datetime(2026, 10, 26, tzinfo=EASTERN),
-    )
+    window_start, window_end = day_window(date(2026, 10, 25))
+    stats = summarize_window(parsed, window_start, window_end)
     stats["advancements"].append(
         {
             "player": "Alex",
@@ -456,10 +498,12 @@ def test_world_files_welcome_a_new_player_and_name_a_real_miss(tmp_path):
     adv_dir = tmp_path / "world" / "players" / "advancements"
     stats_dir.mkdir(parents=True)
     adv_dir.mkdir(parents=True)
+    # These files used to decide "new": Newbie's play_time is far past the
+    # logged hour, Veteran's matches every session the logs contain.
     (stats_dir / f"{newbie_id}.json").write_text(
         json.dumps(
             {
-                "stats": {"minecraft:custom": {"minecraft:play_time": 3600 * 20}},
+                "stats": {"minecraft:custom": {"minecraft:play_time": 100 * 3600 * 20}},
                 "DataVersion": 1,
             }
         ),
@@ -468,7 +512,7 @@ def test_world_files_welcome_a_new_player_and_name_a_real_miss(tmp_path):
     (stats_dir / f"{veteran_id}.json").write_text(
         json.dumps(
             {
-                "stats": {"minecraft:custom": {"minecraft:play_time": 100 * 3600 * 20}},
+                "stats": {"minecraft:custom": {"minecraft:play_time": 2 * 3600 * 20}},
                 "DataVersion": 1,
             }
         ),
@@ -498,6 +542,8 @@ def test_world_files_welcome_a_new_player_and_name_a_real_miss(tmp_path):
     veteran = _player(stats, "Veteran")
     assert newbie["new_player"] is True
     assert newbie["missed_advancements"] == ["Stone Age", "Suit Up"]
+    newbie_row = next(row for row in stats["highlights"]["time_played"] if row["name"] == "Newbie")
+    assert newbie_row["new_player"] is True
     assert veteran["new_player"] is False
     assert veteran["missed_advancements"] == ["Suit Up"]
     assert stats["new_players"] == ["Newbie"]
@@ -508,7 +554,7 @@ def test_world_stats_fallback_without_an_advancement_file_does_not_invent_a_miss
     stats_dir = tmp_path / "world" / "stats"
     stats_dir.mkdir(parents=True)
     (stats_dir / f"{newbie_id}.json").write_text(
-        json.dumps({"stats": {"minecraft:custom": {"minecraft:play_time": 3600 * 20}}}),
+        json.dumps({"stats": {"minecraft:custom": {"minecraft:play_time": 100 * 3600 * 20}}}),
         encoding="utf-8",
     )
     apply_world_files(stats, parsed, tmp_path)
