@@ -8,8 +8,8 @@ itself rolls past midnight (clock jumps backwards by more than an hour) continue
 onto the next calendar day. Small backwards jitter does not.
 
 Sessions come from ``X joined the game`` / ``X left the game``. A server stop,
-crash, or the next startup closes anyone still online. Playtime for a calendar
-day is clipped to midnight–midnight Eastern.
+crash, or the next startup closes anyone still online. Playtime for a play
+day is clipped to 05:00–05:00 America/New_York.
 """
 
 from __future__ import annotations
@@ -32,11 +32,9 @@ ENTITY_NOTE_MIN_COUNT = 5
 LIVE_GRACE = timedelta(minutes=15)
 # Played at least this long with zero advancements: the recap may nudge them.
 NO_ADVANCEMENT_NUDGE_SECONDS = 20 * 60
-# Lifetime play_time (from the world stats file) counts as "new" when it is
-# within this slack of every session we could see in the logs. A first join
-# in a short log file is not enough — that would greet the whole server.
-NEW_PLAYER_UNDER_SECONDS = 10 * 60
-NEW_PLAYER_OVER_SECONDS = 30 * 60
+# A play day is 05:00 to 05:00 America/New_York. 05:00 is outside the DST gap,
+# so West Coast sessions after 9 PM Pacific stay on the day they started.
+PLAY_DAY_START = time(5, 0)
 # How many confirmed misses to name. Early story titles come first.
 MISSED_ADVANCEMENT_CAP = 2
 # Clock going backwards by more than this means the file crossed midnight.
@@ -905,15 +903,6 @@ def titles_earned_by_others(stats: dict, name: str) -> list[str]:
     return priority + [title for title in earned if title not in priority]
 
 
-def play_time_looks_new(play_seconds: int, seen_seconds: int) -> bool:
-    """True when world play_time is basically the sessions these logs contain."""
-    if play_seconds <= 0:
-        return False
-    low = seen_seconds - NEW_PLAYER_UNDER_SECONDS
-    high = seen_seconds + NEW_PLAYER_OVER_SECONDS
-    return low <= play_seconds <= high
-
-
 def _read_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -936,20 +925,6 @@ def _first_file(paths: list[Path]) -> Path | None:
     return None
 
 
-def _play_time_seconds(payload) -> int | None:
-    if not isinstance(payload, dict):
-        return None
-    custom = (payload.get("stats") or {}).get("minecraft:custom") or {}
-    if not isinstance(custom, dict):
-        return None
-    ticks = custom.get("minecraft:play_time")
-    if isinstance(ticks, bool) or not isinstance(ticks, (int, float)):
-        return None
-    if ticks < 0:
-        return None
-    return int(ticks) // 20
-
-
 def _completed_advancement_ids(payload) -> set[str] | None:
     """Done advancement ids, or None when the file is not a usable object."""
     if not isinstance(payload, dict):
@@ -964,41 +939,69 @@ def _completed_advancement_ids(payload) -> set[str] | None:
     return done
 
 
-def _lifetime_seconds(parsed: ParsedLogs) -> dict[str, int]:
-    totals: dict[str, int] = {}
+def _mark_first_sessions(stats: dict, parsed: ParsedLogs) -> None:
+    """Welcome a player only on their first session in ``parsed``.
+
+    ``parsed`` is every retained log, not the day being posted. The old check
+    compared world ``play_time`` to the sum of those sessions, so a regular
+    looked new whenever the logs reached back to the start of the world, and
+    anyone whose stats file held time the sessions missed never matched.
+    """
+    window_start = datetime.fromisoformat(stats["window_start"])
+    window_end = datetime.fromisoformat(stats["window_end"])
+    first: dict[str, datetime] = {}
     for session in parsed.sessions:
-        totals[session.player] = totals.get(session.player, 0) + session.duration_seconds
-    return totals
+        seen = first.get(session.player)
+        if seen is None or session.start < seen:
+            first[session.player] = session.start
+    for player in stats["players"]:
+        seen = first.get(player["name"])
+        player["new_player"] = seen is not None and window_start <= seen < window_end
+    stats["new_players"] = [
+        player["name"] for player in stats["players"] if player["new_player"]
+    ]
+
+
+def drop_new_players(stats: dict, names: set[str], uuids: set[str]) -> None:
+    """Clear welcomes for names or uuids already known before this window."""
+    known_uuids = {uuid.lower() for uuid in uuids if uuid}
+    changed = False
+    for player in stats["players"]:
+        if not player.get("new_player"):
+            continue
+        uuid = player.get("uuid")
+        if player["name"] in names or (uuid and uuid.lower() in known_uuids):
+            player["new_player"] = False
+            changed = True
+    if not changed:
+        return
+    stats["new_players"] = [
+        player["name"] for player in stats["players"] if player["new_player"]
+    ]
+    _sync_highlight_people(stats)
 
 
 def apply_world_files(stats: dict, parsed: ParsedLogs, data_dir: Path) -> dict:
-    """Fill ``new_player`` and ``missed_advancements`` from the world save.
+    """Fill ``new_player`` from the logs and ``missed_advancements`` from the save.
 
-    New means the stats file's ``minecraft:play_time`` matches the sessions in
-    these logs, within a few minutes. Missed means someone else earned that
-    title today, we know its vanilla id, this player's advancement file
-    exists, and that id is not done. No file, no claim.
+    New means the player's first session in ``parsed`` falls in this window.
+    Missed means someone else earned that title today, we know its vanilla id,
+    this player's advancement file exists, and that id is not done. No file,
+    no claim.
     """
     for player in stats["players"]:
         player["new_player"] = False
         player["missed_advancements"] = []
     stats["new_players"] = []
+    _mark_first_sessions(stats, parsed)
     if not data_dir.is_dir():
+        _sync_highlight_people(stats)
         return stats
 
-    lifetime = _lifetime_seconds(parsed)
     for player in stats["players"]:
         uuid = player.get("uuid")
         if not uuid:
             continue
-        stats_path = _first_file(_player_file_candidates(data_dir, "stats", uuid))
-        if stats_path is not None:
-            play_seconds = _play_time_seconds(_read_json(stats_path))
-            if play_seconds is not None and play_time_looks_new(
-                play_seconds, lifetime.get(player["name"], 0)
-            ):
-                player["new_player"] = True
-
         adv_path = _first_file(_player_file_candidates(data_dir, "advancements", uuid))
         if adv_path is None:
             continue
@@ -1129,6 +1132,11 @@ def _combined_label(seconds: int) -> str:
 
 def _date_label(window_start: datetime, window_end: datetime) -> str:
     start = window_start.astimezone(EASTERN)
+    end = window_end.astimezone(EASTERN)
+    # A play day crosses midnight on purpose. Name the morning it started.
+    play_start, play_end = day_window(start.date())
+    if start == play_start and end == play_end:
+        return f"{start.strftime('%b')} {start.day}"
     end = (window_end - timedelta(seconds=1)).astimezone(EASTERN)
     if start.date() == end.date():
         return f"{start.strftime('%b')} {start.day}"
@@ -1540,7 +1548,7 @@ def build_highlights(
     time_played = []
     for player in players:
         player_slices = [item for item in slices if item["player_name"] == player["name"]]
-        # A session clipped by midnight is not "still online" in yesterday's recap.
+        # Clipped at the end of the play day: online then, but not still online.
         still_online = any(
             item["end_reason"] == "still_online" and item["slice_ended_at"] == item["ended_at"]
             for item in player_slices
@@ -1582,21 +1590,22 @@ def build_highlights(
     }
 
 
+def day_window(day: date) -> tuple[datetime, datetime]:
+    """``[05:00, 05:00)`` America/New_York, labeled by the morning it starts."""
+    start = _at(day, PLAY_DAY_START)
+    end = _at(day + timedelta(days=1), PLAY_DAY_START)
+    return start, end
+
+
 def summarize_day(
     parsed: ParsedLogs,
     day: date,
     *,
     as_of: datetime | None = None,
 ) -> dict:
-    """Previous-calendar-day window: midnight to midnight Eastern."""
-    window_start = _at(day, time(0, 0))
-    window_end = window_start + timedelta(days=1)
+    """One play day: 05:00 America/New_York through 05:00 the next morning."""
+    window_start, window_end = day_window(day)
     partial = False
     if as_of is not None:
         partial = as_of.astimezone(EASTERN) < window_end
     return summarize_window(parsed, window_start, window_end, partial_day=partial)
-
-
-def day_window(day: date) -> tuple[datetime, datetime]:
-    start = _at(day, time(0, 0))
-    return start, start + timedelta(days=1)
