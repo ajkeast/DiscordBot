@@ -115,10 +115,10 @@ Write the way a friend who plays would recap the night: specific, brief, and hum
 Sections, with a blank line between them:
 1. Opening: how many players, the combined string, and the busiest stretch when busiest is set. Use its start_label and end_label.
 2. Time played — a heading, then one line per person. Use the playtime string and session count. Mention still online, the AFK stretch, or a welcome only when those fields say so.
-3. Deaths (the total) — skip when the total is 0. Retell the cluster in your own words from its causes: who died, how many times, between the two clock labels. You know Minecraft. Players killing players is PVP. Ghasts, piglins, or blazes mean the Nether. The ender dragon, falling out of the world, or endermen mean the End. A warden means an ancient city. Say that when the causes support it. Weigh the whole cluster: one mob in a player fight does not move the fight to another dimension. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
+3. Deaths (the total) — skip when the total is 0. The causes are the death messages. Summarize the cluster in your own words: who died, how many times, between the two clock labels, and what the messages say. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
 4. Server notes — the note text you were given. Omit the section when server_notes is empty.
 
-Do not mention advancements, challenges, goals, or titles. Do not invent players, times, or causes. Do not name a dimension, place, or activity the death causes do not support. Discord markdown. No code fence. Stay under 1600 characters.
+Do not mention advancements, challenges, goals, or titles. Do not invent players, times, places, or events that are not in the JSON. Discord markdown. No code fence. Stay under 1600 characters.
 """
 
 
@@ -711,14 +711,10 @@ def _other_bit(row: dict) -> str:
     name = _md(row["name"])
     count = row["count"]
     details = [_md(item) for item in row.get("details") or []]
-    if row.get("follow_up") and count == 1 and details == ["a fall"]:
-        return f"{name} fell once more later"
     if row.get("follow_up") and count == 1 and details:
         return f"{name} also died once later ({details[0]})"
     if row.get("follow_up") and count == 1:
         return f"{name} died once more later"
-    if count == 1 and details == ["a Creeper"]:
-        return f"{name} was blown up by a Creeper once"
     if count == 1 and details:
         return f"{name} died once ({details[0]})"
     if count == 2 and len(details) >= 2:

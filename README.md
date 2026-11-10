@@ -116,7 +116,7 @@ Setup: DinkCoin tables are created with the shared Postgres schema (`deploy/post
 
 Every morning at **8:00 AM America/New_York** the bot posts the Minecraft play day that ended at 5:00 AM to **#minecraft**. A play day runs 5:00 AM to 5:00 AM Eastern:
 
-- A short highlight recap: combined hours, the busiest stretch, time played, the death story (including a Nether call when the logs support it), and a server note when something repeats.
+- A short highlight recap: combined hours, the busiest stretch, time played, the death story phrased from the death messages, and a server note when something repeats.
 - Playtime is clipped to that 5:00 AM window. A server stop or restart ends a session. An unbroken session over 6 hours is called likely AFK.
 - A new player is welcomed only when their first session in the retained logs falls in that window and the stored history has no earlier record of them.
 

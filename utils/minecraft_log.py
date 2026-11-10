@@ -1043,39 +1043,6 @@ def _hour_span_label(start: datetime, end: datetime) -> tuple[str, str]:
     return _clock_label(start), _clock_label(labeled_end)
 
 
-def _death_mentions(message: str) -> list[str]:
-    """Every cause worth naming. Lava-while-escaping-a-mob counts as both."""
-    text = message.lower()
-    found: list[str] = []
-    for needle, label in (
-        ("lava", "lava"),
-        ("magma", "Magma Cubes"),
-        ("ghast", "Ghasts"),
-        ("piglin", "Piglins"),
-        ("blaze", "Blazes"),
-        ("creeper", "a Creeper"),
-        ("zombie", "a Zombie"),
-        ("wither skeleton", "a Wither Skeleton"),
-        ("drowned", "drowning"),
-    ):
-        if needle in text and label not in found:
-            found.append(label)
-    if any(token in text for token in ("fell", "doomed to fall", "high place")):
-        found.append("a fall")
-    mobs = {"Magma Cubes", "Ghasts", "Piglins", "Blazes", "a Creeper", "a Zombie", "a Wither Skeleton"}
-    if ("blown up" in text or "explosion" in text) and not mobs.intersection(found):
-        found.append("an explosion")
-    return found or [message]
-
-
-def _death_cause(message: str) -> str:
-    mentions = _death_mentions(message)
-    for label in mentions:
-        if label not in {"lava", "a fall", "drowning", "an explosion"}:
-            return label
-    return mentions[0]
-
-
 def _combined_label(seconds: int) -> str:
     hours = seconds / 3600
     rounded = round(hours)
@@ -1190,10 +1157,10 @@ def _death_cluster(deaths: list[dict]) -> dict | None:
     mention_counts: dict[str, int] = {}
     mention_order: list[str] = []
     for item in group:
-        for cause in _death_mentions(item["message"]):
-            if cause not in mention_counts:
-                mention_order.append(cause)
-            mention_counts[cause] = mention_counts.get(cause, 0) + 1
+        cause = item["message"]
+        if cause not in mention_counts:
+            mention_order.append(cause)
+        mention_counts[cause] = mention_counts.get(cause, 0) + 1
     causes = sorted(
         mention_order,
         key=lambda cause: (-mention_counts[cause], mention_order.index(cause)),
@@ -1455,7 +1422,7 @@ def build_highlights(
     for item in deaths:
         if id(item) in in_cluster and item["player"] in cluster_names:
             continue
-        others_map.setdefault(item["player"], []).append(_death_cause(item["message"]))
+        others_map.setdefault(item["player"], []).append(item["message"])
     others = [
         {
             "name": name,

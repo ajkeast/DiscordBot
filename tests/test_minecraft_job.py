@@ -188,7 +188,10 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
     assert "8 to 11 PM" in text
     assert "three or four" in text
     assert "EpicPigz 6 times" in text
-    assert "lava, Magma Cubes, and Ghasts" in text
+    assert "tried to swim in lava to escape Magma Cube" in text
+    assert "was slain by Magma Cube" in text
+    assert "Magma Cubes" not in text
+    assert "Ghasts" not in text
     assert "45 hours" in text
     assert "squished" in text
     assert "FishNet" not in text
@@ -272,17 +275,16 @@ def test_nobody_played_is_a_one_liner():
     assert len(text) < 200
 
 
-def test_prompt_lets_the_model_read_deaths_and_forbids_invented_places():
+def test_prompt_does_not_script_a_dimension():
     assert "Time played" in SYSTEM_PROMPT
-    assert "busiest" in SYSTEM_PROMPT
-    assert "PVP" in SYSTEM_PROMPT
-    assert "Nether" in SYSTEM_PROMPT
-    assert "End" in SYSTEM_PROMPT
-    assert "ancient city" in SYSTEM_PROMPT
+    assert "death messages" in SYSTEM_PROMPT
+    lowered = SYSTEM_PROMPT.lower()
+    for scripted in ("ghast", "piglin", "blaze", "pvp", "ancient city", "the end", "the nether"):
+        assert scripted not in lowered
     assert "deaths.nether" not in SYSTEM_PROMPT
     assert "mostly_nether" not in SYSTEM_PROMPT
     assert "Do not mention advancements" in SYSTEM_PROMPT
-    assert "do not support" in SYSTEM_PROMPT
+    assert "Do not invent" in SYSTEM_PROMPT
 
 
 def test_narrative_welcomes_a_new_player_and_rejects_advancement_talk():
