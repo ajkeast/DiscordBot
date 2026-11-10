@@ -68,10 +68,6 @@ ENTITY_DEATH_RE = re.compile(
 COORD_RE = re.compile(
     r"\bx=(?P<x>-?\d+(?:\.\d+)?), y=-?\d+(?:\.\d+)?, z=(?P<z>-?\d+(?:\.\d+)?)"
 )
-LOGIN_AT_RE = re.compile(
-    rf"^(?P<name>{PLAYER_NAME})\[/[^\]]+\] logged in with entity id \d+ at "
-    r"\(\[(?P<dimension>[^\]]+)\]"
-)
 PRELOGIN_RE = re.compile(
     rf"^(?P<name>{PLAYER_NAME}) \([^)]*\) lost connection:"
 )
@@ -210,13 +206,6 @@ class EntityDeath:
 
 
 @dataclass(frozen=True)
-class DimensionLogin:
-    player: str
-    at: datetime
-    dimension: str
-
-
-@dataclass(frozen=True)
 class Prelogin:
     name: str
     at: datetime
@@ -228,7 +217,6 @@ class ParsedLogs:
     deaths: list[Death] = field(default_factory=list)
     advancements: list[Advancement] = field(default_factory=list)
     entity_deaths: list[EntityDeath] = field(default_factory=list)
-    logins: list[DimensionLogin] = field(default_factory=list)
     prelogins: list[Prelogin] = field(default_factory=list)
     uuids: dict[str, str] = field(default_factory=dict)
     files_found: int = 0
@@ -500,7 +488,6 @@ def interpret_lines(
     deaths: list[Death] = []
     advancements: list[Advancement] = []
     entity_deaths: list[EntityDeath] = []
-    logins: list[DimensionLogin] = []
     prelogins: list[Prelogin] = []
     previous_dt: datetime | None = None
 
@@ -549,18 +536,6 @@ def interpret_lines(
             previous_dt = line.dt
             continue
 
-        login_match = LOGIN_AT_RE.match(msg)
-        if login_match:
-            logins.append(
-                DimensionLogin(
-                    player=login_match.group("name"),
-                    at=line.dt,
-                    dimension=login_match.group("dimension"),
-                )
-            )
-            previous_dt = line.dt
-            continue
-
         prelogin_match = PRELOGIN_RE.match(msg)
         if prelogin_match:
             name = prelogin_match.group("name")
@@ -599,7 +574,6 @@ def interpret_lines(
         deaths=deaths,
         advancements=advancements,
         entity_deaths=entity_deaths,
-        logins=logins,
         prelogins=prelogins,
         uuids=uuids,
         files_found=files_found,
@@ -848,11 +822,6 @@ def summarize_window(
             for death in parsed.entity_deaths
             if _in_window(death.at, window_start, window_end)
         ],
-        logins=[
-            login
-            for login in parsed.logins
-            if _in_window(login.at, window_start, window_end)
-        ],
         prelogins=[
             attempt
             for attempt in parsed.prelogins
@@ -1038,20 +1007,6 @@ _COUNT_WORDS = {
     9: "nine",
 }
 
-_NETHER_CAUSES = {"lava", "Magma Cubes", "Ghasts", "Piglins", "Blazes"}
-_NETHER_PROOF = {"Ghasts", "Piglins", "Blazes"}
-_NETHER_TITLES = {
-    "A Terrible Fortress",
-    "Those Were the Days",
-    "Who is Cutting Onions?",
-    "This Boat Has Legs",
-    "Into Fire",
-    "Hot Tourist Destinations",
-    "Return to Sender",
-    "Spooky Scary Skeleton",
-}
-
-
 def _count_word(count: int) -> str:
     return _COUNT_WORDS.get(count, str(count))
 
@@ -1211,7 +1166,6 @@ def _busiest_stretch(slices: list[dict], window_start: datetime, window_end: dat
         "end_label": end_label,
         "low": low,
         "high": high,
-        "mostly_nether": False,
     }
 
 
@@ -1268,31 +1222,6 @@ def _death_cluster(deaths: list[dict]) -> dict | None:
         "causes": causes[:3],
         "indexes": {id(item) for item in group},
     }
-
-
-def _overlaps(start_iso: str, end_iso: str, other_start_iso: str, other_end_iso: str) -> bool:
-    start = datetime.fromisoformat(start_iso)
-    end = datetime.fromisoformat(end_iso)
-    other_start = datetime.fromisoformat(other_start_iso)
-    other_end = datetime.fromisoformat(other_end_iso)
-    return start < other_end and other_start < end
-
-
-def _cluster_is_nether(cluster: dict, deaths: list[dict], logins, advancements: list[dict]) -> bool:
-    if any(cause in _NETHER_PROOF for cause in cluster["causes"]):
-        return True
-    start = datetime.fromisoformat(cluster["start"]) - timedelta(minutes=30)
-    end = datetime.fromisoformat(cluster["end"]) + timedelta(minutes=30)
-    if any(start <= login.at <= end and login.dimension.endswith("the_nether") for login in logins):
-        return True
-    for item in advancements:
-        moment = datetime.fromisoformat(item["at"])
-        if start <= moment <= end and item["title"] in _NETHER_TITLES:
-            return True
-    return any(
-        _death_cause(item["message"]) in _NETHER_CAUSES and id(item) in cluster["indexes"]
-        for item in deaths
-    ) and any(cause in _NETHER_PROOF for cause in cluster["causes"])
 
 
 def _advancement_highlights(players: list[dict], advancements: list[dict], slices: list[dict]) -> dict:
@@ -1500,7 +1429,6 @@ def build_highlights(
     deaths: list[dict],
     advancements: list[dict],
     entity_deaths: list[EntityDeath],
-    logins: list[DimensionLogin],
     prelogins: list[Prelogin],
     window_start: datetime,
     window_end: datetime,
@@ -1509,13 +1437,7 @@ def build_highlights(
     play_seconds = sum(player["playtime_seconds"] for player in players)
     busiest = _busiest_stretch(slices, window_start, window_end)
     cluster = _death_cluster(deaths)
-    nether = False
     if cluster is not None:
-        nether = _cluster_is_nether(cluster, deaths, logins, advancements)
-        if busiest is not None and _overlaps(
-            busiest["start"], busiest["end"], cluster["start"], cluster["end"]
-        ):
-            busiest["mostly_nether"] = nether
         cluster = {key: value for key, value in cluster.items() if key != "indexes"}
 
     in_cluster: set[int] = set()
@@ -1581,7 +1503,6 @@ def build_highlights(
         "time_played": time_played,
         "deaths": {
             "total": len(deaths),
-            "nether": nether,
             "cluster": cluster,
             "others": others,
         },
