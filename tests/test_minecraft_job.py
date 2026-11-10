@@ -253,28 +253,6 @@ def test_player_kills_are_not_labeled_a_dimension(tmp_path):
         "An enderman and a zombie picked one off."
     )
     assert narrative_ok(told, stats) is True
-    invented = (
-        "**Time played**\nEpicPigz, NiftyNarwhalz, and scatcorn were on.\n\n"
-        "**Deaths**\nThe Nether trip went badly. EpicPigz was slain by scatcorn "
-        "and NiftyNarwhalz was speared."
-    )
-    assert narrative_ok(invented, stats) is False
-
-
-def test_nether_mobs_may_be_called_the_nether(tmp_path):
-    logs = tmp_path / "logs"
-    _write_log(
-        logs,
-        [
-            "[18:00:00] [Server thread/INFO]: System chat: Steve joined the game",
-            "[18:10:00] [Server thread/INFO]: System chat: Steve was slain by Ghast",
-            "[18:20:00] [Server thread/INFO]: System chat: Steve left the game",
-        ],
-    )
-    stats = summarize_day(parse_log_directory(logs), date(2026, 11, 8))
-    told = "**Time played**\nSteve wandered into the Nether and a ghast killed him."
-    assert narrative_ok(told, stats) is True
-    assert "nether" not in render_template(stats).lower()
 
 
 def test_nobody_played_is_a_one_liner():

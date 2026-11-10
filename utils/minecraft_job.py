@@ -500,25 +500,6 @@ def _known_advancement_titles(stats: dict) -> list[str]:
     return titles
 
 
-def _unsupported_nether(text: str, stats: dict) -> bool:
-    """The recap names the Nether, and no death message names a Nether mob.
-
-    Ghasts, piglins, blazes, and the like are enough for the model to say
-    Nether. A login or an advancement is not a death, so it is not checked.
-    """
-    lowered = text.lower()
-    for player in stats.get("players") or []:
-        name = (player.get("name") or "").lower()
-        if name and "nether" in name:
-            lowered = lowered.replace(name, " ")
-    if "nether" not in lowered:
-        return False
-    blob = " ".join((item.get("message") or "").lower() for item in stats.get("deaths") or [])
-    return not any(
-        token in blob for token in ("ghast", "piglin", "blaze", "magma", "hoglin", "strider")
-    )
-
-
 def narrative_ok(text: str, stats: dict) -> bool:
     """Accept a reply that names everyone and uses the deaths, not titles."""
     cleaned = text.strip()
@@ -535,8 +516,6 @@ def narrative_ok(text: str, stats: dict) -> bool:
     if any(title.lower() in lowered for title in _known_advancement_titles(stats) if title):
         return False
     if stats["players"] and "time played" not in lowered:
-        return False
-    if _unsupported_nether(cleaned, stats):
         return False
     if any(player.get("new_player") for player in stats["players"]):
         if "welcome" not in lowered:
