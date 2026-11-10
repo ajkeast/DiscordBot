@@ -24,7 +24,13 @@ from utils.minecraft_job import (
     render_narrative,
     render_template,
 )
-from utils.minecraft_log import EASTERN, day_window, parse_log_directory, summarize_window
+from utils.minecraft_log import (
+    EASTERN,
+    day_window,
+    parse_log_directory,
+    summarize_day,
+    summarize_window,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "minecraft"
 WINDOW_START = datetime(2026, 10, 25, 15, 0, tzinfo=EASTERN)
@@ -178,7 +184,7 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
     assert "Acquire Hardware" not in text
     assert "didn't earn" not in text
     assert "likely AFK" in text
-    assert "The Nether trip went badly" in text
+    assert "nether" not in text.lower()
     assert "8 to 11 PM" in text
     assert "three or four" in text
     assert "EpicPigz 6 times" in text
@@ -192,7 +198,83 @@ def test_template_for_reference_window_fits_discord_and_uses_the_facts():
     assert "death_lines" not in payload
     assert "advancements" not in payload["highlights"]
     assert payload["highlights"]["deaths"]["total"] == 19
-    assert payload["highlights"]["deaths"]["nether"] is True
+    assert "nether" not in payload["highlights"]["deaths"]
+    assert "mostly_nether" not in (payload["highlights"]["busiest"] or {})
+
+
+def _write_log(directory: Path, lines: list[str]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "2026-11-08-1.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_player_kills_are_not_labeled_a_dimension(tmp_path):
+    """A PVP cluster stays a PVP story even if someone also logged into the Nether."""
+    logs = tmp_path / "logs"
+    _write_log(
+        logs,
+        [
+            "[19:00:00] [Server thread/INFO]: System chat: EpicPigz joined the game",
+            "[19:00:01] [Server thread/INFO]: EpicPigz[/x.x.x.x:1] logged in with entity id 1 "
+            "at ([minecraft:the_nether]8.0, 64.0, 8.0)",
+            "[19:00:02] [Server thread/INFO]: System chat: NiftyNarwhalz joined the game",
+            "[19:00:03] [Server thread/INFO]: System chat: scatcorn joined the game",
+            "[19:05:00] [Server thread/INFO]: System chat: EpicPigz has made the advancement "
+            "[We Need to Go Deeper]",
+            "[19:29:41] [Server thread/INFO]: System chat: EpicPigz was speared by scatcorn",
+            "[19:30:13] [Server thread/INFO]: System chat: EpicPigz was speared by scatcorn",
+            "[19:30:34] [Server thread/INFO]: System chat: EpicPigz was slain by scatcorn",
+            "[19:31:45] [Server thread/INFO]: System chat: NiftyNarwhalz was speared by scatcorn",
+            "[19:31:49] [Server thread/INFO]: System chat: EpicPigz was slain by scatcorn",
+            "[19:32:13] [Server thread/INFO]: System chat: NiftyNarwhalz was slain by scatcorn",
+            "[19:34:11] [Server thread/INFO]: System chat: NiftyNarwhalz was speared by scatcorn",
+            "[19:35:21] [Server thread/INFO]: System chat: EpicPigz was speared by scatcorn",
+            "[19:38:31] [Server thread/INFO]: System chat: NiftyNarwhalz was slain by Zombie",
+            "[19:41:14] [Server thread/INFO]: System chat: EpicPigz was slain by Enderman",
+            "[21:10:00] [Server thread/INFO]: System chat: EpicPigz left the game",
+            "[21:10:00] [Server thread/INFO]: System chat: NiftyNarwhalz left the game",
+            "[21:10:00] [Server thread/INFO]: System chat: scatcorn left the game",
+        ],
+    )
+    stats = summarize_day(parse_log_directory(logs), date(2026, 11, 8))
+    deaths = stats["highlights"]["deaths"]
+    assert "nether" not in deaths
+    assert "pvp" not in deaths
+    causes = deaths["cluster"]["causes"]
+    assert causes[0] == "was speared by scatcorn"
+    assert "was slain by scatcorn" in causes
+    assert "We Need to Go Deeper" not in str(grok_payload(stats))
+    assert "the_nether" not in str(grok_payload(stats))
+    text = render_template(stats)
+    assert "nether" not in text.lower()
+    assert "was speared by scatcorn" in text
+    told = (
+        "**Time played**\nEpicPigz, NiftyNarwhalz, and scatcorn were on.\n\n"
+        "**Deaths**\nIt was a PVP fight. scatcorn kept spearing and slaying them. "
+        "An enderman and a zombie picked one off."
+    )
+    assert narrative_ok(told, stats) is True
+    invented = (
+        "**Time played**\nEpicPigz, NiftyNarwhalz, and scatcorn were on.\n\n"
+        "**Deaths**\nThe Nether trip went badly. EpicPigz was slain by scatcorn "
+        "and NiftyNarwhalz was speared."
+    )
+    assert narrative_ok(invented, stats) is False
+
+
+def test_nether_mobs_may_be_called_the_nether(tmp_path):
+    logs = tmp_path / "logs"
+    _write_log(
+        logs,
+        [
+            "[18:00:00] [Server thread/INFO]: System chat: Steve joined the game",
+            "[18:10:00] [Server thread/INFO]: System chat: Steve was slain by Ghast",
+            "[18:20:00] [Server thread/INFO]: System chat: Steve left the game",
+        ],
+    )
+    stats = summarize_day(parse_log_directory(logs), date(2026, 11, 8))
+    told = "**Time played**\nSteve wandered into the Nether and a ghast killed him."
+    assert narrative_ok(told, stats) is True
+    assert "nether" not in render_template(stats).lower()
 
 
 def test_nobody_played_is_a_one_liner():
@@ -212,12 +294,17 @@ def test_nobody_played_is_a_one_liner():
     assert len(text) < 200
 
 
-def test_prompt_asks_for_sections_and_a_nether_call_only_when_supported():
+def test_prompt_lets_the_model_read_deaths_and_forbids_invented_places():
     assert "Time played" in SYSTEM_PROMPT
     assert "busiest" in SYSTEM_PROMPT
+    assert "PVP" in SYSTEM_PROMPT
     assert "Nether" in SYSTEM_PROMPT
-    assert "deaths.nether" in SYSTEM_PROMPT
+    assert "End" in SYSTEM_PROMPT
+    assert "ancient city" in SYSTEM_PROMPT
+    assert "deaths.nether" not in SYSTEM_PROMPT
+    assert "mostly_nether" not in SYSTEM_PROMPT
     assert "Do not mention advancements" in SYSTEM_PROMPT
+    assert "do not support" in SYSTEM_PROMPT
 
 
 def test_narrative_welcomes_a_new_player_and_rejects_advancement_talk():

@@ -110,15 +110,15 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small Discord server.
 You are given JSON of highlights computed from the logs. Use only that JSON.
-Write the way a friend would recap the night: a couple of sentences of context, then short sections. A list of every death is not what anyone wants.
+Write the way a friend who plays would recap the night: specific, brief, and human. A list of every death is not what anyone wants.
 
 Sections, with a blank line between them:
-1. Opening: how many players, the combined string, and the busiest stretch when busiest is set. Use its start_label and end_label. Say people were mostly in the Nether only when busiest.mostly_nether is true.
+1. Opening: how many players, the combined string, and the busiest stretch when busiest is set. Use its start_label and end_label.
 2. Time played — a heading, then one line per person. Use the playtime string and session count. Mention still online, the AFK stretch, or a welcome only when those fields say so.
-3. Deaths (the total) — skip when the total is 0. When deaths.nether is true, open with the Nether trip going badly. Then one sentence for the cluster: who died how many times, between the two clock labels, mostly to the causes, in that order. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
+3. Deaths (the total) — skip when the total is 0. Retell the cluster in your own words from its causes: who died, how many times, between the two clock labels. You know Minecraft. Players killing players is PVP. Ghasts, piglins, or blazes mean the Nether. The ender dragon, falling out of the world, or endermen mean the End. A warden means an ancient city. Say that when the causes support it. Weigh the whole cluster: one mob in a player fight does not move the fight to another dimension. Then one short sentence for deaths.others. A follow_up row is a later death by someone already in the cluster, not another count inside that window.
 4. Server notes — the note text you were given. Omit the section when server_notes is empty.
 
-Do not mention advancements, challenges, goals, or titles. Do not invent players, times, places, dimensions, or causes. Do not say the Nether unless those flags are true. Discord markdown. No code fence. Stay under 1600 characters.
+Do not mention advancements, challenges, goals, or titles. Do not invent players, times, or causes. Do not name a dimension, place, or activity the death causes do not support. Discord markdown. No code fence. Stay under 1600 characters.
 """
 
 
@@ -500,6 +500,25 @@ def _known_advancement_titles(stats: dict) -> list[str]:
     return titles
 
 
+def _unsupported_nether(text: str, stats: dict) -> bool:
+    """The recap names the Nether, and no death message names a Nether mob.
+
+    Ghasts, piglins, blazes, and the like are enough for the model to say
+    Nether. A login or an advancement is not a death, so it is not checked.
+    """
+    lowered = text.lower()
+    for player in stats.get("players") or []:
+        name = (player.get("name") or "").lower()
+        if name and "nether" in name:
+            lowered = lowered.replace(name, " ")
+    if "nether" not in lowered:
+        return False
+    blob = " ".join((item.get("message") or "").lower() for item in stats.get("deaths") or [])
+    return not any(
+        token in blob for token in ("ghast", "piglin", "blaze", "magma", "hoglin", "strider")
+    )
+
+
 def narrative_ok(text: str, stats: dict) -> bool:
     """Accept a reply that names everyone and uses the deaths, not titles."""
     cleaned = text.strip()
@@ -517,7 +536,7 @@ def narrative_ok(text: str, stats: dict) -> bool:
         return False
     if stats["players"] and "time played" not in lowered:
         return False
-    if (stats.get("highlights") or {}).get("deaths", {}).get("nether") and "nether" not in lowered:
+    if _unsupported_nether(cleaned, stats):
         return False
     if any(player.get("new_player") for player in stats["players"]):
         if "welcome" not in lowered:
@@ -636,7 +655,6 @@ def _minimal_highlights(stats: dict) -> dict:
         ],
         "deaths": {
             "total": (stats.get("totals") or {}).get("deaths", len(deaths)),
-            "nether": False,
             "cluster": None,
             "others": [
                 {"name": name, "count": len(messages), "details": messages[:3]}
@@ -744,10 +762,9 @@ def _render_highlights(stats: dict, highlights: dict) -> str:
     busiest = highlights.get("busiest")
     if busiest:
         people = _people_phrase(busiest["low"], busiest["high"])
-        where = ", mostly in the Nether" if busiest.get("mostly_nether") else ""
         sentence = (
             f"The busiest stretch was {_stretch_phrase(busiest['start_label'], busiest['end_label'])}, "
-            f"when {people} people were on together{where}."
+            f"when {people} people were on together."
         )
         overview = f"{overview} {sentence}".strip()
     if stats.get("partial_day"):
@@ -763,9 +780,7 @@ def _render_highlights(stats: dict, highlights: dict) -> str:
     if deaths.get("total"):
         lines = [f"**Deaths ({deaths['total']})**"]
         story: list[str] = []
-        if deaths.get("nether") and deaths.get("cluster"):
-            story.append("The Nether trip went badly. " + _cluster_sentence(deaths["cluster"]))
-        elif deaths.get("cluster"):
+        if deaths.get("cluster"):
             story.append(_cluster_sentence(deaths["cluster"]))
         others = deaths.get("others") or []
         if others:
