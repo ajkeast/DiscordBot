@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -20,6 +22,7 @@ from utils.minecraft_job import (
     minecraft_channel_id,
     minecraft_model,
     narrative_ok,
+    pick_recap_screenshot,
     prepare_post,
     render_narrative,
     render_template,
@@ -28,6 +31,7 @@ from utils.minecraft_log import (
     EASTERN,
     day_window,
     parse_log_directory,
+    playday_date,
     summarize_day,
     summarize_window,
 )
@@ -615,6 +619,7 @@ def test_compose_mounts_the_minecraft_volume_read_only():
     assert "minecraft_data:/minecraft:ro" in text
     assert "name: minecraft_data" in text
     assert "MINECRAFT_DATA_DIR: /minecraft" in text
+    assert "/opt/apps/minecraft/recap-screenshots:/recap-screenshots:ro" in text
 
 
 def test_admin_check_allows_owner_or_administrator():
@@ -782,3 +787,224 @@ async def test_failed_send_releases_the_claim(mock_bot):
                     await cog._post_due_date(date(2026, 10, 25), reason="test")
     release.assert_called_once()
     mark.assert_not_called()
+
+
+def _write_named_log(directory: Path, name: str, lines: list[str]) -> None:
+    logs = directory / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _steve_lines(start: str, end: str, *, uuid: bool = True) -> list[str]:
+    lines = []
+    if uuid:
+        lines.append(
+            f"[{start}] [User Authenticator #1/INFO]: UUID of player Steve is "
+            "11111111-1111-1111-1111-111111111111"
+        )
+    lines.append(f"[{start}] [Server thread/INFO]: System chat: Steve joined the game")
+    lines.append(f"[{end}] [Server thread/INFO]: System chat: Steve left the game")
+    return lines
+
+
+def _camera_file(directory: Path, rows: list[dict]) -> None:
+    folder = directory / "plugins" / "Camera"
+    folder.mkdir(parents=True)
+    payload = "\n".join(json.dumps(row) for row in rows) + "\n"
+    (folder / "sessions.jsonl").write_text(payload, encoding="utf-8")
+
+
+def _with_empty_history():
+    _cursor, fake_cursor = _history([])
+    return (
+        patch("utils.minecraft_job.ensure_minecraft_tables"),
+        patch("utils.minecraft_job.db_ops.db.cursor", fake_cursor),
+    )
+
+
+def test_screenshot_uses_the_playday_folder_across_5am(tmp_path):
+    # 04:59 ET is still the play day that started yesterday at 05:00.
+    early = datetime(2026, 11, 18, 4, 59, tzinfo=EASTERN)
+    boundary = datetime(2026, 11, 18, 5, 0, tzinfo=EASTERN)
+    assert playday_date(early) == date(2026, 11, 17)
+    assert playday_date(boundary) == date(2026, 11, 18)
+    assert boundary == day_window(date(2026, 11, 18))[0]
+    assert early < day_window(date(2026, 11, 18))[0]
+    (tmp_path / "2026-11-17").mkdir()
+    (tmp_path / "2026-11-18").mkdir()
+    before = tmp_path / "2026-11-17" / "20261118T045900.png"
+    after = tmp_path / "2026-11-18" / "20261118T050000.jpg"
+    before.write_bytes(b"early")
+    after.write_bytes(b"on time")
+    assert pick_recap_screenshot(playday_date(early), tmp_path) == before
+    assert pick_recap_screenshot(playday_date(boundary), tmp_path) == after
+
+
+def test_screenshot_prefers_the_newest_timestamp_name(tmp_path):
+    folder = tmp_path / "2026-11-17"
+    folder.mkdir()
+    older = folder / "20261117T100000.png"
+    newer = folder / "20261117T180000.jpeg"
+    older.write_bytes(b"old")
+    newer.write_bytes(b"new")
+    os.utime(older, (100, 2_000_000_000))
+    os.utime(newer, (100, 100))
+    assert pick_recap_screenshot(date(2026, 11, 17), tmp_path) == newer
+
+
+def test_screenshot_without_a_timestamp_name_uses_mtime(tmp_path):
+    folder = tmp_path / "2026-11-17"
+    folder.mkdir()
+    stale = folder / "zzz.png"
+    fresh = folder / "aaa.jpg"
+    stale.write_bytes(b"old")
+    fresh.write_bytes(b"new")
+    os.utime(stale, (100, 100))
+    os.utime(fresh, (100, 2_000_000_000))
+    assert pick_recap_screenshot(date(2026, 11, 17), tmp_path) == fresh
+
+
+def test_screenshot_missing_dir_or_no_images(tmp_path):
+    assert pick_recap_screenshot(date(2026, 11, 17), tmp_path / "missing") is None
+    folder = tmp_path / "2026-11-17"
+    folder.mkdir()
+    assert pick_recap_screenshot(date(2026, 11, 17), tmp_path) is None
+    (folder / "notes.txt").write_text("not a picture", encoding="utf-8")
+    assert pick_recap_screenshot(date(2026, 11, 17), tmp_path) is None
+
+
+def test_camera_full_overlap_is_not_a_join(tmp_path):
+    # Three seconds of slop on each end is still the camera session.
+    _write_named_log(tmp_path, "2026-10-25-1.log", _steve_lines("10:00:00", "11:00:00"))
+    _write_named_log(
+        tmp_path,
+        "2026-10-26-1.log",
+        _steve_lines("10:00:00", "11:00:00", uuid=False),
+    )
+    _camera_file(
+        tmp_path,
+        [
+            {
+                "player": "Steve",
+                "uuid": "11111111-1111-1111-1111-111111111111",
+                "start": "2026-10-25T14:00:03Z",
+                "end": "2026-10-25T14:59:57Z",
+            }
+        ],
+    )
+    as_of = datetime(2026, 10, 27, 8, 0, tzinfo=EASTERN)
+    covered = build_day_stats(date(2026, 10, 25), data_dir=tmp_path, as_of=as_of)
+    assert covered["nobody_played"] is True
+    assert covered["players"] == []
+    assert covered["new_players"] == []
+
+    tables, cursor = _with_empty_history()
+    with tables, cursor:
+        later = build_day_stats(date(2026, 10, 26), data_dir=tmp_path, as_of=as_of)
+    steve = later["players"][0]
+    assert steve["name"] == "Steve"
+    assert steve["playtime_seconds"] == 3600
+    assert steve["sessions"] == 1
+    # The camera visit on the 25th is not a first join, so the real one is.
+    assert later["new_players"] == ["Steve"]
+
+
+def test_camera_partial_overlap_reduces_playtime(tmp_path):
+    _write_named_log(tmp_path, "2026-10-25-1.log", _steve_lines("10:00:00", "12:00:00"))
+    _camera_file(
+        tmp_path,
+        [
+            {
+                "player": "Steve",
+                "uuid": "11111111-1111-1111-1111-111111111111",
+                "start": "2026-10-25T15:00:00Z",
+                "end": "2026-10-25T16:00:00Z",
+            }
+        ],
+    )
+    tables, cursor = _with_empty_history()
+    with tables, cursor:
+        stats = build_day_stats(
+            date(2026, 10, 25),
+            data_dir=tmp_path,
+            as_of=datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN),
+        )
+    steve = stats["players"][0]
+    assert steve["playtime_seconds"] == 3600
+    assert steve["sessions"] == 1
+    assert stats["nobody_played"] is False
+    assert stats["new_players"] == ["Steve"]
+
+
+def test_missing_camera_file_leaves_playtime(tmp_path):
+    _write_named_log(tmp_path, "2026-10-25-1.log", _steve_lines("10:00:00", "12:00:00"))
+    tables, cursor = _with_empty_history()
+    with tables, cursor:
+        stats = build_day_stats(
+            date(2026, 10, 25),
+            data_dir=tmp_path,
+            as_of=datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN),
+        )
+    steve = stats["players"][0]
+    assert steve["playtime_seconds"] == 2 * 3600
+    assert steve["sessions"] == 1
+    assert stats["new_players"] == ["Steve"]
+
+
+def _shot_post(day: date, *, nobody: bool, narrative: str):
+    prepared = MagicMock()
+    prepared.nobody_played = nobody
+    prepared.narrative = narrative
+    prepared.stats = {
+        "date": day.isoformat(),
+        "pretty_date": "Tuesday, November 17, 2026",
+    }
+    return prepared
+
+
+async def test_summary_attaches_the_playday_screenshot(mock_bot, tmp_path, monkeypatch):
+    day = date(2026, 11, 17)
+    folder = tmp_path / day.isoformat()
+    folder.mkdir()
+    (folder / "20261117T090000.png").write_bytes(b"old")
+    (folder / "20261117T120000.png").write_bytes(b"new")
+    monkeypatch.setenv("MC_RECAP_SCREENSHOT_DIR", str(tmp_path))
+    cog = Minecraft(mock_bot)
+    channel = AsyncMock()
+    await cog._send_summary(channel, _shot_post(day, nobody=False, narrative="Steve played."))
+    sent = channel.send.call_args.kwargs
+    assert sent["file"].filename == "20261117T120000.png"
+    assert sent["embed"].image.url == "attachment://20261117T120000.png"
+    assert "Steve played." in sent["embed"].description
+
+
+async def test_nobody_played_with_a_screenshot_is_a_dated_embed(mock_bot, tmp_path, monkeypatch):
+    day = date(2026, 11, 17)
+    folder = tmp_path / day.isoformat()
+    folder.mkdir()
+    (folder / "20261117T120000.jpg").write_bytes(b"pic")
+    monkeypatch.setenv("MC_RECAP_SCREENSHOT_DIR", str(tmp_path))
+    cog = Minecraft(mock_bot)
+    channel = AsyncMock()
+    narrative = "Nobody played Minecraft on Tuesday, November 17, 2026."
+    await cog._send_summary(channel, _shot_post(day, nobody=True, narrative=narrative))
+    assert channel.send.call_args.args == ()
+    sent = channel.send.call_args.kwargs
+    assert sent["embed"].title == "Tuesday, November 17, 2026"
+    assert not sent["embed"].description
+    assert sent["embed"].image.url == "attachment://20261117T120000.jpg"
+    assert sent["file"].filename == "20261117T120000.jpg"
+    assert narrative not in (sent["embed"].description or "")
+
+
+async def test_nobody_played_without_a_screenshot_stays_plain_text(mock_bot, tmp_path, monkeypatch):
+    monkeypatch.setenv("MC_RECAP_SCREENSHOT_DIR", str(tmp_path / "missing"))
+    cog = Minecraft(mock_bot)
+    channel = AsyncMock()
+    narrative = "Nobody played Minecraft on Tuesday, November 17, 2026."
+    await cog._send_summary(
+        channel,
+        _shot_post(date(2026, 11, 17), nobody=True, narrative=narrative),
+    )
+    assert channel.send.call_args.args[0] == narrative
+    assert "embed" not in channel.send.call_args.kwargs
