@@ -17,6 +17,7 @@ from utils.minecraft_job import (
     claim_daily_post,
     mark_posted,
     minecraft_channel_id,
+    pick_recap_screenshot,
     prepare_post,
     release_claim,
     summary_title,
@@ -62,20 +63,38 @@ class Minecraft(commands.Cog):
             is_owner = result is True
         return actor_is_admin_result(is_owner, ctx.author, ctx.guild)
 
-    def _embed(self, prepared: PreparedPost) -> discord.Embed:
+    def _embed(self, prepared: PreparedPost, *, filename: str | None = None) -> discord.Embed:
         description = prepared.narrative
         if len(description) > 4096:
             description = description[:4090].rstrip() + "…"
-        return discord.Embed(
+        embed = discord.Embed(
             title=summary_title(prepared.stats),
             description=description,
             color=EMBED_COLOR,
         )
+        if filename:
+            embed.set_image(url=f"attachment://{filename}")
+        return embed
+
+    def _dated_shot(self, prepared: PreparedPost, filename: str) -> discord.Embed:
+        """Date and the screenshot, used when nobody played but a picture exists."""
+        embed = discord.Embed(title=summary_title(prepared.stats), color=EMBED_COLOR)
+        embed.set_image(url=f"attachment://{filename}")
+        return embed
+
+    async def _deliver(self, send, prepared: PreparedPost):
+        """Post the recap. Attach the playday screenshot when that folder has one."""
+        shot = _screenshot_file(prepared)
+        if prepared.nobody_played and shot is None:
+            return await send(prepared.narrative[:2000])
+        if prepared.nobody_played:
+            return await send(embed=self._dated_shot(prepared, shot.filename), file=shot)
+        if shot is None:
+            return await send(embed=self._embed(prepared))
+        return await send(embed=self._embed(prepared, filename=shot.filename), file=shot)
 
     async def _send_summary(self, channel, prepared: PreparedPost):
-        if prepared.nobody_played:
-            return await channel.send(prepared.narrative[:2000])
-        return await channel.send(embed=self._embed(prepared))
+        return await self._deliver(channel.send, prepared)
 
     async def _post_due_date(self, day: date, *, reason: str) -> str:
         """Post one calendar day if it has not already been posted.
@@ -239,10 +258,22 @@ class Minecraft(commands.Cog):
             await ctx.send("Couldn't build that Minecraft summary. Check the bot logs.")
             return
 
-        if prepared.nobody_played:
-            await ctx.send(prepared.narrative[:2000])
-            return
-        await ctx.send(embed=self._embed(prepared))
+        await self._deliver(ctx.send, prepared)
+
+
+def _screenshot_file(prepared: PreparedPost) -> discord.File | None:
+    """The playday image, or None when the directory or the folder has nothing."""
+    raw = (prepared.stats or {}).get("date")
+    if not raw:
+        return None
+    try:
+        day = date.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    path = pick_recap_screenshot(day)
+    if path is None:
+        return None
+    return discord.File(path, filename=path.name)
 
 
 async def setup(bot):

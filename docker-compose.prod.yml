@@ -37,6 +37,7 @@ services:
       MINECRAFT_DATA_DIR: /minecraft
     volumes:
       - minecraft_data:/minecraft:ro
+      - /opt/apps/minecraft/recap-screenshots:/recap-screenshots:ro
     networks:
       - dinkboard
 

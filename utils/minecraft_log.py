@@ -18,7 +18,7 @@ import gzip
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -211,6 +211,15 @@ class Prelogin:
     at: datetime
 
 
+@dataclass(frozen=True)
+class CameraSession:
+    """One camera-mode interval. ``end`` is None while it is still open."""
+
+    player: str
+    start: datetime
+    end: datetime | None = None
+
+
 @dataclass
 class ParsedLogs:
     sessions: list[Session] = field(default_factory=list)
@@ -221,6 +230,7 @@ class ParsedLogs:
     uuids: dict[str, str] = field(default_factory=dict)
     files_found: int = 0
     last_event_at: datetime | None = None
+    camera_sessions: list[CameraSession] = field(default_factory=list)
 
 
 def strip_codes(text: str) -> str:
@@ -658,6 +668,146 @@ def parse_data_dir(data_dir: Path, *, as_of: datetime | None = None) -> ParsedLo
     return parse_log_directory(resolve_logs_dir(data_dir), as_of=as_of)
 
 
+# A join a few seconds outside the camera window is still that camera session.
+CAMERA_GRACE = timedelta(seconds=5)
+_CAMERA_OPEN = datetime(9999, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse_instant(value) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def load_camera_sessions(data_dir: Path) -> list[CameraSession]:
+    """Camera intervals from ``plugins/Camera/sessions.jsonl``.
+
+    A missing file means the plugin is not installed, so playtime is unchanged.
+    A line with no ``end`` is still open. Bad lines are skipped.
+    """
+    path = data_dir / "plugins" / "Camera" / "sessions.jsonl"
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    sessions: list[CameraSession] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        player = row.get("player")
+        start = _parse_instant(row.get("start"))
+        if not isinstance(player, str) or not player.strip() or start is None:
+            continue
+        end = _parse_instant(row.get("end")) if row.get("end") else None
+        if end is not None and end < start:
+            continue
+        sessions.append(CameraSession(player=player.strip(), start=start, end=end))
+    return sessions
+
+
+def _camera_end(camera: CameraSession) -> datetime:
+    return camera.end if camera.end is not None else _CAMERA_OPEN
+
+
+def _own_cameras(cameras: list[CameraSession], player: str) -> list[CameraSession]:
+    return [camera for camera in cameras if camera.player == player]
+
+
+def _session_covered(session: Session, cameras: list[CameraSession]) -> bool:
+    """True when this join/leave falls inside a camera session.
+
+    A few seconds of slop on either end still counts as covered. So does a
+    session whose whole span is inside the union of that player's cameras.
+    """
+    own = _own_cameras(cameras, session.player)
+    if not own:
+        return False
+    for camera in own:
+        end = _camera_end(camera)
+        if session.start >= camera.start - CAMERA_GRACE and session.end <= end + CAMERA_GRACE:
+            return True
+    cursor = session.start
+    spans = []
+    for camera in own:
+        end = _camera_end(camera)
+        if end <= session.start or camera.start >= session.end:
+            continue
+        spans.append((max(camera.start, session.start), min(end, session.end)))
+    spans.sort()
+    for start, end in spans:
+        if start > cursor:
+            return False
+        if end > cursor:
+            cursor = end
+    return cursor >= session.end
+
+
+def camera_overlap_seconds(
+    start: datetime,
+    end: datetime,
+    cameras: list[CameraSession],
+    player: str,
+) -> int:
+    """Seconds of ``[start, end)`` that overlap this player's camera intervals."""
+    spans: list[tuple[datetime, datetime]] = []
+    for camera in _own_cameras(cameras, player):
+        cam_end = _camera_end(camera)
+        lo = max(start, camera.start)
+        hi = min(end, cam_end)
+        if hi > lo:
+            spans.append((lo, hi))
+    if not spans:
+        return 0
+    spans.sort()
+    total = 0.0
+    cur_lo, cur_hi = spans[0]
+    for lo, hi in spans[1:]:
+        if lo <= cur_hi:
+            if hi > cur_hi:
+                cur_hi = hi
+        else:
+            total += (cur_hi - cur_lo).total_seconds()
+            cur_lo, cur_hi = lo, hi
+    total += (cur_hi - cur_lo).total_seconds()
+    return int(round(total))
+
+
+def exclude_camera_sessions(parsed: ParsedLogs, cameras: list[CameraSession]) -> ParsedLogs:
+    """Remove camera time from parsed join/leave sessions.
+
+    A fully covered session is dropped, so the player did not play or join and
+    is not a first-ever join. A partial overlap stays; playtime loses the
+    overlap when the day is summarized. No cameras leaves ``parsed`` as it was.
+    """
+    if not cameras:
+        return parsed
+    parsed.camera_sessions = list(cameras)
+    parsed.sessions = [
+        session for session in parsed.sessions if not _session_covered(session, cameras)
+    ]
+    return parsed
+
+
 def _in_window(moment: datetime, start: datetime, end: datetime) -> bool:
     return start <= moment < end
 
@@ -689,6 +839,10 @@ def summarize_window(
             continue
         slice_start, slice_end = clipped
         duration = int((slice_end - slice_start).total_seconds())
+        if parsed.camera_sessions:
+            duration -= camera_overlap_seconds(
+                slice_start, slice_end, parsed.camera_sessions, session.player
+            )
         if duration <= 0:
             continue
         full_seconds = session.duration_seconds
@@ -1516,6 +1670,19 @@ def day_window(day: date) -> tuple[datetime, datetime]:
     start = _at(day, PLAY_DAY_START)
     end = _at(day + timedelta(days=1), PLAY_DAY_START)
     return start, end
+
+
+def playday_date(moment: datetime) -> date:
+    """The play day containing ``moment``, named by the 05:00 it starts on.
+
+    04:59 America/New_York still belongs to the previous morning. 05:00 starts
+    the new one. Screenshot folders use this date.
+    """
+    local = moment.astimezone(EASTERN)
+    opened = _at(local.date(), PLAY_DAY_START)
+    if local < opened:
+        return local.date() - timedelta(days=1)
+    return local.date()
 
 
 def summarize_day(

@@ -27,6 +27,8 @@ from utils.minecraft_log import (
     MinecraftLogError,
     apply_world_files,
     drop_new_players,
+    exclude_camera_sessions,
+    load_camera_sessions,
     parse_data_dir,
     summarize_day,
 )
@@ -37,7 +39,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MINECRAFT_MODEL = "grok-4.7"
 DEFAULT_DATA_DIR = "/minecraft"
+DEFAULT_SCREENSHOT_DIR = "/recap-screenshots"
 MAX_NARRATIVE_CHARS = 1800
+_SCREENSHOT_SUFFIXES = {".png", ".jpg", ".jpeg"}
+# Filenames look like 20261117T080000 or 2026-11-17T08-00-00.
+_SCREENSHOT_STAMP = re.compile(
+    r"^\d{4}-?\d{2}-?\d{2}[T_\-]?\d{2}[-:]?\d{2}[-:]?\d{2}"
+)
 GROK_ATTEMPTS = 2
 
 # Additive only. Never ALTER or DROP tables that already exist.
@@ -166,6 +174,47 @@ def minecraft_channel_id() -> int:
 def minecraft_data_dir() -> Path:
     raw = os.getenv("MINECRAFT_DATA_DIR", DEFAULT_DATA_DIR).strip()
     return Path(raw or DEFAULT_DATA_DIR)
+
+
+def screenshot_dir() -> Path:
+    raw = os.getenv("MC_RECAP_SCREENSHOT_DIR", DEFAULT_SCREENSHOT_DIR).strip()
+    return Path(raw or DEFAULT_SCREENSHOT_DIR)
+
+
+def _screenshot_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def pick_recap_screenshot(day: date, root: Path | None = None) -> Path | None:
+    """Newest image in the playday folder, or None when there is nothing to post.
+
+    ``day`` is the play day the recap already uses (05:00 America/New_York,
+    named by that morning). The folder is ``<root>/<YYYY-MM-DD>``. A timestamp
+    filename wins; names that are not timestamps fall back to mtime. A missing
+    directory or no images leaves the post unchanged.
+    """
+    folder = (root if root is not None else screenshot_dir()) / day.isoformat()
+    if not folder.is_dir():
+        return None
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        logger.warning("Could not read Minecraft recap screenshots in %s", folder)
+        return None
+    images = [
+        path
+        for path in entries
+        if path.is_file() and path.suffix.lower() in _SCREENSHOT_SUFFIXES
+    ]
+    if not images:
+        return None
+    stamped = [path for path in images if _SCREENSHOT_STAMP.match(path.stem)]
+    if stamped:
+        return max(stamped, key=lambda path: (path.stem, _screenshot_mtime(path)))
+    return max(images, key=_screenshot_mtime)
 
 
 def activity_date_due(now: datetime) -> date | None:
@@ -409,6 +458,7 @@ def build_day_stats(
     if not root.exists():
         raise MinecraftLogError(f"Minecraft data directory does not exist: {root}")
     parsed = parse_data_dir(root, as_of=as_of)
+    exclude_camera_sessions(parsed, load_camera_sessions(root))
     stats = summarize_day(parsed, day, as_of=as_of)
     apply_world_files(stats, parsed, root)
     apply_stored_history(stats)
