@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from collections import defaultdict
+from datetime import datetime
 from typing import Callable, Sequence
 
 import matplotlib.dates as mdates
@@ -38,6 +39,16 @@ def _styled_figure(ylabel: str, title: str) -> tuple[Figure, Axes]:
     return fig, ax
 
 
+def _plot_dates(values: Sequence[datetime]) -> list[float]:
+    """Convert datetimes to Matplotlib day numbers so plot() stays typed as floats."""
+    if not values:
+        return []
+    converted = mdates.date2num(list(values))
+    if isinstance(converted, (int, float)):
+        return [float(converted)]
+    return [float(value) for value in converted]
+
+
 def _export_png(fig: Figure) -> bytes:
     fig.autofmt_xdate(rotation=30, ha="right")
     buf = io.BytesIO()
@@ -60,7 +71,7 @@ def render_firsts_chart(
     ranked_users = sorted(by_user.keys(), key=lambda uid: -len(by_user[uid]))
     for idx, user_id in enumerate(ranked_users):
         user_entries = by_user[user_id]
-        xs = [e.timesent for e in user_entries]
+        xs = _plot_dates([e.timesent for e in user_entries])
         ys = list(range(1, len(user_entries) + 1))
         ax.plot(
             xs,
@@ -80,7 +91,7 @@ def render_firsts_chart(
 def render_juice_chart(points: Sequence[JuicePoint]) -> bytes:
     """Render daily juice over time as PNG bytes (thread-safe)."""
     fig, ax = _styled_figure("Juice", "Daily Juice")
-    xs = [p.timesent_eastern for p in points]
+    xs = _plot_dates([p.timesent_eastern for p in points])
     ys = [p.juice for p in points]
     ax.plot(xs, ys, color=f"#{EMBED_COLOR:06x}", linewidth=2.5)
     return _export_png(fig)
