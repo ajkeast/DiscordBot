@@ -1,348 +1,62 @@
-from discord.ext import commands, tasks
-from discord import app_commands
-from chatgpt_functions import GrokClient, call_grok_imagine, GROK_IMAGINE_FILENAME
-from utils.constants import (
-    EMBED_COLOR,
-    IMAGINE_RATE_LIMIT,
-    IMAGINE_RATE_PERIOD_SECONDS,
-    MAX_GROK_SESSION_TURNS,
-    MAX_IMAGINE_INPUT_IMAGES,
-)
-from utils.db import db_ops
-from utils.interactions import acknowledge
-from datetime import datetime, timedelta
-from typing import List, Optional
+"""AI chat, image generation, and text-to-speech commands."""
+
+from __future__ import annotations
+
 import asyncio
-import math
-import discord
-import pytz
-import requests
-import os
 import io
 import logging
+from datetime import datetime, time
+from typing import Optional
+
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from cogs.ai_imagine_ui import (
+    ImagineCooldown,
+    ImagineResultView,
+    collect_image_urls,
+    collect_imagine_source,
+    start_imagine,
+)
+from config import EASTERN, MAX_GROK_SESSION_TURNS, xai_api_key
+from db.ai_logs import AILogsRepository
+from db.messages import MessagesRepository
+from services.xai import GrokChatService, synthesize_speech
+from utils.discord_helpers import acknowledge, hybrid_command
 
 logger = logging.getLogger(__name__)
 
-EASTERN = pytz.timezone("US/Eastern")
-DAILY_CLEAR_HOUR = 3  # 3am US/Eastern
+DAILY_CLEAR_AT = time(hour=3, minute=0, tzinfo=EASTERN)
 
-
-def _is_image_attachment(attachment) -> bool:
-    content_type = getattr(attachment, "content_type", None) or ""
-    if content_type.startswith("image/"):
-        return True
-    filename = (getattr(attachment, "filename", None) or "").lower()
-    return filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
-
-
-def _image_urls_from_message(ctx) -> List[str]:
-    return [a.url for a in ctx.message.attachments if _is_image_attachment(a)]
-
-
-def _collect_image_urls(ctx, *attachments: Optional[discord.Attachment]) -> List[str]:
-    """Prefer explicit slash attachment options; fall back to message attachments."""
-    urls = [
-        a.url
-        for a in attachments
-        if a is not None and _is_image_attachment(a)
-    ]
-    if urls:
-        return urls
-    return _image_urls_from_message(ctx)
-
-
-def _first_image_url_from_discord_message(message) -> Optional[str]:
-    if message is None:
-        return None
-    for attachment in getattr(message, "attachments", None) or []:
-        if _is_image_attachment(attachment):
-            return attachment.url
-    for embed in getattr(message, "embeds", None) or []:
-        image = getattr(embed, "image", None)
-        url = getattr(image, "url", None) if image is not None else None
-        if url:
-            return url
-    return None
-
-
-def _image_url_from_reply(ctx) -> Optional[str]:
-    message = getattr(ctx, "message", None)
-    if message is None:
-        return None
-    ref = getattr(message, "reference", None)
-    if ref is None:
-        return None
-    resolved = getattr(ref, "resolved", None)
-    if not isinstance(resolved, discord.Message):
-        return None
-    return _first_image_url_from_discord_message(resolved)
-
-
-def _collect_imagine_source(
-    ctx, image: Optional[discord.Attachment]
-) -> tuple[Optional[str], Optional[str]]:
-    """Return (image_url, error_message) for a single /imagine source image."""
-    if image is not None:
-        if not _is_image_attachment(image):
-            return None, "That attachment isn't an image."
-        return image.url, None
-
-    message_urls = _image_urls_from_message(ctx)
-    if len(message_urls) > MAX_IMAGINE_INPUT_IMAGES:
-        noun = "image" if MAX_IMAGINE_INPUT_IMAGES == 1 else "images"
-        return (
-            None,
-            f"You can attach at most {MAX_IMAGINE_INPUT_IMAGES} {noun} for `/imagine`.",
-        )
-    if message_urls:
-        return message_urls[0], None
-    return _image_url_from_reply(ctx), None
-
-
-def _embed_prompt(prompt: str) -> str:
-    text = (prompt or "").strip() or "…"
-    if len(text) > 1024:
-        return text[:1021] + "..."
-    return text
-
-
-class _CooldownMessage:
-    __slots__ = ("author",)
-
-    def __init__(self, author):
-        self.author = author
-
-
-def _imagine_cooldown_message(retry_after: float) -> str:
-    minutes = max(1, math.ceil(retry_after / 60))
-    return (
-        f"You've hit the `/imagine` limit ({IMAGINE_RATE_LIMIT} per hour). "
-        f"Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
-    )
-
-
-async def _consume_imagine_cooldown(interaction: discord.Interaction) -> bool:
-    """Take one /imagine token for this user. Reply ephemerally if they are limited."""
-    cog = interaction.client.get_cog("AI")
-    command = getattr(cog, "imagine", None) if cog is not None else None
-    buckets = getattr(command, "_buckets", None)
-    if buckets is None:
-        return True
-    retry_after = buckets.update_rate_limit(_CooldownMessage(interaction.user))
-    if not retry_after:
-        return True
-    await interaction.response.send_message(
-        _imagine_cooldown_message(retry_after),
-        ephemeral=True,
-    )
-    return False
-
-
-def _imagining_text(source) -> str:
-    """Channel status while Grok Imagine is running (replaces Discord's 'thinking')."""
-    name = None
-    me = getattr(source, "me", None)
-    if me is not None:
-        name = getattr(me, "display_name", None)
-    if not isinstance(name, str) or not name:
-        bot = getattr(source, "bot", None) or getattr(source, "client", None)
-        user = getattr(bot, "user", None) if bot is not None else None
-        name = getattr(user, "display_name", None)
-    if not isinstance(name, str) or not name:
-        name = "Peter Dinklage"
-    return f"{name} is imagining…"
-
-
-def _prompt_from_imagine_message(message) -> Optional[str]:
-    for embed in getattr(message, "embeds", None) or []:
-        for field in getattr(embed, "fields", None) or []:
-            if getattr(field, "name", None) == "Prompt":
-                value = (getattr(field, "value", None) or "").strip()
-                if value:
-                    return value
-    return None
-
-
-def _source_image_url_from_imagine_message(message) -> Optional[str]:
-    """Original edit source URL, stored on the embed so Retry can reuse it."""
-    for embed in getattr(message, "embeds", None) or []:
-        url = getattr(embed, "url", None)
-        if isinstance(url, str) and url:
-            return url
-    return None
-
-
-def _imagine_result_embed(prompt: str, author, source_image_url: Optional[str]) -> discord.Embed:
-    embed = discord.Embed(color=EMBED_COLOR, url=source_image_url or None)
-    embed.set_image(url=f"attachment://{GROK_IMAGINE_FILENAME}")
-    embed.add_field(name="Prompt", value=_embed_prompt(prompt), inline=False)
-    embed.set_footer(text=f"Requested by {author.display_name}")
-    return embed
-
-
-def _imagine_error_embed() -> discord.Embed:
-    return discord.Embed(
-        title="❌ Error",
-        description="Failed to generate image. Check the bot logs and try again.",
-        color=EMBED_COLOR,
-    )
-
-
-async def _complete_imagine(
-    message, prompt: str, image_url: Optional[str], author
-) -> None:
-    loop = asyncio.get_running_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: call_grok_imagine(prompt, input_image_url=image_url),
-    )
-    if response["status"] != "success":
-        logger.error("/imagine failed: %s", response.get("error"))
-        await message.edit(content=None, embed=_imagine_error_embed(), view=None)
-        return
-
-    image_file = discord.File(
-        io.BytesIO(response["image_bytes"]),
-        filename=GROK_IMAGINE_FILENAME,
-    )
-    await message.edit(
-        content=None,
-        embed=_imagine_result_embed(prompt, author, image_url),
-        attachments=[image_file],
-        view=ImagineResultView(),
-    )
-
-
-def _editable_message(sent):
-    """Resolve a Message from ctx.send or interaction.response.send_message."""
-    if hasattr(sent, "edit") and callable(getattr(sent, "edit", None)):
-        return sent
-    resource = getattr(sent, "resource", None)
-    if hasattr(resource, "edit") and callable(getattr(resource, "edit", None)):
-        return resource
-    return None
-
-
-async def _start_imagine(source, send, prompt: str, image_url: Optional[str], author) -> None:
-    sent = await send(_imagining_text(source))
-    message = _editable_message(sent)
-    if message is None:
-        message = await source.original_response()
-    try:
-        await _complete_imagine(message, prompt, image_url, author)
-    except Exception:
-        logger.exception("Failed to finish /imagine result")
-        try:
-            await message.edit(content=None, embed=_imagine_error_embed(), view=None)
-        except Exception:
-            logger.exception("Failed to update imagining placeholder")
-
-
-class ImagineEditModal(discord.ui.Modal, title="Edit image"):
-    prompt_input = discord.ui.TextInput(
-        label="What should we change?",
-        style=discord.TextStyle.paragraph,
-        max_length=1000,
-        required=True,
-    )
-
-    def __init__(self, image_url: str):
-        super().__init__()
-        self.image_url = image_url
-
-    async def on_submit(self, interaction: discord.Interaction):
-        prompt = str(self.prompt_input.value).strip()
-        if not prompt:
-            await interaction.response.send_message(
-                "Please describe what to change.",
-                ephemeral=True,
-            )
-            return
-        if not await _consume_imagine_cooldown(interaction):
-            return
-        await _start_imagine(
-            interaction,
-            interaction.response.send_message,
-            prompt,
-            self.image_url,
-            interaction.user,
-        )
-
-
-class ImagineResultView(discord.ui.View):
-    """Persistent Edit and Retry buttons on /imagine results."""
-
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="Edit",
-        style=discord.ButtonStyle.primary,
-        custom_id="imagine:edit",
-    )
-    async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        image_url = _first_image_url_from_discord_message(interaction.message)
-        if not image_url:
-            await interaction.response.send_message(
-                "Couldn't find an image on that message to edit.",
-                ephemeral=True,
-            )
-            return
-        await interaction.response.send_modal(ImagineEditModal(image_url=image_url))
-
-    @discord.ui.button(
-        label="Retry",
-        style=discord.ButtonStyle.secondary,
-        custom_id="imagine:retry",
-    )
-    async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        prompt = _prompt_from_imagine_message(interaction.message)
-        if not prompt:
-            await interaction.response.send_message(
-                "Couldn't find the original prompt to retry.",
-                ephemeral=True,
-            )
-            return
-        if not await _consume_imagine_cooldown(interaction):
-            return
-        source_url = _source_image_url_from_imagine_message(interaction.message)
-        await _start_imagine(
-            interaction,
-            interaction.response.send_message,
-            prompt,
-            source_url,
-            interaction.user,
-        )
-
-
-async def _ensure_message_row(ctx, content: str = "") -> None:
-    """Insert a messages row for slash invocations (they skip on_message).
-
-    AI logging FKs chatgpt_logs / dalle_3_prompts.message_id → messages.id.
-    Prefix commands are already stored in on_message before process_commands.
-    """
-    if ctx.interaction is None:
-        return
-    message_data = (
-        ctx.message.id,
-        ctx.author.id,
-        ctx.channel.id,
-        content or (getattr(ctx.message, "content", None) or ""),
-        ctx.message.created_at,
-    )
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, db_ops.update_messages, message_data)
+BASE_SYSTEM_PROMPT = (
+    "You are Peter Dinklage, the resident bot of this Discord server (Dinkscord). "
+    "You are not just a chat assistant: you run the daily /1st game, the DinkCoin (DINK) economy, "
+    "image generation, and server stats. Commands are slash commands (also available with the '_' prefix). "
+    "You speak to server members as yourself — never as a separate AI product. "
+    "Never mention API providers, model names, databases, table names, code files, "
+    "environment variables, or other internal implementation details. "
+    "You think from first principles and reason step by step when applicable. "
+    "You have tools to look up your own documentation (get_bot_documentation), your live command list "
+    "(list_bot_commands), and live data (get_first_game_stats, get_juice_stats, get_dink_ledger). "
+    "Whenever someone asks about you, your commands, your capabilities, the first game, juice, streaks, "
+    "DINK, or how any of your features work, call those tools and answer from their output instead of guessing. "
+    "You also have real-time web and X search; use them to confirm facts and fetch primary sources for current events. "
+    "In your final answer, write economically. A single sentence should often be enough. "
+    "Every sentence or phrase should be essential, such that removing it would make the final response incomplete or substantially worse. "
+    "Do not use markdown bold (**text**) for whole responses or multiple sentences—especially after web search. "
+)
 
 
 def _format_slash_ask_message(author, prompt: str, response: str) -> str:
-    """Format slash /ask and /voice as '@user: prompt\\n\\nresponse' (Discord 2000-char limit)."""
+    """Format slash /ask and /voice as '@user: prompt\\n\\nresponse' (2000-char limit)."""
     header = f"{author.mention}: "
     sep = "\n\n"
     prompt_body = (prompt or "").strip() or "…"
     answer = (response or "").strip() or "…"
     available = 2000 - len(header) - len(sep)
     if len(prompt_body) + len(answer) > available:
-        # Prefer keeping the answer; trim the prompt first, then the answer.
         max_prompt = min(len(prompt_body), max(32, available // 3))
         if len(prompt_body) > max_prompt:
             prompt_body = prompt_body[: max_prompt - 3] + "..."
@@ -352,8 +66,7 @@ def _format_slash_ask_message(author, prompt: str, response: str) -> str:
     return f"{header}{prompt_body}{sep}{answer}"
 
 
-async def _send_ask_answer(ctx, prompt: str, content: str, **kwargs):
-    """Send /ask or /voice answer; slash includes '@user: prompt' in one message."""
+async def _send_ask_answer(ctx, prompt: str, content: str, **kwargs) -> None:
     if ctx.interaction is not None:
         await ctx.send(_format_slash_ask_message(ctx.author, prompt, content), **kwargs)
     else:
@@ -363,44 +76,44 @@ async def _send_ask_answer(ctx, prompt: str, content: str, **kwargs):
 class AI(commands.Cog):
     """Chat, image generation, and voice."""
 
-    def __init__(self, bot):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        *,
+        grok: GrokChatService | None = None,
+        ai_logs_repo: AILogsRepository | None = None,
+        messages_repo: MessagesRepository | None = None,
+    ) -> None:
         self.bot = bot
-        self.grok = GrokClient(bot=bot)
-        # Single shared session for all users (last Grok response_id, or None for new conversation)
-        self.last_response_id = None
-        self._session_turns = 0  # turns in current session; reset when starting fresh or hitting limit
-        self.system_prompt = (
-            "You are Peter Dinklage, the resident bot of this Discord server (Dinkscord). "
-            "You are not just a chat assistant: you run the daily /1st game, the DinkCoin (DINK) economy, "
-            "image generation, and server stats. Commands are slash commands (also available with the '_' prefix). "
-            "You speak to server members as yourself — never as a separate AI product. "
-            "Never mention API providers, model names, databases, table names, code files, "
-            "environment variables, or other internal implementation details. "
-            "You think from first principles and reason step by step when applicable. "
-            "You have tools to look up your own documentation (get_bot_documentation), your live command list "
-            "(list_bot_commands), and live data (get_first_game_stats, get_juice_stats, get_dink_ledger). "
-            "Whenever someone asks about you, your commands, your capabilities, the first game, juice, streaks, "
-            "DINK, or how any of your features work, call those tools and answer from their output instead of guessing. "
-            "You also have real-time web and X search; use them to confirm facts and fetch primary sources for current events. "
-            "In your final answer, write economically. A single sentence should often be enough. "
-            "Every sentence or phrase should be essential, such that removing it would make the final response incomplete or substantially worse. "
-            "Do not use markdown bold (**text**) for whole responses or multiple sentences—especially after web search. "
-        )
+        self.ai_logs_repo = ai_logs_repo or AILogsRepository()
+        self.messages_repo = messages_repo or getattr(
+            bot, "messages_repo", None
+        ) or MessagesRepository()
+        self.grok = grok or GrokChatService(bot=bot, logs_repo=self.ai_logs_repo)
+        self.system_prompt = BASE_SYSTEM_PROMPT
 
-    async def cog_load(self):
-        self.bot.add_view(ImagineResultView())
+        # Shared server-wide session guarded by an asyncio lock.
+        self._session_lock = asyncio.Lock()
+        self.last_response_id: str | None = None
+        self._session_turns = 0
+
+        self.imagine_cooldown = ImagineCooldown()
+        self._imagine_view = ImagineResultView(cooldown=self.imagine_cooldown)
+
+    async def cog_load(self) -> None:
+        self.bot.add_view(self._imagine_view)
         self.daily_chat_clear.start()
 
-    def cog_unload(self):
-        self.daily_chat_clear.cancel()
-        self.bot.remove_view(ImagineResultView())
+    async def cog_unload(self) -> None:
+        if self.daily_chat_clear.is_running():
+            self.daily_chat_clear.cancel()
+        self._imagine_view.stop()
 
-    def _reset_session(self):
+    def _reset_session(self) -> None:
         self.last_response_id = None
         self._session_turns = 0
 
     def _build_system_prompt(self) -> str:
-        """Base prompt plus today's US/Eastern date (no clock time)."""
         today = datetime.now(EASTERN).strftime("%A, %B %d, %Y")
         return (
             f"{self.system_prompt}"
@@ -408,60 +121,81 @@ class AI(commands.Cog):
             "Use this for any date-sensitive answers."
         )
 
-    def _clear_session_if_new_day(self) -> bool:
-        """Clear the shared chat at the configured daily hour (US/Eastern). Returns True if cleared."""
-        now = datetime.now(EASTERN)
-        if now.hour == DAILY_CLEAR_HOUR:
-            self._reset_session()
-            logger.info(
-                "Auto-cleared shared Grok chat at %sam US/Eastern",
-                DAILY_CLEAR_HOUR,
-            )
-            return True
-        return False
+    async def _ensure_message_row(self, ctx, content: str = "") -> None:
+        """Insert a messages row for slash invocations (they skip on_message)."""
+        if ctx.interaction is None:
+            return
+        await asyncio.to_thread(
+            self.messages_repo.insert_message,
+            ctx.message.id,
+            ctx.author.id,
+            ctx.channel.id,
+            content or (getattr(ctx.message, "content", None) or ""),
+            ctx.message.created_at,
+        )
 
-    @tasks.loop(hours=1)
-    async def daily_chat_clear(self):
-        """Clear the shared chat daily so the next session gets a fresh Eastern date."""
-        self._clear_session_if_new_day()
+    async def _run_grok_turn(
+        self,
+        prompt: str,
+        *,
+        user_id: int,
+        message_id: int,
+        image_urls: list[str] | None = None,
+    ) -> str:
+        """Execute one Grok turn off the event loop with serialized session state."""
+        async with self._session_lock:
+            if self._session_turns >= MAX_GROK_SESSION_TURNS:
+                self._reset_session()
+            prev_id = self.last_response_id
+            sys_prompt = self._build_system_prompt()
+            next_id, response_text = await asyncio.to_thread(
+                self.grok.send_message,
+                prompt,
+                previous_response_id=prev_id,
+                system_prompt=sys_prompt,
+                user_id=user_id,
+                message_id=message_id,
+                image_urls=image_urls,
+            )
+            if next_id is not None:
+                self.last_response_id = next_id
+                self._session_turns += 1
+            return response_text
+
+    @tasks.loop(time=DAILY_CLEAR_AT)
+    async def daily_chat_clear(self) -> None:
+        """Reset shared chat daily at 3:00 AM Eastern so sessions get a fresh date."""
+        async with self._session_lock:
+            self._reset_session()
+        logger.info("Auto-cleared shared Grok chat at 3:00 AM Eastern")
 
     @daily_chat_clear.before_loop
-    async def before_daily_chat_clear(self):
+    async def before_daily_chat_clear(self) -> None:
         await self.bot.wait_until_ready()
-        now = datetime.now(EASTERN)
-        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        await asyncio.sleep((next_hour - now).total_seconds())
 
-    @commands.hybrid_command(brief="Ask a question")
+    @hybrid_command(brief="Ask a question")
     @app_commands.describe(
         prompt="Your question or message",
         image="Optional image to include with your question",
     )
     async def ask(
         self,
-        ctx,
+        ctx: commands.Context,
         *,
         prompt: str,
         image: Optional[discord.Attachment] = None,
-    ):
+    ) -> None:
         """Ask a question. You can also attach images."""
-
-        image_urls = _collect_image_urls(ctx, image)
+        image_urls = collect_image_urls(ctx, image)
 
         async with acknowledge(ctx):
-            # Start a new session if we've hit the turn limit (keeps context/cost bounded)
-            if self._session_turns >= MAX_GROK_SESSION_TURNS:
-                self._reset_session()
-
             try:
-                await _ensure_message_row(ctx, content=prompt)
-                next_response_id, response_text = self.grok.send_message(
+                await self._ensure_message_row(ctx, content=prompt)
+                response_text = await self._run_grok_turn(
                     prompt,
-                    previous_response_id=self.last_response_id,
-                    system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
                     message_id=ctx.message.id,
-                    image_urls=image_urls if image_urls else None,
+                    image_urls=image_urls or None,
                 )
             except Exception:
                 logger.exception("/ask failed for user %s", ctx.author.id)
@@ -472,83 +206,87 @@ class AI(commands.Cog):
                 )
                 return
 
-            if next_response_id is not None:
-                self.last_response_id = next_response_id
-                self._session_turns += 1
-
             await _send_ask_answer(
                 ctx,
                 prompt,
-                response_text or "Sorry, I couldn't generate a reply this time. Please try again.",
+                response_text
+                or "Sorry, I couldn't generate a reply this time. Please try again.",
             )
 
-    @commands.hybrid_command(brief="Generate an AI image")
-    @commands.cooldown(IMAGINE_RATE_LIMIT, IMAGINE_RATE_PERIOD_SECONDS, commands.BucketType.user)
+    @hybrid_command(brief="Generate an AI image")
     @app_commands.describe(
         prompt="Describe the image to generate or edit",
         image="Optional image to edit",
     )
     async def imagine(
         self,
-        ctx,
+        ctx: commands.Context,
         *,
         prompt: str,
         image: Optional[discord.Attachment] = None,
-    ):
+    ) -> None:
         """Generate an AI image, or edit one attached image / a replied-to image."""
+        retry_after = self.imagine_cooldown.check_and_consume(ctx.author)
+        if retry_after:
+            msg = self.imagine_cooldown.format_limit_message(retry_after)
+            if ctx.interaction is not None and not ctx.interaction.response.is_done():
+                await ctx.interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await ctx.send(msg)
+            return
 
-        image_url, error = _collect_imagine_source(ctx, image)
+        image_url, error = collect_imagine_source(ctx, image)
         if error:
             await ctx.send(error)
             return
 
-        await _ensure_message_row(ctx, content=prompt)
-        db_ops.write_dalle_entry(user_id=ctx.author.id, prompt=prompt, message_id=ctx.message.id)
-        await _start_imagine(ctx, ctx.send, prompt, image_url, ctx.author)
+        await self._ensure_message_row(ctx, content=prompt)
+        await asyncio.to_thread(
+            self.ai_logs_repo.log_image_prompt,
+            user_id=ctx.author.id,
+            prompt=prompt,
+            message_id=ctx.message.id,
+        )
+        await start_imagine(
+            ctx,
+            ctx.send,
+            prompt,
+            image_url,
+            ctx.author,
+            cooldown=self.imagine_cooldown,
+        )
 
-    @commands.hybrid_command(brief="Clear the shared chat")
-    async def clear(self, ctx):
+    @hybrid_command(brief="Clear the shared chat")
+    async def clear(self, ctx: commands.Context) -> None:
         """Clear the shared chat so the next /ask starts fresh."""
-
-        self._reset_session()
+        async with self._session_lock:
+            self._reset_session()
         await ctx.send("Chat history cleared! Starting fresh, dude! 🤙")
 
-    @commands.hybrid_command(brief="Answer a prompt out loud")
+    @hybrid_command(brief="Answer a prompt out loud")
     @app_commands.describe(prompt="The prompt to answer and speak aloud")
-    async def voice(self, ctx, *, prompt: str):
+    async def voice(self, ctx: commands.Context, *, prompt: str) -> None:
         """Answer a prompt and read the reply aloud."""
-
         if not prompt:
             await ctx.send("Please provide text to convert to speech.")
             return
-
         if len(prompt) > 15000:
             await ctx.send("Text is too long. Maximum 15,000 characters.")
             return
 
-        api_key = os.getenv('XAI_API_KEY')
+        api_key = xai_api_key()
         if not api_key:
             await ctx.send("XAI API key not configured.")
             return
 
         async with acknowledge(ctx):
             try:
-                if self._session_turns >= MAX_GROK_SESSION_TURNS:
-                    self._reset_session()
-
-                await _ensure_message_row(ctx, content=prompt)
-                next_response_id, response_text = self.grok.send_message(
+                await self._ensure_message_row(ctx, content=prompt)
+                response_text = await self._run_grok_turn(
                     prompt,
-                    previous_response_id=self.last_response_id,
-                    system_prompt=self._build_system_prompt(),
                     user_id=ctx.author.id,
                     message_id=ctx.message.id,
                 )
-
-                if next_response_id is not None:
-                    self.last_response_id = next_response_id
-                    self._session_turns += 1
-
                 if not response_text:
                     await _send_ask_answer(
                         ctx,
@@ -557,33 +295,29 @@ class AI(commands.Cog):
                     )
                     return
 
-                tts_response = requests.post(
-                    "https://api.x.ai/v1/tts",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "text": response_text,
-                        "voice_id": "leo",
-                        "language": "en",
-                    },
+                bot_session: aiohttp.ClientSession | None = getattr(
+                    self.bot, "http_session", None
                 )
-                tts_response.raise_for_status()
-
-                audio_file = discord.File(
-                    io.BytesIO(tts_response.content),
-                    filename="voice.mp3"
+                owns_session = bot_session is None or bot_session.closed
+                active_session = (
+                    aiohttp.ClientSession() if owns_session else bot_session
                 )
+                assert active_session is not None
+                try:
+                    audio_bytes = await synthesize_speech(
+                        active_session, response_text, api_key=api_key
+                    )
+                finally:
+                    if owns_session:
+                        await active_session.close()
 
-                # Slash: one message like /ask ('@user: prompt\\n\\nanswer' + audio).
-                # Prefix: audio only (prompt is already visible in the invoking message).
+                audio_file = discord.File(io.BytesIO(audio_bytes), filename="voice.mp3")
                 if ctx.interaction is not None:
                     await _send_ask_answer(ctx, prompt, response_text, file=audio_file)
                 else:
                     await ctx.send(file=audio_file)
 
-            except requests.exceptions.RequestException:
+            except (aiohttp.ClientError, TimeoutError):
                 logger.exception("/voice TTS request failed for user %s", ctx.author.id)
                 await _send_ask_answer(
                     ctx,
@@ -599,5 +333,5 @@ class AI(commands.Cog):
                 )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AI(bot))

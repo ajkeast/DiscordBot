@@ -1,18 +1,25 @@
-# Import dependencies
-import asyncio
-import discord                          # Discord API
-from discord.ext import commands
-import math
-import os                              # For environment variables
-import logging
-import sys
-from functools import partial
-from dotenv import load_dotenv         # Load .env
-from utils.constants import GENERAL_CHANNEL_ID
-from utils.db import db_ops            # Database operations
+"""DiscordBot entrypoint: lifecycle, shared resources, message logging, and cogs."""
 
-# Load environment variables
-load_dotenv()
+from __future__ import annotations
+
+import asyncio
+import logging
+import math
+import sys
+
+import aiohttp
+import discord
+from discord.ext import commands
+
+from config import (
+    GENERAL_CHANNEL_ID,
+    discord_guild_id,
+    discord_token,
+    enable_console_post_loop,
+)
+from db.messages import MessagesRepository
+from db.pool import DatabasePool, get_pool
+from db.schema import ensure_runtime_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,34 +31,59 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+EXTENSIONS: tuple[str, ...] = (
+    "cogs.first",
+    "cogs.dinkcoin",
+    "cogs.server",
+    "cogs.ai",
+    "cogs.utility",
+    "cogs.sentiment",
+    "cogs.music",
+    "cogs.minecraft",
+)
 
-# Setup bot
+
 class DinkBot(commands.Bot):
-    """A Discord bot with first-tracking, AI capabilities, and utility functions."""
-    def __init__(self):
-        intents = discord.Intents.all()
-        super().__init__(command_prefix='_', case_insensitive=True, intents=intents)
+    """Discord bot with /1st, DinkCoin, AI, music, sentiment, and Minecraft recaps."""
 
-    async def setup_hook(self):
-        # Load all cogs
-        await self.load_extension('cogs.first')
-        await self.load_extension('cogs.dinkcoin')
-        await self.load_extension('cogs.server')
-        await self.load_extension('cogs.ai')
-        await self.load_extension('cogs.utility')
-        await self.load_extension('cogs.misc')
-        await self.load_extension('cogs.sentiment')
-        await self.load_extension('cogs.music')
-        await self.load_extension('cogs.minecraft')
+    def __init__(
+        self,
+        *,
+        db_pool: DatabasePool | None = None,
+        messages_repo: MessagesRepository | None = None,
+    ) -> None:
+        intents = discord.Intents.all()
+        super().__init__(command_prefix="_", case_insensitive=True, intents=intents)
+        self.db_pool: DatabasePool = db_pool or get_pool()
+        self.messages_repo: MessagesRepository = messages_repo or MessagesRepository(
+            self.db_pool
+        )
+        self.http_session: aiohttp.ClientSession | None = None
+
+    async def setup_hook(self) -> None:
+        self.http_session = aiohttp.ClientSession()
+        try:
+            await asyncio.to_thread(ensure_runtime_tables, self.db_pool)
+        except Exception:
+            logger.exception("Could not initialize bot-managed Postgres tables on startup")
+
+        for ext in EXTENSIONS:
+            await self.load_extension(ext)
 
         await self._sync_app_commands()
-        self.loop.create_task(self._console_post_loop())
+        if enable_console_post_loop():
+            self.loop.create_task(self._console_post_loop())
 
-    async def _sync_app_commands(self):
-        """Register slash commands with Discord (guild sync when DISCORD_GUILD_ID is set)."""
-        guild_id = os.getenv("DISCORD_GUILD_ID")
-        if guild_id:
-            guild = discord.Object(id=int(guild_id))
+    async def close(self) -> None:
+        if self.http_session is not None and not self.http_session.closed:
+            await self.http_session.close()
+        self.db_pool.close()
+        await super().close()
+
+    async def _sync_app_commands(self) -> None:
+        guild_id = discord_guild_id()
+        if guild_id is not None:
+            guild = discord.Object(id=guild_id)
             self.tree.copy_global_to(guild=guild)
             synced = await self.tree.sync(guild=guild)
             logger.info("Synced %s app commands to guild %s", len(synced), guild_id)
@@ -59,78 +91,88 @@ class DinkBot(commands.Bot):
             synced = await self.tree.sync()
             logger.info("Synced %s app commands globally", len(synced))
 
-    async def _console_post_loop(self):
+    async def _console_post_loop(self) -> None:
         await self.wait_until_ready()
         channel = await self.fetch_channel(GENERAL_CHANNEL_ID)
-        loop = asyncio.get_running_loop()
         while not self.is_closed():
-            line = await loop.run_in_executor(None, sys.stdin.readline)
+            line = await asyncio.to_thread(sys.stdin.readline)
             if not line:
                 break
             text = line.strip()
-            if text:
+            if text and isinstance(channel, discord.abc.Messageable):
                 await channel.send(text)
 
-    async def on_ready(self):
-        print(f"Live: {self.user.name}", flush=True)
+    async def on_ready(self) -> None:
+        logger.info("Live: %s", getattr(self.user, "name", "?"))
 
-    async def on_command_error(self, ctx, error):
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         if isinstance(error, commands.CommandNotFound):
+            return
+        if isinstance(error, commands.NoPrivateMessage):
+            await ctx.send("This command only works in a server.")
             return
         if isinstance(error, commands.CommandOnCooldown):
             minutes = max(1, math.ceil(error.retry_after / 60))
             await ctx.send(
-                f"You've hit the `/imagine` limit (30 per hour). "
+                f"You're on cooldown for this command. "
                 f"Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
             )
             return
-        logger.exception("Command error in %s: %s", getattr(ctx.command, "name", "?"), error)
+        logger.exception(
+            "Command error in %s: %s", getattr(ctx.command, "name", "?"), error
+        )
         await ctx.send("Something went wrong running that command.")
 
-    async def _store_message(self, message_data):
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, db_ops.update_messages, message_data)
+    async def _store_message(
+        self,
+        message_id: int,
+        member_id: int,
+        channel_id: int,
+        content: str,
+        created_at,
+    ) -> None:
+        await asyncio.to_thread(
+            self.messages_repo.insert_message,
+            message_id,
+            member_id,
+            channel_id,
+            content,
+            created_at,
+        )
 
     async def _store_message_edit(
         self,
-        message_id,
-        new_content,
+        message_id: int,
+        new_content: str | None,
         *,
-        member_id,
-        channel_id,
+        member_id: int | None,
+        channel_id: int | None,
         created_at,
-        original_content,
-    ):
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            partial(
-                db_ops.record_message_edit,
-                message_id,
-                new_content,
-                member_id=member_id,
-                channel_id=channel_id,
-                created_at=created_at,
-                original_content=original_content,
-            ),
+        original_content: str | None,
+    ) -> None:
+        await asyncio.to_thread(
+            self.messages_repo.record_edit,
+            message_id,
+            new_content,
+            member_id=member_id,
+            channel_id=channel_id,
+            created_at=created_at,
+            original_content=original_content,
         )
 
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message) -> None:
         if message.author.bot:
             return
-        
-        message_data = (
+        await self._store_message(
             message.id,
             message.author.id,
             message.channel.id,
             message.content,
-            message.created_at
+            message.created_at,
         )
-        await self._store_message(message_data)
-        
         await self.process_commands(message)
 
-    async def on_message_edit(self, before, after):
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         """Cached edit. Identical content (link-preview embeds) is ignored."""
         author = getattr(after, "author", None)
         if author is not None and getattr(author, "bot", False):
@@ -151,7 +193,7 @@ class DinkBot(commands.Bot):
             original_content=before_content,
         )
 
-    async def on_raw_message_edit(self, payload):
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
         """Uncached edit. on_message_edit does not run when the message is not cached."""
         if getattr(payload, "cached_message", None) is not None:
             return
@@ -186,10 +228,11 @@ class DinkBot(commands.Bot):
             original_content=None,
         )
 
-def main():
+
+def main() -> None:
     bot = DinkBot()
-    TOKEN = os.getenv('DISCORD_TOKEN')
-    bot.run(TOKEN)
+    bot.run(discord_token())
+
 
 if __name__ == "__main__":
     main()

@@ -2,14 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+RUN useradd --create-home --uid 10001 botuser
 
-ENV PYTHONUNBUFFERED=1
+COPY . .
+RUN chown -R botuser:botuser /app
+
+USER botuser
+
+ENV PYTHONUNBUFFERED=1 \
+    MPLBACKEND=Agg
+
 CMD ["python", "bot.py"]

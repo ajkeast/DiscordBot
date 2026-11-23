@@ -12,6 +12,8 @@ source .venv/bin/activate
 
 export MPLBACKEND=Agg
 export CI_TEST_REPORT=ci-test-report.md
+.venv/bin/ruff check bot.py config.py cogs db minecraft services utils tests
+.venv/bin/mypy bot.py config.py cogs db minecraft services utils
 .venv/bin/pytest tests/ -v --tb=short --junitxml=junit.xml "$@"
 
 if [ -f ci-test-report.md ]; then
