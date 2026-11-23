@@ -27,6 +27,7 @@ jobs:
     env:
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       SQL_HOST: localhost
+      SQL_PORT: "5432"
       SQL_USER: discordbot
       SQL_PASSWORD: discordbot
       SQL_DATABASE: discordbot
@@ -45,21 +46,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Lint & type-check
+        run: |
+          ruff check bot.py config.py cogs db minecraft services utils tests
+          mypy bot.py config.py cogs db minecraft services utils
+
       - name: Init schema
         run: |
-          # Reuse dinkboard init when available via sibling checkout; otherwise minimal smoke schema.
           python - <<'PY'
-          import psycopg
-          conn = psycopg.connect(host="localhost", user="discordbot", password="discordbot", dbname="discordbot")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-          conn.execute("""
-          CREATE TABLE IF NOT EXISTS firstlist_id (
-            user_id VARCHAR(255),
-            timesent TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-          """)
-          conn.commit()
-          conn.close()
+          from db.pool import DatabasePool
+          from db.schema import apply_full_schema
+
+          pool = DatabasePool()
+          try:
+              pool.execute("CREATE EXTENSION IF NOT EXISTS vector")
+              apply_full_schema(pool)
+          finally:
+              pool.close()
           PY
 
       - name: Run tests

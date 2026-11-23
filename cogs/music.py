@@ -4,196 +4,71 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import re
-from typing import Optional
-from urllib.error import URLError
-from urllib.parse import urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
+import aiohttp
 import discord
 import wavelink
 from discord import app_commands
 from discord.ext import commands
 
-from utils.interactions import acknowledge
+from config import lavalink_password, lavalink_uri, music_inactive_timeout
+from services.soundcloud import (
+    expand_soundcloud_short_link,
+    format_duration,
+    full_stream_tracks,
+    is_preview_track,
+    is_soundcloud_url,
+    lavalink_user_message,
+    safe_title,
+    to_search_query,
+    track_duration_seconds,
+    track_line,
+)
+from utils.discord_helpers import acknowledge, hybrid_command
 
 logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 50
 MAX_PLAY_CANDIDATES = 8
-# Seconds to stay in an empty voice channel (everyone else left) before disconnecting.
 ALONE_TIMEOUT = 90
 
 
-def _inactive_timeout_seconds(default: int = 300) -> int:
-    """Idle seconds before wavelink fires ``on_wavelink_inactive_player``.
+class DinkPlayer(wavelink.Player):
+    """Typed Wavelink player carrying SoundCloud search fallback and announce state."""
 
-    ``MUSIC_INACTIVE_TIMEOUT`` overrides the default. Invalid values keep the default.
-    """
-    raw = os.getenv("MUSIC_INACTIVE_TIMEOUT", "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("Ignoring invalid MUSIC_INACTIVE_TIMEOUT=%r; using %s", raw, default)
-        return default
-    if value <= 0:
-        logger.warning("Ignoring non-positive MUSIC_INACTIVE_TIMEOUT=%s; using %s", value, default)
-        return default
-    return value
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.fallbacks: list[wavelink.Playable] = []
+        self.pending_ctx: commands.Context | None = None
+        self.announce_fallback: bool = False
+        self.status_message: discord.Message | None = None
+        self.text_channel: discord.abc.Messageable | None = None
 
+    def discard_fallbacks(self) -> None:
+        self.fallbacks = []
+        self.announce_fallback = False
 
-INACTIVE_TIMEOUT = _inactive_timeout_seconds()
-
-SOUNDCLOUD_HOSTS = frozenset({
-    "soundcloud.com",
-    "www.soundcloud.com",
-    "m.soundcloud.com",
-    "on.soundcloud.com",
-})
-
-_SOUNDCLOUD_HOST_RE = re.compile(
-    r"^(?:https?://)?(?:www\.|m\.|on\.)?soundcloud\.com/",
-    re.IGNORECASE,
-)
-
-
-def is_soundcloud_url(query: str) -> bool:
-    """True only when the entire query is a SoundCloud URL (not search text)."""
-    text = query.strip()
-    if not text or any(ch.isspace() for ch in text):
-        return False
-    if not _SOUNDCLOUD_HOST_RE.match(text):
-        return False
-    try:
-        parsed = urlparse(text if "://" in text else f"https://{text}")
-    except ValueError:
-        return False
-    host = (parsed.hostname or "").lower()
-    if host not in SOUNDCLOUD_HOSTS:
-        return False
-    return bool(parsed.path.strip("/"))
-
-
-def to_search_query(query: str) -> str:
-    """Normalize user input for Wavelink SoundCloud search (URL or bare search text)."""
-    text = query.strip()
-    if is_soundcloud_url(text):
-        if "://" not in text:
-            text = f"https://{text}"
-        return _prefer_soundcloud_host(text)
-    return text
-
-
-def _prefer_soundcloud_host(url: str) -> str:
-    """Rewrite m.soundcloud.com so the Soundy source manager accepts the URL.
-
-    Soundy matches soundcloud.com and www.soundcloud.com only.
-    """
-    parsed = urlparse(url)
-    if (parsed.hostname or "").lower() != "m.soundcloud.com":
-        return url
-    return urlunparse(parsed._replace(netloc="soundcloud.com"))
-
-
-def expand_soundcloud_short_link(url: str) -> str:
-    """Follow on.soundcloud.com to the permalink Soundy can load."""
-    parsed = urlparse(url)
-    if (parsed.hostname or "").lower() != "on.soundcloud.com":
-        return url
-    request = Request(url, headers={"User-Agent": "DiscordBot music"})
-    try:
-        with urlopen(request, timeout=8) as response:
-            final = response.geturl()
-    except (OSError, URLError, ValueError):
-        logger.warning("Could not expand SoundCloud short link %s", url, exc_info=True)
-        return url
-    if not is_soundcloud_url(final):
-        return url
-    return to_search_query(final)
-
-
-def format_duration(seconds: Optional[int | float]) -> str:
-    if seconds is None:
-        return "?:??"
-    seconds = max(0, int(seconds))
-    minutes, sec = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{sec:02d}"
-    return f"{minutes}:{sec:02d}"
-
-
-def safe_title(title: str) -> str:
-    """Neutralize markdown characters that break Discord message formatting."""
-    return discord.utils.escape_markdown(title).replace("[", "").replace("]", "")
-
-
-def _track_duration_seconds(track: wavelink.Playable) -> Optional[int]:
-    length = getattr(track, "length", None)
-    if length is None:
-        return None
-    try:
-        return max(0, int(length) // 1000)
-    except (TypeError, ValueError):
-        return None
-
-
-def is_preview_track(track: wavelink.Playable) -> bool:
-    """True when SoundCloud only exposes a short Go+ preview stream (~30s)."""
-    for attr in ("identifier", "uri"):
-        value = getattr(track, attr, None)
-        if value and "/preview/" in str(value).lower():
-            return True
-    return False
-
-
-def full_stream_tracks(tracks) -> list[wavelink.Playable]:
-    """Return only fully streamable uploads (no Go+ preview clips)."""
-    if isinstance(tracks, wavelink.Playlist):
-        candidates = list(tracks.tracks)
-    else:
-        candidates = list(tracks)
-    return [t for t in candidates if not is_preview_track(t)]
-
-
-def pick_playable_track(tracks) -> Optional[wavelink.Playable]:
-    """First fully streamable SoundCloud result, if any."""
-    full = full_stream_tracks(tracks)
-    return full[0] if full else None
-
-
-def _track_url(track: wavelink.Playable) -> str:
-    uri = getattr(track, "uri", None)
-    if uri:
-        text = str(uri)
-        if "://" not in text and is_soundcloud_url(text):
-            return f"https://{text}"
-        return text
-    return "https://soundcloud.com"
-
-
-def _lavalink_user_message(exc: BaseException) -> str:
-    text = str(exc).lower()
-    if "nodisconnected" in text.replace(" ", "") or "no nodes" in text or (
-        "node" in text and "connect" in text
-    ):
-        return "Music backend is offline. Try again in a moment."
-    return "Couldn't find that on SoundCloud. Try a different search or paste a track URL."
+    def arm_candidates(
+        self, candidates: list[wavelink.Playable], ctx: commands.Context
+    ) -> wavelink.Playable:
+        self.fallbacks = candidates[1:]
+        self.pending_ctx = ctx
+        self.announce_fallback = False
+        self.status_message = None
+        return candidates[0]
 
 
 class Music(commands.Cog):
     """Play SoundCloud audio in a voice channel via Lavalink (URL or search)."""
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._alone_tasks: dict[int, asyncio.Task[None]] = {}
 
     async def cog_load(self) -> None:
-        uri = os.getenv("LAVALINK_URI", "http://127.0.0.1:2333").strip()
-        password = os.getenv("LAVALINK_PASSWORD", "").strip()
+        uri = lavalink_uri()
+        password = lavalink_password()
         if not password:
             logger.warning(
                 "LAVALINK_PASSWORD is empty — set it in .env to match Lavalink."
@@ -203,7 +78,7 @@ class Music(commands.Cog):
                 identifier="main",
                 uri=uri,
                 password=password or "youshallnotpass",
-                inactive_player_timeout=INACTIVE_TIMEOUT,
+                inactive_player_timeout=music_inactive_timeout(),
             )
         ]
         try:
@@ -244,19 +119,18 @@ class Music(commands.Cog):
         self._alone_tasks.pop(guild_id, None)
         guild = self.bot.get_guild(guild_id)
         player = getattr(guild, "voice_client", None) if guild is not None else None
-        if not isinstance(player, wavelink.Player) or player.channel is None:
+        if not isinstance(player, DinkPlayer) or player.channel is None:
             return
         if self._channel_has_human(player.channel):
             return
         await self._disconnect_player(player)
 
-    async def _disconnect_player(self, player: wavelink.Player) -> None:
-        """Clear playback state and leave voice so the next ``/play`` starts clean."""
+    async def _disconnect_player(self, player: DinkPlayer) -> None:
         guild_id = getattr(getattr(player, "guild", None), "id", None)
         if isinstance(guild_id, int):
             self._cancel_alone(guild_id)
-        self._discard_search_fallbacks(player)
-        player.music_pending_ctx = None  # type: ignore[attr-defined]
+        player.discard_fallbacks()
+        player.pending_ctx = None
         player.queue.clear()
         if not player.connected:
             return
@@ -264,8 +138,7 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player) -> None:
-        """Nothing has played for ``INACTIVE_TIMEOUT`` seconds (wavelink idle clock)."""
-        if player is None or player.playing:
+        if not isinstance(player, DinkPlayer) or player.playing:
             return
         await self._disconnect_player(player)
 
@@ -276,12 +149,11 @@ class Music(commands.Cog):
         _before: discord.VoiceState,
         _after: discord.VoiceState,
     ) -> None:
-        """Leave a bit sooner when every human has left the voice channel."""
         guild = getattr(member, "guild", None)
         if guild is None:
             return
         player = guild.voice_client
-        if not isinstance(player, wavelink.Player) or player.channel is None:
+        if not isinstance(player, DinkPlayer) or player.channel is None:
             self._cancel_alone(guild.id)
             return
         if self._channel_has_human(player.channel):
@@ -289,15 +161,9 @@ class Music(commands.Cog):
             return
         self._arm_alone(guild.id)
 
-    def _discard_search_fallbacks(self, player: wavelink.Player) -> None:
-        """Drop leftover search candidates so skip/stop never walks the result list."""
-        player.music_fallbacks = []  # type: ignore[attr-defined]
-        player.music_announce_fallback = False  # type: ignore[attr-defined]
-
-    async def _clear_music_announce(self, player: wavelink.Player) -> None:
-        """Remove a Now playing message for a candidate that failed to stream."""
-        status = getattr(player, "music_status_message", None)
-        player.music_status_message = None  # type: ignore[attr-defined]
+    async def _clear_music_announce(self, player: DinkPlayer) -> None:
+        status = player.status_message
+        player.status_message = None
         if status is None:
             return
         try:
@@ -305,29 +171,24 @@ class Music(commands.Cog):
         except discord.HTTPException:
             logger.debug("Failed to delete failed-track announce", exc_info=True)
 
-    async def _send_music_message(self, player: wavelink.Player, content: str) -> None:
-        """Reply via the pending /play context when possible, else the text channel."""
-        ctx = getattr(player, "music_pending_ctx", None)
+    async def _send_music_message(self, player: DinkPlayer, content: str) -> None:
+        ctx = player.pending_ctx
         if ctx is not None:
-            player.music_pending_ctx = None  # type: ignore[attr-defined]
+            player.pending_ctx = None
             try:
-                msg = await ctx.send(content)
-                player.music_status_message = msg  # type: ignore[attr-defined]
+                player.status_message = await ctx.send(content)
                 return
             except discord.HTTPException:
                 logger.debug("Failed to send music message via play context", exc_info=True)
 
-        text_channel = getattr(player, "music_text_channel", None)
-        if text_channel is None:
+        if player.text_channel is None:
             return
         try:
-            msg = await text_channel.send(content)
-            player.music_status_message = msg  # type: ignore[attr-defined]
+            player.status_message = await player.text_channel.send(content)
         except discord.HTTPException:
             logger.debug("Failed to send music message to channel", exc_info=True)
 
-    async def _play_next_from_queue(self, player: wavelink.Player) -> bool:
-        """Start the next queued track if any. Returns True when playback was started."""
+    async def _play_next_from_queue(self, player: DinkPlayer) -> bool:
         if not player.queue:
             return False
         try:
@@ -341,51 +202,40 @@ class Music(commands.Cog):
     async def on_wavelink_track_start(
         self, payload: wavelink.TrackStartEventPayload
     ) -> None:
-        """Announce only after a track actually starts (failed candidates stay silent)."""
         player = payload.player
-        if player is None:
+        if not isinstance(player, DinkPlayer):
+            return
+        if player.pending_ctx is None and not player.announce_fallback:
             return
 
-        pending = getattr(player, "music_pending_ctx", None) is not None
-        # True when a prior candidate 404'd and we swapped in another search hit.
-        from_fallback = bool(getattr(player, "music_announce_fallback", False))
-        # Queue autoplay / skip advances: no interactive play request to announce.
-        if not pending and not from_fallback:
-            return
-
-        track = payload.track
-        player.music_announce_fallback = False  # type: ignore[attr-defined]
-        # Always "Now playing" — users shouldn't see the failed candidates we walked.
+        player.announce_fallback = False
         await self._send_music_message(
             player,
-            self._track_line(track, prefix="▶️ **Now playing:** "),
+            track_line(payload.track, prefix="▶️ **Now playing:** "),
         )
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(
         self, payload: wavelink.TrackExceptionEventPayload
     ) -> None:
-        """Try the next search candidate quietly; announce only when one starts."""
         exc = payload.exception or {}
         message = str(exc.get("message") or exc.get("cause") or exc)
-        logger.error("Track exception for %r: %s", getattr(payload.track, "title", None), message)
+        logger.error(
+            "Track exception for %r: %s",
+            getattr(payload.track, "title", None),
+            message,
+        )
         player = payload.player
-        if player is None:
+        if not isinstance(player, DinkPlayer):
             return
 
         await self._clear_music_announce(player)
 
-        fallbacks: list[wavelink.Playable] = list(
-            getattr(player, "music_fallbacks", None) or []
-        )
-
-        while fallbacks:
-            next_track = fallbacks.pop(0)
+        while player.fallbacks:
+            next_track = player.fallbacks.pop(0)
             if is_preview_track(next_track):
                 continue
-            player.music_fallbacks = fallbacks  # type: ignore[attr-defined]
-            # Announce on the eventual track_start (still as Now playing).
-            player.music_announce_fallback = True  # type: ignore[attr-defined]
+            player.announce_fallback = True
             try:
                 await player.play(next_track)
             except Exception:
@@ -396,33 +246,13 @@ class Music(commands.Cog):
                 continue
             return
 
-        self._discard_search_fallbacks(player)
+        player.discard_fallbacks()
         await self._send_music_message(
             player,
             "Couldn't play a full version of that. Try another SoundCloud search or URL.",
         )
 
-    def _track_line(self, track: wavelink.Playable, *, prefix: str = "") -> str:
-        title = safe_title(getattr(track, "title", None) or "Unknown title")
-        duration = format_duration(_track_duration_seconds(track))
-        # Angle brackets keep the link clickable but suppress Discord's rich embed.
-        return f"{prefix}**{title}** ({duration})\n<{_track_url(track)}>"
-
-    def _arm_play_candidates(
-        self,
-        player: wavelink.Player,
-        candidates: list[wavelink.Playable],
-        ctx: commands.Context,
-    ) -> wavelink.Playable:
-        """Play the best candidate; keep the rest for quiet exception fallback."""
-        track = candidates[0]
-        player.music_fallbacks = candidates[1:]  # type: ignore[attr-defined]
-        player.music_pending_ctx = ctx  # type: ignore[attr-defined]
-        player.music_announce_fallback = False  # type: ignore[attr-defined]
-        player.music_status_message = None  # type: ignore[attr-defined]
-        return track
-
-    async def _ensure_player(self, ctx: commands.Context) -> wavelink.Player:
+    async def _ensure_player(self, ctx: commands.Context) -> DinkPlayer:
         if ctx.guild is None:
             raise commands.CommandError("This command only works in a server.")
 
@@ -442,10 +272,10 @@ class Music(commands.Cog):
         player = ctx.voice_client
         try:
             if player is None:
-                player = await channel.connect(cls=wavelink.Player, self_deaf=True)
-            elif not isinstance(player, wavelink.Player):
-                await player.disconnect()
-                player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+                player = await channel.connect(cls=DinkPlayer, self_deaf=True)
+            elif not isinstance(player, DinkPlayer):
+                await player.disconnect(force=True)
+                player = await channel.connect(cls=DinkPlayer, self_deaf=True)
             elif player.channel != channel:
                 await player.move_to(channel)
         except asyncio.TimeoutError as exc:
@@ -453,23 +283,31 @@ class Music(commands.Cog):
         except discord.ClientException as exc:
             raise commands.CommandError(f"Could not join voice: {exc}") from exc
 
-        assert isinstance(player, wavelink.Player)
+        assert isinstance(player, DinkPlayer)
         player.autoplay = wavelink.AutoPlayMode.partial
-        # Resets wavelink's idle clock. Starts immediately when nothing is playing
-        # (including a failed /play); a track start cancels it.
-        player.inactive_timeout = INACTIVE_TIMEOUT
+        player.inactive_timeout = music_inactive_timeout()
         if ctx.channel is not None:
-            player.music_text_channel = ctx.channel  # type: ignore[attr-defined]
+            player.text_channel = ctx.channel
         return player
 
-    @commands.hybrid_command(brief="Play a SoundCloud URL or search query in voice")
-    @app_commands.describe(query="SoundCloud URL or search text (e.g. lofi hip hop)")
-    async def play(self, ctx: commands.Context, *, query: str):
-        """Play audio from a SoundCloud URL or the top search result."""
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    async def _expand_short_link(self, url: str) -> str:
+        bot_session: aiohttp.ClientSession | None = getattr(
+            self.bot, "http_session", None
+        )
+        owns_session = bot_session is None or bot_session.closed
+        active_session = aiohttp.ClientSession() if owns_session else bot_session
+        assert active_session is not None
+        try:
+            return await expand_soundcloud_short_link(url, active_session)
+        finally:
+            if owns_session:
+                await active_session.close()
 
+    @hybrid_command(brief="Play a SoundCloud URL or search query in voice")
+    @commands.guild_only()
+    @app_commands.describe(query="SoundCloud URL or search text (e.g. lofi hip hop)")
+    async def play(self, ctx: commands.Context, *, query: str) -> None:
+        """Play audio from a SoundCloud URL or the top search result."""
         query = query.strip()
         if not query:
             await ctx.send("Give me a SoundCloud URL or something to search for.")
@@ -486,16 +324,15 @@ class Music(commands.Cog):
             if is_soundcloud_url(prepared):
                 host = (urlparse(prepared).hostname or "").lower()
                 if host == "on.soundcloud.com":
-                    prepared = await asyncio.to_thread(expand_soundcloud_short_link, prepared)
+                    prepared = await self._expand_short_link(prepared)
 
             try:
                 tracks = await wavelink.Playable.search(
-                    prepared,
-                    source=wavelink.TrackSource.SoundCloud,
+                    prepared, source=wavelink.TrackSource.SoundCloud
                 )
             except Exception as exc:
                 logger.exception("Lavalink SoundCloud search failed for query %r", query)
-                await ctx.send(_lavalink_user_message(exc))
+                await ctx.send(lavalink_user_message(exc))
                 return
 
             if not tracks:
@@ -504,7 +341,6 @@ class Music(commands.Cog):
                 )
                 return
 
-            # Skip Go+ previews; only fully streamable uploads (try several if one 404s).
             candidates = full_stream_tracks(tracks)[:MAX_PLAY_CANDIDATES]
             if not candidates:
                 await ctx.send(
@@ -517,101 +353,82 @@ class Music(commands.Cog):
                 if len(player.queue) >= MAX_QUEUE_SIZE:
                     await ctx.send(f"Queue is full ({MAX_QUEUE_SIZE} tracks).")
                     return
-                # Queue only the best hit — fallbacks are armed when a track starts.
                 track = candidates[0]
                 await player.queue.put_wait(track)
-                position = len(player.queue)
                 await ctx.send(
-                    self._track_line(track, prefix=f"Queued **#{position}:** ")
+                    track_line(track, prefix=f"Queued **#{len(player.queue)}:** ")
                 )
                 return
 
-            track = self._arm_play_candidates(player, candidates, ctx)
+            track = player.arm_candidates(candidates, ctx)
             try:
                 await player.play(track)
             except Exception as exc:
-                player.music_pending_ctx = None  # type: ignore[attr-defined]
+                player.pending_ctx = None
                 logger.exception("Failed to start track for query %r", query)
-                await ctx.send(_lavalink_user_message(exc))
+                await ctx.send(lavalink_user_message(exc))
                 return
-            # Announce happens in on_wavelink_track_start once a candidate actually plays.
 
-    @commands.hybrid_command(brief="Skip the current track")
-    async def skip(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Skip the current track")
+    @commands.guild_only()
+    async def skip(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player) or not player.playing:
+        if not isinstance(player, DinkPlayer) or not player.playing:
             await ctx.send("Nothing is playing.")
             return
-        # Drop search-result fallbacks first so a late 404/exception can't steal skip.
-        self._discard_search_fallbacks(player)
-        # Wavelink skip replaces the track (end reason "replaced"), which does NOT
-        # trigger AutoPlay — advance the real queue ourselves.
+        player.discard_fallbacks()
         await player.skip(force=True)
         await self._play_next_from_queue(player)
         await ctx.send("Skipped.")
 
-    @commands.hybrid_command(brief="Stop playback and clear the queue")
-    async def stop(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Stop playback and clear the queue")
+    @commands.guild_only()
+    async def stop(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player):
+        if not isinstance(player, DinkPlayer):
             await ctx.send("I'm not in a voice channel.")
             return
-        self._discard_search_fallbacks(player)
+        player.discard_fallbacks()
         player.queue.clear()
         await player.stop()
         await ctx.send("Stopped and cleared the queue.")
 
-    @commands.hybrid_command(brief="Show the queue")
-    async def queue(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Show the queue")
+    @commands.guild_only()
+    async def queue(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player):
-            await ctx.send("Queue is empty.")
-            return
-        if player.current is None and not player.queue:
+        if not isinstance(player, DinkPlayer) or (
+            player.current is None and not player.queue
+        ):
             await ctx.send("Queue is empty.")
             return
 
         lines: list[str] = []
         if player.current is not None:
-            lines.append(
-                self._track_line(player.current, prefix="▶️ **Now playing:** ")
-            )
+            lines.append(track_line(player.current, prefix="▶️ **Now playing:** "))
         for index, track in enumerate(list(player.queue)[:20], start=1):
             title = safe_title(getattr(track, "title", None) or "Unknown title")
-            duration = format_duration(_track_duration_seconds(track))
+            duration = format_duration(track_duration_seconds(track))
             lines.append(f"**{index}.** {title} ({duration})")
         remaining = max(0, len(player.queue) - 20)
         if remaining:
             lines.append(f"…and {remaining} more")
         await ctx.send("\n".join(lines))
 
-    @commands.hybrid_command(name="np", brief="Show the track playing now")
-    async def now_playing(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(name="np", brief="Show the track playing now")
+    @commands.guild_only()
+    async def now_playing(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player) or player.current is None:
+        if not isinstance(player, DinkPlayer) or player.current is None:
             await ctx.send("Nothing is playing.")
             return
-        await ctx.send(self._track_line(player.current, prefix="▶️ **Now playing:** "))
+        await ctx.send(track_line(player.current, prefix="▶️ **Now playing:** "))
 
-    @commands.hybrid_command(brief="Pause playback")
-    async def pause(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Pause playback")
+    @commands.guild_only()
+    async def pause(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player) or not player.playing:
+        if not isinstance(player, DinkPlayer) or not player.playing:
             await ctx.send("Nothing is playing.")
             return
         if player.paused:
@@ -620,33 +437,26 @@ class Music(commands.Cog):
         await player.pause(True)
         await ctx.send("Paused.")
 
-    @commands.hybrid_command(brief="Resume playback")
-    async def resume(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Resume playback")
+    @commands.guild_only()
+    async def resume(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player):
-            await ctx.send("Nothing is paused.")
-            return
-        if not player.paused:
+        if not isinstance(player, DinkPlayer) or not player.paused:
             await ctx.send("Nothing is paused.")
             return
         await player.pause(False)
         await ctx.send("Resumed.")
 
-    @commands.hybrid_command(brief="Leave the voice channel")
-    async def leave(self, ctx: commands.Context):
-        if ctx.guild is None:
-            await ctx.send("This command only works in a server.")
-            return
+    @hybrid_command(brief="Leave the voice channel")
+    @commands.guild_only()
+    async def leave(self, ctx: commands.Context) -> None:
         player = ctx.voice_client
-        if not isinstance(player, wavelink.Player):
+        if not isinstance(player, DinkPlayer):
             await ctx.send("I'm not in a voice channel.")
             return
         await self._disconnect_player(player)
         await ctx.send("Left the voice channel.")
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Music(bot))

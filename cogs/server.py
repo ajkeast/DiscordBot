@@ -1,129 +1,193 @@
-import discord
-from discord.ext import commands, tasks
-from utils.db import db_ops
-from utils.constants import GENERAL_CHANNEL_ID, EMBED_COLOR
-from datetime import datetime, timedelta
-import logging
-import pytz
+"""Server metadata sync commands and idempotent monthly activity report."""
+
+from __future__ import annotations
+
 import asyncio
+import logging
+from datetime import datetime, time
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from config import EASTERN, EMBED_COLOR, GENERAL_CHANNEL_ID
+from db.server import ServerRepository
+from utils.discord_helpers import hybrid_command
+from utils.permissions import require_admin
 
 logger = logging.getLogger(__name__)
+MONTHLY_REPORT_AT = time(hour=9, minute=0, tzinfo=EASTERN)
+
+
+def _previous_year_month(now: datetime) -> tuple[int, int]:
+    local = now.astimezone(EASTERN)
+    if local.month == 1:
+        return local.year - 1, 12
+    return local.year, local.month - 1
+
+
+def _report_month_due(now: datetime) -> tuple[int, int] | None:
+    """Return ``(year, month)`` to report on the 1st of the month at/after 9:00 AM ET."""
+    local = now.astimezone(EASTERN)
+    if local.day != 1 or (local.hour, local.minute) < (9, 0):
+        return None
+    return _previous_year_month(local)
+
 
 class Server(commands.Cog):
     """Server info sync and monthly activity report."""
-    
-    def __init__(self, bot):
+
+    def __init__(
+        self, bot: commands.Bot, *, repo: ServerRepository | None = None
+    ) -> None:
         self.bot = bot
+        self.repo = repo or ServerRepository()
+
+    async def cog_load(self) -> None:
         self.monthly_stats.start()
 
-    def cog_unload(self):
-        """Clean up tasks when cog is unloaded"""
-        self.monthly_stats.cancel()
+    async def cog_unload(self) -> None:
+        if self.monthly_stats.is_running():
+            self.monthly_stats.cancel()
 
-    @tasks.loop(hours=1)
-    async def monthly_stats(self):
-        """Post monthly stats at 9am EST on the first of each month"""
-        # Get current time in EST
-        est = pytz.timezone('US/Eastern')
-        now = datetime.now(est)    
-        # Check if it's 9am on the first of the month
-        if now.hour == 9 and now.minute == 0 and now.day == 1:
-            # Get the previous month
-            if now.month == 1:
-                year = now.year - 1
-                month = 12
-            else:
-                year = now.year
-                month = now.month - 1
-            # Get message counts
-            df = db_ops.get_monthly_message_counts(year, month)
-            if df.empty:
-                return
-            # Create embed
+    async def _post_monthly_report_if_due(self, now: datetime) -> bool:
+        due = _report_month_due(now)
+        if due is None:
+            return False
+        year, month = due
+        report_key = f"{year:04d}-{month:02d}"
+
+        claim = await asyncio.to_thread(
+            self.repo.claim_monthly_report, report_key, GENERAL_CHANNEL_ID
+        )
+        if claim == "already_posted":
+            return False
+
+        sent_message = None
+        try:
+            counts = await asyncio.to_thread(
+                self.repo.get_monthly_message_counts, year, month
+            )
+            if not counts:
+                await asyncio.to_thread(
+                    self.repo.release_monthly_report_claim, report_key
+                )
+                return False
+
             month_name = datetime(year, month, 1).strftime("%B")
             embed = discord.Embed(
                 title=f"📊 Monthly Activity Report - {month_name} {year}",
-                color=EMBED_COLOR
+                color=EMBED_COLOR,
             )
-            # Add top 5 members to embed
-            for i, (_, row) in enumerate(df.head(5).iterrows(), 1):
+            for i, row in enumerate(counts[:5], start=1):
                 medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
                 embed.add_field(
-                    name=f"{medal} {row['user_name']}",
-                    value=f"{row['message_count']} messages",
-                    inline=False
+                    name=f"{medal} {row.user_name}",
+                    value=f"{row.message_count} messages",
+                    inline=False,
                 )
-
-            # Add total messages
-            total_messages = df['message_count'].sum()
+            total_messages = sum(row.message_count for row in counts)
             embed.set_footer(text=f"Total messages: {total_messages}")
 
-            # Get the general channel
             channel = self.bot.get_channel(GENERAL_CHANNEL_ID)
-            if channel:
+            if channel is None:
+                channel = await self.bot.fetch_channel(GENERAL_CHANNEL_ID)
+            sent_message = await channel.send(embed=embed)  # type: ignore[union-attr]
+            await asyncio.to_thread(
+                self.repo.mark_monthly_report_posted,
+                report_key,
+                GENERAL_CHANNEL_ID,
+                getattr(sent_message, "id", None),
+            )
+            return True
+        except discord.Forbidden:
+            logger.warning(
+                "Bot doesn't have permission to send messages in channel %s",
+                GENERAL_CHANNEL_ID,
+            )
+            await asyncio.to_thread(self.repo.release_monthly_report_claim, report_key)
+            return False
+        except Exception:
+            logger.exception("Failed posting monthly activity report for %s", report_key)
+            if sent_message is None:
                 try:
-                    await channel.send(embed=embed)
-                except discord.Forbidden:
-                    logger.warning(
-                        "Bot doesn't have permission to send messages in channel %s",
-                        GENERAL_CHANNEL_ID,
+                    await asyncio.to_thread(
+                        self.repo.release_monthly_report_claim, report_key
                     )
+                except Exception:
+                    logger.exception("Failed releasing monthly report claim for %s", report_key)
+            return False
+
+    @tasks.loop(time=MONTHLY_REPORT_AT)
+    async def monthly_stats(self) -> None:
+        """Post monthly stats at 9:00 AM Eastern on the 1st of each month."""
+        await self._post_monthly_report_if_due(datetime.now(EASTERN))
 
     @monthly_stats.before_loop
-    async def before_monthly_stats(self):
-        """Wait until bot is ready before starting the task"""
+    async def before_monthly_stats(self) -> None:
         await self.bot.wait_until_ready()
-        # Calculate time until next hour
-        est = pytz.timezone('US/Eastern')
-        now = datetime.now(est)
-        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        seconds_until_next_hour = (next_hour - now).total_seconds()
-        await asyncio.sleep(seconds_until_next_hour)
+        try:
+            await self._post_monthly_report_if_due(datetime.now(EASTERN))
+        except Exception:
+            logger.exception("Monthly report startup catch-up failed")
 
-    @commands.hybrid_command(brief='Refresh member info for the dashboard')
-    async def members(self, ctx):
+    @hybrid_command(brief="Refresh member info for the dashboard (admins)")
+    @commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def members(self, ctx: commands.Context) -> None:
         """Refresh member info for the dashboard."""
-        members = ctx.guild.members
-        member_data = []
-        for member in members:
-            id = int(member.id)
-            user = self.bot.get_user(id)
-            avatar = str(user.display_avatar.with_size(128))
-            user_name = user.name
-            display_name = member.nick
-            created_at = user.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            member_data.append([id, user_name, display_name, avatar, created_at])
-            
-        db_ops.update_members(member_data)
+        if not await require_admin(self.bot, ctx):
+            return
+        assert ctx.guild is not None
+        member_data = [
+            (
+                int(member.id),
+                member.name,
+                member.nick,
+                str(member.display_avatar.with_size(128)),
+                member.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            for member in ctx.guild.members
+        ]
+        await asyncio.to_thread(self.repo.upsert_members, member_data)
         await ctx.send("Member info successfully updated.")
 
-    @commands.hybrid_command(brief='Refresh emoji info for the dashboard')
-    async def emojis(self, ctx):
+    @hybrid_command(brief="Refresh emoji info for the dashboard (admins)")
+    @commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def emojis(self, ctx: commands.Context) -> None:
         """Refresh emoji info for the dashboard."""
-        emoji_data = []
-        for emoji in ctx.guild.emojis:
-            id = emoji.id
-            emoji_name = emoji.name
-            guild_id = emoji.guild_id
-            url = emoji.url
-            created_at = emoji.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            emoji_data.append([id, emoji_name, guild_id, url, created_at])
-        
-        db_ops.update_emojis(emoji_data)
+        if not await require_admin(self.bot, ctx):
+            return
+        assert ctx.guild is not None
+        emoji_data = [
+            (
+                emoji.id,
+                emoji.name,
+                emoji.guild_id,
+                str(emoji.url),
+                emoji.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            for emoji in ctx.guild.emojis
+        ]
+        await asyncio.to_thread(self.repo.upsert_emojis, emoji_data)
         await ctx.send("Emoji info successfully updated.")
 
-    @commands.hybrid_command(brief='Refresh channel info for the dashboard')
-    async def channels(self, ctx):
+    @hybrid_command(brief="Refresh channel info for the dashboard (admins)")
+    @commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def channels(self, ctx: commands.Context) -> None:
         """Refresh channel info for the dashboard."""
-        channel_data = []
-        for channel in ctx.guild.channels:
-            id = channel.id
-            name = channel.name
-            created_at = channel.created_at
-            channel_data.append([id, name, created_at])
-        
-        db_ops.update_channels(channel_data)
+        if not await require_admin(self.bot, ctx):
+            return
+        assert ctx.guild is not None
+        channel_data = [
+            (channel.id, channel.name, channel.created_at)
+            for channel in ctx.guild.channels
+        ]
+        await asyncio.to_thread(self.repo.upsert_channels, channel_data)
         await ctx.send("Channel info successfully updated.")
 
-async def setup(bot):
+
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Server(bot))

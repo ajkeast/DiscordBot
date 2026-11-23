@@ -10,65 +10,56 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from utils.constants import EMBED_COLOR
-from utils.minecraft_job import (
-    PreparedPost,
+from config import EASTERN, EMBED_COLOR, minecraft_channel_id
+from db.minecraft import MinecraftRepository
+from minecraft.models import MinecraftLogError, PreparedPost
+from minecraft.parser import day_window, pretty_date
+from minecraft.recap import (
     activity_date_due,
-    claim_daily_post,
-    mark_posted,
-    minecraft_channel_id,
-    pick_recap_screenshot,
     prepare_post,
-    release_claim,
     summary_title,
     yesterday_et,
 )
-from utils.minecraft_log import EASTERN, MinecraftLogError, day_window, pretty_date
+from minecraft.screenshots import pick_recap_screenshot
+from utils.discord_helpers import hybrid_command, reply_ephemeral
+from utils.permissions import require_admin
 
 logger = logging.getLogger(__name__)
 DAILY_AT = time(hour=8, minute=0, tzinfo=EASTERN)
 
 
-def actor_is_admin_result(is_owner: bool, user, guild) -> bool:
-    """True for the bot owner or a guild administrator."""
-    if is_owner:
-        return True
-    if guild is None:
-        return False
-    perms = getattr(user, "guild_permissions", None)
-    return bool(perms and perms.administrator is True)
+def _screenshot_file(prepared: PreparedPost) -> discord.File | None:
+    path = pick_recap_screenshot(prepared.recap.day)
+    if path is None:
+        return None
+    return discord.File(path, filename=path.name)
 
 
 class Minecraft(commands.Cog):
     """Post the previous day's Minecraft activity and preview it for admins."""
 
-    def __init__(self, bot):
+    def __init__(
+        self, bot: commands.Bot, *, repo: MinecraftRepository | None = None
+    ) -> None:
         self.bot = bot
+        self.repo = repo or MinecraftRepository()
         self._run_lock = asyncio.Lock()
 
-    async def cog_load(self):
+    async def cog_load(self) -> None:
         self.daily_minecraft.start()
 
-    def cog_unload(self):
+    async def cog_unload(self) -> None:
         if self.daily_minecraft.is_running():
             self.daily_minecraft.cancel()
 
-    async def _actor_is_admin(self, ctx) -> bool:
-        is_owner = False
-        checker = getattr(self.bot, "is_owner", None)
-        if checker is not None:
-            result = checker(ctx.author)
-            if asyncio.iscoroutine(result):
-                result = await result
-            is_owner = result is True
-        return actor_is_admin_result(is_owner, ctx.author, ctx.guild)
-
-    def _embed(self, prepared: PreparedPost, *, filename: str | None = None) -> discord.Embed:
+    def _embed(
+        self, prepared: PreparedPost, *, filename: str | None = None
+    ) -> discord.Embed:
         description = prepared.narrative
         if len(description) > 4096:
             description = description[:4090].rstrip() + "…"
         embed = discord.Embed(
-            title=summary_title(prepared.stats),
+            title=summary_title(prepared.recap),
             description=description,
             color=EMBED_COLOR,
         )
@@ -77,39 +68,43 @@ class Minecraft(commands.Cog):
         return embed
 
     def _dated_shot(self, prepared: PreparedPost, filename: str) -> discord.Embed:
-        """Date and the screenshot, used when nobody played but a picture exists."""
-        embed = discord.Embed(title=summary_title(prepared.stats), color=EMBED_COLOR)
+        embed = discord.Embed(
+            title=summary_title(prepared.recap), color=EMBED_COLOR
+        )
         embed.set_image(url=f"attachment://{filename}")
         return embed
 
     async def _deliver(self, send, prepared: PreparedPost):
-        """Post the recap. Attach the playday screenshot when that folder has one."""
         shot = _screenshot_file(prepared)
         if prepared.nobody_played and shot is None:
             return await send(prepared.narrative[:2000])
         if prepared.nobody_played:
-            return await send(embed=self._dated_shot(prepared, shot.filename), file=shot)
+            assert shot is not None
+            return await send(
+                embed=self._dated_shot(prepared, shot.filename), file=shot
+            )
         if shot is None:
             return await send(embed=self._embed(prepared))
-        return await send(embed=self._embed(prepared, filename=shot.filename), file=shot)
-
-    async def _send_summary(self, channel, prepared: PreparedPost):
-        return await self._deliver(channel.send, prepared)
+        return await send(
+            embed=self._embed(prepared, filename=shot.filename), file=shot
+        )
 
     async def _post_due_date(self, day: date, *, reason: str) -> str:
-        """Post one calendar day if it has not already been posted.
+        """Post one play day if not yet posted.
 
         Returns ``posted``, ``already_posted``, ``busy``, or ``failed``.
         """
         if self._run_lock.locked():
-            logger.info("Minecraft summary already running; skipping %s (%s)", day, reason)
+            logger.info(
+                "Minecraft summary already running; skipping %s (%s)", day, reason
+            )
             return "busy"
+
         async with self._run_lock:
             channel_id = minecraft_channel_id()
-            loop = asyncio.get_running_loop()
             try:
-                claim = await loop.run_in_executor(
-                    None, lambda: claim_daily_post(day, channel_id)
+                claim = await asyncio.to_thread(
+                    self.repo.claim_daily_post, day, channel_id
                 )
             except Exception:
                 logger.exception("Minecraft summary could not claim %s", day.isoformat())
@@ -121,21 +116,23 @@ class Minecraft(commands.Cog):
             sent_message = None
             try:
                 now = datetime.now(EASTERN)
-                prepared = await loop.run_in_executor(
-                    None, lambda: prepare_post(day, as_of=now, persist="required")
+                prepared = await asyncio.to_thread(
+                    prepare_post,
+                    day,
+                    as_of=now,
+                    repo=self.repo,
+                    persist=True,
                 )
                 channel = self.bot.get_channel(channel_id)
                 if channel is None:
                     channel = await self.bot.fetch_channel(channel_id)
-                sent_message = await self._send_summary(channel, prepared)
-                await loop.run_in_executor(
-                    None,
-                    lambda: mark_posted(
-                        day,
-                        channel_id,
-                        getattr(sent_message, "id", None),
-                        prepared.nobody_played,
-                    ),
+                sent_message = await self._deliver(channel.send, prepared)  # type: ignore[union-attr]
+                await asyncio.to_thread(
+                    self.repo.mark_posted,
+                    day,
+                    channel_id,
+                    getattr(sent_message, "id", None),
+                    prepared.nobody_played,
                 )
                 logger.info(
                     "Posted Minecraft summary for %s via %s (%s)",
@@ -145,7 +142,9 @@ class Minecraft(commands.Cog):
                 )
                 return "posted"
             except Exception:
-                logger.exception("Minecraft summary for %s failed (%s)", day.isoformat(), reason)
+                logger.exception(
+                    "Minecraft summary for %s failed (%s)", day.isoformat(), reason
+                )
                 if sent_message is not None:
                     logger.error(
                         "Minecraft summary for %s was sent but not recorded; "
@@ -154,7 +153,7 @@ class Minecraft(commands.Cog):
                     )
                     return "posted"
                 try:
-                    await loop.run_in_executor(None, lambda: release_claim(day))
+                    await asyncio.to_thread(self.repo.release_claim, day)
                 except Exception:
                     logger.exception(
                         "Could not release Minecraft post claim for %s",
@@ -164,33 +163,25 @@ class Minecraft(commands.Cog):
 
     async def _catch_up(self) -> None:
         due = activity_date_due(datetime.now(EASTERN))
-        if due is None:
-            return
-        await self._post_due_date(due, reason="startup-catchup")
+        if due is not None:
+            await self._post_due_date(due, reason="startup-catchup")
 
     @tasks.loop(time=DAILY_AT)
-    async def daily_minecraft(self):
+    async def daily_minecraft(self) -> None:
         """Post the play day that ended at 5:00 AM. Idempotent across restarts."""
         due = activity_date_due(datetime.now(EASTERN))
-        if due is None:
-            return
-        await self._post_due_date(due, reason="scheduled")
+        if due is not None:
+            await self._post_due_date(due, reason="scheduled")
 
     @daily_minecraft.before_loop
-    async def before_daily_minecraft(self):
+    async def before_daily_minecraft(self) -> None:
         await self.bot.wait_until_ready()
         try:
             await self._catch_up()
         except Exception:
             logger.exception("Minecraft summary startup catch-up failed")
 
-    async def _ephemeral(self, ctx, message: str) -> None:
-        if ctx.interaction is not None and not ctx.interaction.response.is_done():
-            await ctx.interaction.response.send_message(message, ephemeral=True)
-            return
-        await ctx.send(message)
-
-    @commands.hybrid_command(
+    @hybrid_command(
         name="minecraft_summary",
         brief="Preview or post a Minecraft daily summary (admins)",
     )
@@ -200,14 +191,16 @@ class Minecraft(commands.Cog):
         post="Post that finished day in #minecraft. Otherwise this only previews for you.",
     )
     @app_commands.default_permissions(administrator=True)
-    async def minecraft_summary(self, ctx, day: str | None = None, post: bool = False):
-        """Preview a play day's recap, or post a finished one in #minecraft.
-
-        A play day is 5:00 AM to 5:00 AM America/New_York. The 8:00 AM schedule
-        posts the window that ended at 5:00 AM. ``post`` is that same post.
-        """
-        if not await self._actor_is_admin(ctx):
-            await self._ephemeral(ctx, "Only server admins can run the Minecraft summary.")
+    async def minecraft_summary(
+        self,
+        ctx: commands.Context,
+        day: str | None = None,
+        post: bool = False,
+    ) -> None:
+        """Preview a play day's recap, or post a finished one in #minecraft."""
+        if not await require_admin(
+            self.bot, ctx, "Only server admins can run the Minecraft summary."
+        ):
             return
 
         now = datetime.now(EASTERN)
@@ -217,12 +210,12 @@ class Minecraft(commands.Cog):
             try:
                 activity_day = date.fromisoformat(str(day).strip())
             except ValueError:
-                await self._ephemeral(ctx, "Use a date like `2026-10-25`.")
+                await reply_ephemeral(ctx, "Use a date like `2026-10-25`.")
                 return
 
         _window_start, window_end = day_window(activity_day)
         if post and now < window_end:
-            await self._ephemeral(
+            await reply_ephemeral(
                 ctx,
                 "That day is still in progress. Preview it, or post an earlier date. "
                 "Leave the date off to post yesterday.",
@@ -244,11 +237,14 @@ class Minecraft(commands.Cog):
             await ctx.send(messages[status])
             return
 
-        loop = asyncio.get_running_loop()
+        # Previews are strictly read-only so in-progress data never overwrites Postgres.
         try:
-            prepared = await loop.run_in_executor(
-                None,
-                lambda: prepare_post(activity_day, as_of=now, persist="best_effort"),
+            prepared = await asyncio.to_thread(
+                prepare_post,
+                activity_day,
+                as_of=now,
+                repo=self.repo,
+                persist=False,
             )
         except MinecraftLogError as exc:
             await ctx.send(str(exc))
@@ -261,20 +257,5 @@ class Minecraft(commands.Cog):
         await self._deliver(ctx.send, prepared)
 
 
-def _screenshot_file(prepared: PreparedPost) -> discord.File | None:
-    """The playday image, or None when the directory or the folder has nothing."""
-    raw = (prepared.stats or {}).get("date")
-    if not raw:
-        return None
-    try:
-        day = date.fromisoformat(str(raw))
-    except ValueError:
-        return None
-    path = pick_recap_screenshot(day)
-    if path is None:
-        return None
-    return discord.File(path, filename=path.name)
-
-
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Minecraft(bot))
