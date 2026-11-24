@@ -128,7 +128,6 @@ CREATE TABLE IF NOT EXISTS minecraft_sessions (
     end_reason TEXT NOT NULL CHECK (
         end_reason IN ('leave', 'server_stop', 'rejoin', 'still_online')
     ),
-    likely_afk BOOLEAN NOT NULL,
     UNIQUE (player_name, started_at, activity_date)
 );
 

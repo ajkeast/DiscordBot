@@ -1,9 +1,9 @@
-"""Typed domain models for the daily Minecraft recap pipeline."""
+"""Typed models for the daily Minecraft recap."""
 
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -12,14 +12,8 @@ from config import EASTERN
 MAX_DEATH_EVENTS_IN_PROMPT = 60
 
 
-class MinecraftLogError(RuntimeError):
-    """Raised when the Minecraft data or logs directory is missing or empty."""
-
-
-@dataclass(frozen=True)
-class LogLine:
-    dt: datetime
-    msg: str
+class MinecraftDataError(RuntimeError):
+    """Raised when collector data or the Minecraft data directory is unavailable."""
 
 
 @dataclass(frozen=True)
@@ -28,10 +22,11 @@ class Session:
     start: datetime
     end: datetime
     end_reason: str
+    uuid: str | None = None
 
     @property
     def duration_seconds(self) -> int:
-        return int((self.end - self.start).total_seconds())
+        return max(0, int((self.end - self.start).total_seconds()))
 
 
 @dataclass(frozen=True)
@@ -45,7 +40,6 @@ class SessionSlice:
     duration_seconds: int
     full_seconds: int
     end_reason: str
-    likely_afk: bool
 
 
 @dataclass(frozen=True)
@@ -53,29 +47,7 @@ class Death:
     player: str
     at: datetime
     message: str
-
-
-@dataclass(frozen=True)
-class Advancement:
-    player: str
-    at: datetime
-    kind: str
-    title: str
-
-
-@dataclass(frozen=True)
-class EntityDeath:
-    entity: str
-    at: datetime
-    message: str
-    x: float | None = None
-    z: float | None = None
-
-
-@dataclass(frozen=True)
-class Prelogin:
-    name: str
-    at: datetime
+    killer_player: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,19 +57,6 @@ class CameraSession:
     player: str
     start: datetime
     end: datetime | None = None
-
-
-@dataclass
-class ParsedLogs:
-    sessions: list[Session] = field(default_factory=list)
-    deaths: list[Death] = field(default_factory=list)
-    advancements: list[Advancement] = field(default_factory=list)
-    entity_deaths: list[EntityDeath] = field(default_factory=list)
-    prelogins: list[Prelogin] = field(default_factory=list)
-    uuids: dict[str, str] = field(default_factory=dict)
-    files_found: int = 0
-    last_event_at: datetime | None = None
-    camera_sessions: list[CameraSession] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -119,7 +78,6 @@ class PlayerSummary:
     sessions: int
     longest_session_seconds: int
     longest_session: str | None
-    likely_afk: bool
     still_online: bool
     new_player: bool
     death_count: int
@@ -158,8 +116,6 @@ class DayRecap:
     players: list[PlayerSummary]
     slices: list[SessionSlice]
     deaths: list[Death]
-    advancements: list[Advancement]
-    notable_server_events: list[str]
     player_uuids: dict[str, str]
     peak_stretch: PeakStretch | None = None
 
@@ -180,16 +136,19 @@ class DayRecap:
         return len(self.deaths)
 
     def to_grok_payload(self) -> dict[str, Any]:
-        """Build a clean, concise factual payload for Grok to interpret freely."""
+        """Build a clean factual payload for Grok."""
         ordered_deaths = sorted(self.deaths, key=lambda d: d.at)
-        death_events: list[dict[str, str]] = [
-            {
+        death_events: list[dict[str, Any]] = []
+        for d in ordered_deaths[:MAX_DEATH_EVENTS_IN_PROMPT]:
+            event: dict[str, Any] = {
                 "time": format_clock(d.at),
                 "player": d.player,
                 "message": d.message,
             }
-            for d in ordered_deaths[:MAX_DEATH_EVENTS_IN_PROMPT]
-        ]
+            if d.killer_player:
+                event["pvp"] = True
+                event["killer"] = d.killer_player
+            death_events.append(event)
 
         summary: dict[str, Any] = {
             "player_count": len(self.players),
@@ -215,7 +174,6 @@ class DayRecap:
                     "playtime": p.playtime,
                     "sessions": p.sessions,
                     "longest_session": p.longest_session,
-                    "likely_afk": p.likely_afk,
                     "still_online": p.still_online,
                     "new_player": p.new_player,
                     "deaths": p.death_count,
@@ -223,7 +181,6 @@ class DayRecap:
                 for p in self.players
             ],
             "deaths": death_events,
-            "notable_server_events": list(self.notable_server_events),
         }
 
         if len(ordered_deaths) > MAX_DEATH_EVENTS_IN_PROMPT:

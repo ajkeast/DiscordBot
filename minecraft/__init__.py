@@ -1,18 +1,25 @@
-"""Daily Minecraft activity parsing, analytics, screenshots, and Grok recaps."""
+"""Daily Minecraft recap: collector reads, analytics, Grok narrative, screenshots."""
 
-from minecraft.analytics import summarize_day, summarize_window
+from minecraft.analytics import summarize_day
+from minecraft.camera import (
+    camera_overlap_seconds,
+    exclude_camera_sessions,
+    load_camera_sessions,
+)
+from minecraft.day import (
+    activity_date_due,
+    day_window,
+    playday_date,
+    pretty_date,
+    yesterday_et,
+)
 from minecraft.models import (
-    Advancement,
     CameraSession,
     DayRecap,
     Death,
-    EntityDeath,
-    LogLine,
-    MinecraftLogError,
-    ParsedLogs,
+    MinecraftDataError,
     PeakStretch,
     PlayerSummary,
-    Prelogin,
     PreparedPost,
     Session,
     SessionSlice,
@@ -29,47 +36,30 @@ from minecraft.narrative import (
     minecraft_grok_enabled,
     nobody_line,
 )
-from minecraft.parser import (
-    day_window,
-    discover_log_files,
-    exclude_camera_sessions,
-    load_camera_sessions,
-    parse_data_dir,
-    parse_log_directory,
-    playday_date,
-    pretty_date,
-)
-from minecraft.recap import (
-    activity_date_due,
-    build_day_recap,
-    prepare_post,
-    summary_title,
-    yesterday_et,
-)
+from minecraft.recap import build_day_recap, prepare_post, summary_title
 from minecraft.screenshots import pick_recap_screenshot
+
+# Back-compat alias used by older call sites / docs.
+MinecraftLogError = MinecraftDataError
 
 __all__ = [
     "SYSTEM_PROMPT",
-    "Advancement",
     "CameraSession",
     "DayRecap",
     "Death",
-    "EntityDeath",
-    "LogLine",
+    "MinecraftDataError",
     "MinecraftLogError",
-    "ParsedLogs",
     "PeakStretch",
     "PlayerSummary",
-    "Prelogin",
     "PreparedPost",
     "Session",
     "SessionSlice",
     "activity_date_due",
     "ask_grok",
     "build_day_recap",
+    "camera_overlap_seconds",
     "clean_model_text",
     "day_window",
-    "discover_log_files",
     "exclude_camera_sessions",
     "format_clock",
     "format_duration",
@@ -79,14 +69,11 @@ __all__ = [
     "load_camera_sessions",
     "minecraft_grok_enabled",
     "nobody_line",
-    "parse_data_dir",
-    "parse_log_directory",
     "pick_recap_screenshot",
     "playday_date",
     "prepare_post",
     "pretty_date",
     "summarize_day",
-    "summarize_window",
     "summary_title",
     "yesterday_et",
 ]
