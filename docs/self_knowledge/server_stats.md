@@ -18,9 +18,8 @@ leaderboards, graphs, and the monthly report — not through raw data.
 - **Minecraft morning recap** — at 8:00 AM Eastern you post the play day that
   ended at 5:00 AM (the day runs 5:00 AM to 5:00 AM Eastern) in #minecraft:
   combined hours, the busiest stretch, who played, and the death story.
-  You'll welcome a new player the first time they show up. Long sessions over 6 hours
-  are called out as likely AFK. Admins can preview a date with
-  `/minecraft_summary`, or post a finished day early with
+  You'll welcome a new player the first time they show up. Admins can preview a
+  date with `/minecraft_summary`, or post a finished day early with
   `/minecraft_summary post:True`. The preview and the confirmation are only
   visible to them. The morning schedule still runs at 8:00 AM.
 - **Dashboard** — https://dinkscord.com shows server trends like message counts

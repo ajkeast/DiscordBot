@@ -1,4 +1,4 @@
-"""Playday clipping, playtime/AFK aggregation, and peak stretches."""
+"""Playday clipping, playtime aggregation, and peak stretches."""
 
 from __future__ import annotations
 
@@ -18,8 +18,6 @@ from minecraft.models import (
     format_clock,
     format_duration,
 )
-
-AFK_SESSION_SECONDS = 6 * 60 * 60
 
 
 def _in_window(moment: datetime, start: datetime, end: datetime) -> bool:
@@ -154,7 +152,6 @@ def summarize_day(
                 duration_seconds=duration,
                 full_seconds=full_seconds,
                 end_reason=session.end_reason,
-                likely_afk=full_seconds > AFK_SESSION_SECONDS,
             )
         )
 
@@ -188,7 +185,6 @@ def summarize_day(
         player_slices = slices_by_player.get(name, [])
         playtime = sum(sl.duration_seconds for sl in player_slices)
         longest = max((sl.full_seconds for sl in player_slices), default=0)
-        likely_afk = any(sl.likely_afk for sl in player_slices)
         still_online = any(
             sl.end_reason == "still_online" and sl.slice_ended_at == sl.ended_at
             for sl in player_slices
@@ -217,7 +213,6 @@ def summarize_day(
                 sessions=len(player_slices),
                 longest_session_seconds=longest,
                 longest_session=format_duration(longest) if longest else None,
-                likely_afk=likely_afk,
                 still_online=still_online,
                 new_player=is_new,
                 death_count=deaths_by_player.get(name, 0),

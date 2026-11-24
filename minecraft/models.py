@@ -40,7 +40,6 @@ class SessionSlice:
     duration_seconds: int
     full_seconds: int
     end_reason: str
-    likely_afk: bool
 
 
 @dataclass(frozen=True)
@@ -79,7 +78,6 @@ class PlayerSummary:
     sessions: int
     longest_session_seconds: int
     longest_session: str | None
-    likely_afk: bool
     still_online: bool
     new_player: bool
     death_count: int
@@ -176,7 +174,6 @@ class DayRecap:
                     "playtime": p.playtime,
                     "sessions": p.sessions,
                     "longest_session": p.longest_session,
-                    "likely_afk": p.likely_afk,
                     "still_online": p.still_online,
                     "new_player": p.new_player,
                     "deaths": p.death_count,

@@ -27,7 +27,7 @@ Address players by name, or use "you" when speaking to them. Never use "we", "us
 
 Use a consistent, scannable layout with blank lines between sections:
 1. Opening: 1–2 crisp sentences covering how many people played, combined playtime, and the peak stretch if notable (mention if `partial_day` is true).
-2. **Time played**: one compact bullet per player with playtime and session count. Mention still online, likely AFK, or welcome a new player only when those fields are true.
+2. **Time played**: one compact bullet per player with playtime and session count. Mention still online or welcome a new player only when those fields are true.
 3. **Deaths**: omit this section entirely if `total_deaths` is 0. Otherwise, read the chronological death log and concisely summarize the story — group chaotic stretches, raids, or repeat causes naturally instead of listing every death line by line. When a death has `"pvp": true`, call that fight PVP. Never invent a location, mob, or event that the death messages do not show.
 
 Rules:
@@ -100,8 +100,6 @@ def format_fallback(recap: DayRecap) -> str:
         notes: list[str] = []
         if p.still_online:
             notes.append("still online")
-        if p.likely_afk:
-            notes.append("likely AFK")
         if p.new_player:
             notes.append("welcome, first time on the server")
         suffix = f" ({', '.join(notes)})" if notes else ""

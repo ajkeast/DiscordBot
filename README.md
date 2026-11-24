@@ -55,7 +55,7 @@ Every morning at **8:00 AM America/New_York**, the bot posts a concise Grok-writ
 
 - Reads playday sessions and deaths from the Dinkboard collector schema (`minecraft.sessions`, `minecraft.deaths`), subtracts `plugins/Camera/sessions.jsonl` time when present, verifies first-time players against collector history, and attaches the newest playday screenshot from `MC_RECAP_SCREENSHOT_DIR`.
 - Passes clean factual JSON (playtimes, sessions, peak stretch, chronological death log with PVP flags) to Grok (`GROK_MINECRAFT_MODEL`, default `grok-4.7`). Falls back to a compact template if Grok is unavailable.
-- Writes AFK-annotated session slices to `public.minecraft_sessions` (for the dashboard) and idempotent claims to `minecraft_daily_posts`.
+- Writes playday session slices to `public.minecraft_sessions` (for the dashboard) and idempotent claims to `minecraft_daily_posts`.
 - Admins can preview read-only or post a finished day early:
 
 ```text

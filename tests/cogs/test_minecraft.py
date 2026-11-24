@@ -26,7 +26,6 @@ def _prepared(day: date, *, nobody_played: bool = False) -> PreparedPost:
                 sessions=1,
                 longest_session_seconds=3600,
                 longest_session="1h",
-                likely_afk=False,
                 still_online=False,
                 new_player=False,
                 death_count=0,

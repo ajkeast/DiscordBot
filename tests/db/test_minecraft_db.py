@@ -49,7 +49,7 @@ def test_persist_day_writes_only_session_slices():
     t1 = datetime(2026, 10, 25, 10, 0, tzinfo=EASTERN)
     t2 = datetime(2026, 10, 25, 11, 0, tzinfo=EASTERN)
 
-    dup_slice = SessionSlice("Steve", "u1", t1, t2, t1, t2, 3600, 3600, "leave", False)
+    dup_slice = SessionSlice("Steve", "u1", t1, t2, t1, t2, 3600, 3600, "leave")
     recap = DayRecap(
         day=day,
         pretty_date=pretty_date(day),

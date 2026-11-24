@@ -112,7 +112,7 @@ def prepare_post(
     repo: MinecraftRepository | None = None,
     persist: bool = True,
 ) -> PreparedPost:
-    """Build a playday recap, optionally persist AFK slices, and generate narrative.
+    """Build a playday recap, optionally persist session slices, and generate narrative.
 
     Admin previews pass ``persist=False`` so they remain strictly read-only.
     """

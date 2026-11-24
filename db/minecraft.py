@@ -1,7 +1,7 @@
 """PostgreSQL access for Minecraft collector reads and recap post claims.
 
 Reads playday facts from the Dinkboard collector schema (``minecraft.*``).
-Writes AFK-annotated session slices to ``public.minecraft_sessions`` for the
+Writes playday session slices to ``public.minecraft_sessions`` for the
 dashboard, plus idempotent ``minecraft_daily_posts`` claims.
 """
 
@@ -133,7 +133,7 @@ class MinecraftRepository:
         return deaths
 
     def persist_day(self, recap: DayRecap) -> None:
-        """Replace one play day's AFK-annotated session slices for the dashboard."""
+        """Replace one play day's session slices for the dashboard."""
         day = recap.day
         session_rows = _dedupe(
             [
@@ -147,7 +147,6 @@ class MinecraftRepository:
                     sl.slice_ended_at,
                     sl.duration_seconds,
                     sl.end_reason,
-                    sl.likely_afk,
                 )
                 for sl in recap.slices
             ],
@@ -163,9 +162,8 @@ class MinecraftRepository:
                     """
                     INSERT INTO minecraft_sessions (
                         activity_date, player_name, player_uuid, started_at, ended_at,
-                        slice_started_at, slice_ended_at, duration_seconds,
-                        end_reason, likely_afk
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::boolean)
+                        slice_started_at, slice_ended_at, duration_seconds, end_reason
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     session_rows,
                 )

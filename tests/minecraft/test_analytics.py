@@ -9,7 +9,7 @@ from minecraft.analytics import summarize_day
 from minecraft.models import Death, Session
 
 
-def test_summarize_day_computes_playtime_afk_peak_and_new_player():
+def test_summarize_day_computes_playtime_peak_and_new_player():
     day = date(2026, 10, 25)
     t_start = datetime(2026, 10, 25, 19, 0, tzinfo=EASTERN)
     prior_day = datetime(2026, 10, 20, 12, 0, tzinfo=EASTERN)
@@ -17,7 +17,7 @@ def test_summarize_day_computes_playtime_afk_peak_and_new_player():
     sessions = [
         Session("Veteran", prior_day, prior_day + timedelta(hours=1), "leave", "u-vet"),
         Session("Veteran", t_start, t_start + timedelta(hours=2), "leave", "u-vet"),
-        Session("AfkKing", t_start, t_start + timedelta(hours=7), "still_online", "u-afk"),
+        Session("NightOwl", t_start, t_start + timedelta(hours=7), "still_online", "u-owl"),
         Session(
             "Newbie",
             t_start + timedelta(minutes=30),
@@ -36,7 +36,7 @@ def test_summarize_day_computes_playtime_afk_peak_and_new_player():
         deaths,
         day,
         as_of=datetime(2026, 10, 26, 8, 0, tzinfo=EASTERN),
-        prior_players=({"AfkKing"}, set()),
+        prior_players=({"NightOwl"}, set()),
         history_known=True,
     )
 
@@ -44,15 +44,14 @@ def test_summarize_day_computes_playtime_afk_peak_and_new_player():
     assert recap.partial_day is False
     by_name = {p.name: p for p in recap.players}
 
-    assert by_name["AfkKing"].likely_afk is True
-    assert by_name["AfkKing"].still_online is True
-    assert by_name["AfkKing"].new_player is False
+    assert by_name["NightOwl"].still_online is True
+    assert by_name["NightOwl"].new_player is False
     assert by_name["Veteran"].new_player is False
     assert by_name["Newbie"].new_player is True
 
     assert recap.peak_stretch is not None
     assert recap.peak_stretch.peak_players == 3
-    assert set(recap.peak_stretch.players) == {"Veteran", "AfkKing", "Newbie"}
+    assert set(recap.peak_stretch.players) == {"Veteran", "NightOwl", "Newbie"}
 
     payload = recap.to_grok_payload()
     assert payload["summary"]["total_deaths"] == 2
