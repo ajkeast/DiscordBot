@@ -5,6 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Non-root runtime user. Production compose adds gid 1000 (group_add) so this
+# user can read the minecraft_data volume (owned 1000:1000, root mode 750).
 RUN useradd --create-home --uid 10001 botuser
 
 COPY . .

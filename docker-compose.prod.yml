@@ -26,6 +26,10 @@ services:
     restart: unless-stopped
     depends_on:
       - lavalink
+    # minecraft_data is owned by 1000:1000 (mode 750 at the volume root). The image
+    # runs as botuser (uid 10001); join gid 1000 so group r-x can read the mount.
+    group_add:
+      - "1000"
     env_file:
       - .env
     environment:
