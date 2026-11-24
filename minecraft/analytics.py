@@ -1,4 +1,4 @@
-"""Playday clipping, playtime/AFK aggregation, peak stretches, and server events."""
+"""Playday clipping, playtime/AFK aggregation, and peak stretches."""
 
 from __future__ import annotations
 
@@ -6,22 +6,20 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
 from config import EASTERN
+from minecraft.camera import CameraSession, camera_overlap_seconds
+from minecraft.day import day_window, pretty_date
 from minecraft.models import (
     DayRecap,
-    EntityDeath,
-    ParsedLogs,
+    Death,
     PeakStretch,
     PlayerSummary,
-    Prelogin,
+    Session,
     SessionSlice,
     format_clock,
     format_duration,
 )
-from minecraft.parser import camera_overlap_seconds, day_window, pretty_date
 
 AFK_SESSION_SECONDS = 6 * 60 * 60
-ENTITY_NOTE_MIN_COUNT = 5
-SCANNER_MIN_ATTEMPTS = 5
 
 
 def _in_window(moment: datetime, start: datetime, end: datetime) -> bool:
@@ -112,77 +110,35 @@ def _compute_peak_stretch(
     )
 
 
-def _compute_server_events(
-    entity_deaths: list[EntityDeath], prelogins: list[Prelogin]
-) -> list[str]:
-    notes: list[str] = []
-
-    by_entity_msg: dict[tuple[str, str], list[EntityDeath]] = defaultdict(list)
-    for ed in entity_deaths:
-        by_entity_msg[(ed.entity, ed.message)].append(ed)
-
-    top_entity_groups = sorted(
-        (
-            (entity, message, group)
-            for (entity, message), group in by_entity_msg.items()
-            if len(group) >= ENTITY_NOTE_MIN_COUNT
-        ),
-        key=lambda item: (-len(item[2]), item[0].lower()),
-    )[:3]
-
-    for entity, message, group in top_entity_groups:
-        placed = [d for d in group if d.x is not None and d.z is not None]
-        where = ""
-        if len(placed) >= ENTITY_NOTE_MIN_COUNT:
-            xs = sorted(d.x for d in placed if d.x is not None)
-            zs = sorted(d.z for d in placed if d.z is not None)
-            where = f" near x {round(xs[len(xs) // 2])}, z {round(zs[len(zs) // 2])}"
-        notes.append(f"{entity} {message} ({len(group)} times{where})")
-
-    prelogin_counts = Counter(p.name for p in prelogins)
-    scanners = [
-        (name, count)
-        for name, count in prelogin_counts.most_common(3)
-        if count >= SCANNER_MIN_ATTEMPTS
-    ]
-    if len(scanners) == 1:
-        name, count = scanners[0]
-        notes.append(
-            f"{name} tried to connect {count} times without joining (likely scanner)"
-        )
-    elif scanners:
-        names = ", ".join(f"{name} ({count}x)" for name, count in scanners)
-        notes.append(
-            f"Repeated failed login attempts without joining: {names} (likely scanners)"
-        )
-
-    return notes
-
-
-def summarize_window(
-    parsed: ParsedLogs,
-    window_start: datetime,
-    window_end: datetime,
+def summarize_day(
+    sessions: list[Session],
+    deaths: list[Death],
+    day: date,
     *,
-    partial_day: bool = False,
+    as_of: datetime | None = None,
     prior_players: tuple[set[str], set[str]] | None = None,
     history_known: bool = True,
+    cameras: list[CameraSession] | None = None,
 ) -> DayRecap:
-    """Clip parsed events into a typed :class:`DayRecap` for ``[window_start, window_end)``."""
+    """Clip collector sessions/deaths into a typed :class:`DayRecap`."""
+    window_start, window_end = day_window(day)
     window_start = window_start.astimezone(EASTERN)
     window_end = window_end.astimezone(EASTERN)
-    day = window_start.date()
+    partial = False
+    if as_of is not None:
+        partial = as_of.astimezone(EASTERN) < window_end
 
+    camera_list = cameras or []
     slices: list[SessionSlice] = []
-    for session in parsed.sessions:
+    for session in sessions:
         clipped = _clip(session.start, session.end, window_start, window_end)
         if clipped is None:
             continue
         slice_start, slice_end = clipped
         duration = int((slice_end - slice_start).total_seconds())
-        if parsed.camera_sessions:
+        if camera_list:
             duration -= camera_overlap_seconds(
-                slice_start, slice_end, parsed.camera_sessions, session.player
+                slice_start, slice_end, camera_list, session.player
             )
         if duration <= 0:
             continue
@@ -190,7 +146,7 @@ def summarize_window(
         slices.append(
             SessionSlice(
                 player_name=session.player,
-                player_uuid=parsed.uuids.get(session.player),
+                player_uuid=session.uuid,
                 started_at=session.start,
                 ended_at=session.end,
                 slice_started_at=slice_start,
@@ -202,25 +158,15 @@ def summarize_window(
             )
         )
 
-    deaths = [
-        d for d in parsed.deaths if _in_window(d.at, window_start, window_end)
-    ]
-    advancements = [
-        a for a in parsed.advancements if _in_window(a.at, window_start, window_end)
-    ]
-    window_entity_deaths = [
-        ed for ed in parsed.entity_deaths if _in_window(ed.at, window_start, window_end)
-    ]
-    window_prelogins = [
-        p for p in parsed.prelogins if _in_window(p.at, window_start, window_end)
+    window_deaths = [
+        d for d in deaths if _in_window(d.at, window_start, window_end)
     ]
 
-    # Earliest session per player across all parsed logs to catch pre-window veterans.
-    earliest_session_by_player: dict[str, datetime] = {}
-    for session in parsed.sessions:
-        prev = earliest_session_by_player.get(session.player)
+    earliest_by_player: dict[str, datetime] = {}
+    for session in sessions:
+        prev = earliest_by_player.get(session.player)
         if prev is None or session.start < prev:
-            earliest_session_by_player[session.player] = session.start
+            earliest_by_player[session.player] = session.start
 
     prior_names, prior_uuids = prior_players if prior_players is not None else (set(), set())
     prior_uuids_lower = {u.lower() for u in prior_uuids if u}
@@ -229,10 +175,13 @@ def summarize_window(
     for sl in slices:
         slices_by_player[sl.player_name].append(sl)
 
-    deaths_by_player = Counter(d.player for d in deaths)
-
+    deaths_by_player = Counter(d.player for d in window_deaths)
     active_names: set[str] = set(slices_by_player) | set(deaths_by_player)
-    active_names.update(a.player for a in advancements)
+
+    uuids: dict[str, str] = {}
+    for session in sessions:
+        if session.uuid:
+            uuids[session.player] = session.uuid
 
     players: list[PlayerSummary] = []
     for name in active_names:
@@ -244,9 +193,11 @@ def summarize_window(
             sl.end_reason == "still_online" and sl.slice_ended_at == sl.ended_at
             for sl in player_slices
         )
-        player_uuid = parsed.uuids.get(name)
+        player_uuid = uuids.get(name) or next(
+            (sl.player_uuid for sl in player_slices if sl.player_uuid), None
+        )
 
-        first_seen = earliest_session_by_player.get(name)
+        first_seen = earliest_by_player.get(name)
         seen_in_db = name in prior_names or (
             player_uuid is not None and player_uuid.lower() in prior_uuids_lower
         )
@@ -280,36 +231,10 @@ def summarize_window(
         pretty_date=pretty_date(day),
         window_start=window_start,
         window_end=window_end,
-        partial_day=partial_day,
+        partial_day=partial,
         players=players,
         slices=slices,
-        deaths=deaths,
-        advancements=advancements,
-        notable_server_events=_compute_server_events(
-            window_entity_deaths, window_prelogins
-        ),
-        player_uuids=dict(parsed.uuids),
+        deaths=window_deaths,
+        player_uuids=uuids,
         peak_stretch=_compute_peak_stretch(slices, window_start, window_end),
-    )
-
-
-def summarize_day(
-    parsed: ParsedLogs,
-    day: date,
-    *,
-    as_of: datetime | None = None,
-    prior_players: tuple[set[str], set[str]] | None = None,
-    history_known: bool = True,
-) -> DayRecap:
-    window_start, window_end = day_window(day)
-    partial = False
-    if as_of is not None:
-        partial = as_of.astimezone(EASTERN) < window_end
-    return summarize_window(
-        parsed,
-        window_start,
-        window_end,
-        partial_day=partial,
-        prior_players=prior_players,
-        history_known=history_known,
     )

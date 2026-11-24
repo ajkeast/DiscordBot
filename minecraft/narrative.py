@@ -1,9 +1,4 @@
-"""Grok-driven Minecraft daily recap narrative + clean fallback formatter.
-
-Grok receives the factual playday JSON directly (playtimes, sessions, peak
-stretch, chronological death log, and notable server events) so it can write
-natural, concise commentary without rigid keyword rules or hardcoded mob lists.
-"""
+"""Grok-driven Minecraft daily recap narrative + compact fallback."""
 
 from __future__ import annotations
 
@@ -26,14 +21,14 @@ MAX_NARRATIVE_CHARS = 1800
 GROK_ATTEMPTS = 2
 
 SYSTEM_PROMPT = """You write the daily Minecraft recap for a small friends' Discord server.
-You are given factual JSON from the server logs for one play day. Use only that data.
-Write like an observant, witty outside third party recapping the day: concise, natural, and human.
+You are given factual JSON from collector telemetry for one play day. Use only that data.
+Write like an observant, witty outside third-party commentator: concise, natural, and human.
+Address players by name, or use "you" when speaking to them. Never use "we", "us", or "our".
 
 Use a consistent, scannable layout with blank lines between sections:
 1. Opening: 1–2 crisp sentences covering how many people played, combined playtime, and the peak stretch if notable (mention if `partial_day` is true).
 2. **Time played**: one compact bullet per player with playtime and session count. Mention still online, likely AFK, or welcome a new player only when those fields are true.
-3. **Deaths**: omit this section entirely if `total_deaths` is 0. Otherwise, read the chronological death log and concisely summarize the story — group chaotic stretches, raids, PVP, or repeat causes naturally instead of listing every death line by line.
-4. **Server notes**: omit this section entirely if `notable_server_events` is empty; otherwise a brief line summarizing what happened.
+3. **Deaths**: omit this section entirely if `total_deaths` is 0. Otherwise, read the chronological death log and concisely summarize the story — group chaotic stretches, raids, or repeat causes naturally instead of listing every death line by line. When a death has `"pvp": true`, call that fight PVP. Never invent a location, mob, or event that the death messages do not show.
 
 Rules:
 - Stick strictly to the JSON data; never invent players, times, causes, or places unsupported by the logs.
@@ -121,10 +116,6 @@ def format_fallback(recap: DayRecap) -> str:
             f"{_md_escape(name)} ({count})" for name, count in by_player.most_common(6)
         )
         sections.append(f"**Deaths ({recap.total_deaths})**\n{top_summary}")
-
-    if recap.notable_server_events:
-        notes_block = "\n".join(f"- {note}" for note in recap.notable_server_events)
-        sections.append(f"**Server notes**\n{notes_block}")
 
     text = "\n\n".join(sections)
     if len(text) > MAX_NARRATIVE_CHARS:

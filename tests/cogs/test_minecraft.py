@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cogs.minecraft import Minecraft
+from minecraft.day import day_window, pretty_date
 from minecraft.models import DayRecap, PlayerSummary, PreparedPost
-from minecraft.parser import day_window, pretty_date
 
 
 def _prepared(day: date, *, nobody_played: bool = False) -> PreparedPost:
@@ -42,8 +42,6 @@ def _prepared(day: date, *, nobody_played: bool = False) -> PreparedPost:
         players=players,
         slices=[],
         deaths=[],
-        advancements=[],
-        notable_server_events=[],
         player_uuids={},
     )
     narrative = (

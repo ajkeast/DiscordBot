@@ -12,8 +12,8 @@ from discord.ext import commands, tasks
 
 from config import EASTERN, EMBED_COLOR, minecraft_channel_id
 from db.minecraft import MinecraftRepository
-from minecraft.models import MinecraftLogError, PreparedPost
-from minecraft.parser import day_window, pretty_date
+from minecraft.day import day_window, pretty_date
+from minecraft.models import MinecraftDataError, PreparedPost
 from minecraft.recap import (
     activity_date_due,
     prepare_post,
@@ -246,7 +246,7 @@ class Minecraft(commands.Cog):
                 repo=self.repo,
                 persist=False,
             )
-        except MinecraftLogError as exc:
+        except MinecraftDataError as exc:
             await ctx.send(str(exc))
             return
         except Exception:

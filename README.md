@@ -53,9 +53,9 @@ The bot auto-disconnects after 5 minutes idle (`MUSIC_INACTIVE_TIMEOUT`) or 90 s
 
 Every morning at **8:00 AM America/New_York**, the bot posts a concise Grok-written recap of the previous play day (**5:00 AM – 5:00 AM Eastern**) to **#minecraft**:
 
-- Reads date-bounded logs (`[day - 2, day + 2]`) from `MINECRAFT_DATA_DIR`, filters out `plugins/Camera/sessions.jsonl` time, verifies first-time players against Postgres history, and attaches the newest playday screenshot from `MC_RECAP_SCREENSHOT_DIR`.
-- Passes clean factual JSON (playtimes, sessions, peak stretch, chronological death log, notable server events) directly to Grok (`GROK_MINECRAFT_MODEL`, default `grok-4.7`) so Grok writes natural, consistent daily commentary without rigid keyword rules. Falls back to a compact template if Grok is unavailable.
-- Persists sessions, deaths, advancements, and idempotent daily post claims to Postgres (`db/schema.sql`).
+- Reads playday sessions and deaths from the Dinkboard collector schema (`minecraft.sessions`, `minecraft.deaths`), subtracts `plugins/Camera/sessions.jsonl` time when present, verifies first-time players against collector history, and attaches the newest playday screenshot from `MC_RECAP_SCREENSHOT_DIR`.
+- Passes clean factual JSON (playtimes, sessions, peak stretch, chronological death log with PVP flags) to Grok (`GROK_MINECRAFT_MODEL`, default `grok-4.7`). Falls back to a compact template if Grok is unavailable.
+- Writes AFK-annotated session slices to `public.minecraft_sessions` (for the dashboard) and idempotent claims to `minecraft_daily_posts`.
 - Admins can preview read-only or post a finished day early:
 
 ```text
@@ -76,7 +76,7 @@ Every morning at **8:00 AM America/New_York**, the bot posts a concise Grok-writ
 - `config.py`: Single `load_dotenv()`, typed env settings, `zoneinfo` Eastern timezone
 - `cogs/`: Thin Discord command, task, and view adapters (`ai.py`, `ai_imagine_ui.py`, `dinkcoin.py`, `first.py`, `minecraft.py`, `music.py`, `sentiment.py`, `server.py`, `utility.py`)
 - `db/`: `psycopg_pool` connection pool (`pool.py`), canonical `schema.sql`, and domain repositories
-- `minecraft/`: Typed log parser, playday analytics, flexible Grok narrative, screenshots, and recap orchestrator
+- `minecraft/`: Collector-backed playday analytics, Grok narrative, screenshots, and recap orchestrator
 - `services/`: Unified xAI client (`xai.py`), streak/juice analytics (`first_game.py`), thread-safe matplotlib (`charts.py`), self-knowledge (`self_knowledge.py`), sentiment (`sentiment.py`), and SoundCloud helpers (`soundcloud.py`)
 - `utils/`: Shared admin permissions and Discord interaction helpers
 - `docs/self_knowledge/`: Member-facing markdown docs exposed to Grok
